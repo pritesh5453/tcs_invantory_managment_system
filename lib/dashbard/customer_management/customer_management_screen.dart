@@ -96,8 +96,8 @@ class CustomerManagementScreen extends StatelessWidget {
                         height: 46,
                         width: 46,
                         decoration: BoxDecoration(
-                          color: Colors.black,
-                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.white),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: IconButton(
                           icon: const Icon(Icons.add, color: Colors.white),
