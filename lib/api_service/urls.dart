@@ -1,0 +1,13 @@
+// String baseUrl = 'https://dev-api.myyvo.com/api/delivery/';
+String baseUrl = 'https://api.myyvo.com/api/delivery/';
+String amazonImageUrl = 'https://myyvo-product-images.s3.ap-south-1.amazonaws.com/';
+String endpoint = '${baseUrl}agent-login';
+String order = '${baseUrl}get-assigned-orders';
+String dliverySendOtpCustomer = '${baseUrl}send-delivery-otp/'; 
+String otpGet = '${baseUrl}update-order-delivery-status/'; 
+String reschedule = '${baseUrl}reschedule-delivery-date/'; 
+String getBanckDetails = '${baseUrl}profile-details'; 
+String addBanckDetails = '${baseUrl}bank-details'; 
+String paymentUrl = '${baseUrl}initiate-order-payment/'; 
+String notification = 'https://api.myyvo.com/notifications/'; 
+String readNotification = 'https://api.myyvo.com/notifications/read/'; 
