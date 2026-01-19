@@ -1,5 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 import '../auth/login_screen.dart';
 
 class SplashAnimationScreen extends StatefulWidget {
@@ -35,13 +37,28 @@ class _SplashAnimationScreenState extends State<SplashAnimationScreen>
     );
 
     _controller.forward();
+    _navigateNext();
+  }
 
-    Future.delayed(const Duration(milliseconds: 2800), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
-    });
+  Future<void> _navigateNext() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+
+    // Splash animation complete होईपर्यंत wait
+    await Future.delayed(const Duration(milliseconds: 2800));
+
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) =>
+                isLoggedIn
+                    ? const HomeWithAnimatedDrawer()
+                    : const LoginScreen(),
+      ),
+    );
   }
 
   @override
@@ -55,7 +72,6 @@ class _SplashAnimationScreenState extends State<SplashAnimationScreen>
     return AnimatedBuilder(
       animation: _controller,
       builder: (_, __) {
-        // 🔥 Fade out when center logo starts
         double opacity = 1.0;
         if (_controller.value > 0.6) {
           opacity = (0.75 - _controller.value).clamp(0.0, 1.0);
@@ -108,13 +124,13 @@ class _SplashAnimationScreenState extends State<SplashAnimationScreen>
       body: Stack(
         alignment: Alignment.center,
         children: [
-          /// 👇 Corner logos (fade out automatically)
+          /// Corner logos
           cornerCard(Alignment.topLeft, -pi / 4),
           cornerCard(Alignment.topRight, pi / 4),
           cornerCard(Alignment.bottomLeft, pi / 6),
           cornerCard(Alignment.bottomRight, -pi / 6),
 
-          /// 👇 Center logo (comes after corners hide)
+          /// Center logo
           centerCard(),
         ],
       ),
