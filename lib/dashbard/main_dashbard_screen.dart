@@ -8,6 +8,7 @@ import 'package:tcs_invantory_managment_system/dashbard/architect_managment/arch
 import 'package:tcs_invantory_managment_system/dashbard/brand_managment/brand_managment_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/category_managment/category_managment_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/customer_management_screen.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dashboard/dashboard_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/dilivery_chalan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/employee_managment/employee_managment_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/Product_Management.dart';
@@ -138,7 +139,28 @@ class MainScreenWidget extends StatelessWidget {
           onPressed: onMenuPressed,
         ),
         title: Text(selectedPage, style: const TextStyle(color: Colors.black)),
+
+        // 👇 PROFILE ICON SIRF DASHBOARD PAR
+        actions:
+            selectedPage == "Dashboard"
+                ? [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: GestureDetector(
+                      onTap: () {
+                        // TODO: Open profile screen / menu
+                      },
+                      child: const CircleAvatar(
+                        radius: 18,
+                        backgroundColor: Colors.white,
+                        child: Icon(Icons.person, color: Colors.black),
+                      ),
+                    ),
+                  ),
+                ]
+                : [],
       ),
+
       body: _pageContent(),
       // floatingActionButton: FloatingActionButton(
       //   backgroundColor: Colors.black,
@@ -150,6 +172,8 @@ class MainScreenWidget extends StatelessWidget {
 
   Widget _pageContent() {
     switch (selectedPage) {
+      case "Dashboard":
+        return DashboardScreen();
       case "Customer Management":
         return CustomerManagementScreen();
       case "Employee Registration":
