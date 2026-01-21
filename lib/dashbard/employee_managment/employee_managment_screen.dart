@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:dio/dio.dart';
+import 'package:tcs_invantory_managment_system/dashbard/employee_managment/add_employee.dart';
+import 'package:tcs_invantory_managment_system/dashbard/employee_managment/edit_employee.dart';
 
 class EmployeeManagmentScreen extends StatefulWidget {
   const EmployeeManagmentScreen({super.key});
@@ -13,6 +16,102 @@ class EmployeeManagmentScreen extends StatefulWidget {
 class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
   File? aadharImage;
   final ImagePicker picker = ImagePicker();
+
+  final Dio dio = Dio();
+  bool isLoading = true;
+  List<Employee> employees = [];
+
+  @override
+  void initState() {
+    super.initState();
+    fetchEmployees();
+  }
+
+  Future<void> fetchEmployees() async {
+    try {
+      final response = await dio.get(
+        "https://dashboard.theceramicstudio.in/api/employees/list",
+      );
+
+      if (response.statusCode == 200) {
+        final List list = response.data['employees'];
+        employees = list.map((e) => Employee.fromJson(e)).toList();
+      }
+    } catch (e) {
+      debugPrint("Dio Error: $e");
+    }
+
+    setState(() {
+      isLoading = false;
+    });
+  }
+
+  Future<void> showDeleteDialog(BuildContext context, int employeeId) async {
+    return showDialog(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text("Delete Employee"),
+            content: const Text(
+              "Are you sure you want to delete this employee?",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await deleteEmployee(employeeId);
+                },
+                child: const Text("Delete"),
+              ),
+            ],
+          ),
+    );
+  }
+
+  Future<void> deleteEmployee(int employeeId) async {
+    debugPrint("🗑️ DELETE CLICKED ID => $employeeId");
+
+    if (employeeId <= 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Invalid Employee ID")));
+      return;
+    }
+
+    try {
+      final response = await dio.delete(
+        "https://dashboard.theceramicstudio.in/api/employees/delete/$employeeId",
+      );
+
+      debugPrint("📥 DELETE RESPONSE => ${response.data}");
+
+      if (response.statusCode == 200 &&
+          response.data is Map &&
+          response.data["success"] == true) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(response.data["message"])));
+
+        // ✅ list refresh after delete
+        setState(() => isLoading = true);
+        await fetchEmployees();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to delete employee")),
+        );
+      }
+    } catch (e) {
+      debugPrint("❌ DELETE ERROR => $e");
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Delete failed: $e")));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,8 +133,6 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
               child: Column(
                 children: [
                   const SizedBox(height: 14),
-
-                  /// Search Row
                   Row(
                     children: [
                       Expanded(
@@ -60,18 +157,18 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
                       ),
                       const SizedBox(width: 12),
                       InkWell(
-                        onTap: () {
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (context) {
-                              return const Dialog(
-                                backgroundColor: Colors.transparent,
-                                insetPadding: EdgeInsets.all(16),
-                                child: AddEmployeePopup(),
-                              );
-                            },
+                        onTap: () async {
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AddEmployeeScreen(),
+                            ),
                           );
+
+                          // ✅ optional: employee add hone ke baad list refresh
+                          if (result == true) {
+                            fetchEmployees();
+                          }
                         },
                         child: Container(
                           height: 42,
@@ -91,12 +188,30 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
 
             /// ---------------- LIST ----------------
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: 2,
-                itemBuilder: (_, index) {
-                  return EmployeeCard(isActive: index == 1);
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  debugPrint("🔄 PULL TO REFRESH TRIGGERED");
+                  setState(() => isLoading = true);
+                  await fetchEmployees();
                 },
+                child:
+                    isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(16),
+                          itemCount: employees.length,
+                          itemBuilder: (_, index) {
+                            return EmployeeCard(
+                              employee: employees[index],
+                              onDelete:
+                                  () => showDeleteDialog(
+                                    context,
+                                    employees[index].id,
+                                  ),
+                            );
+                          },
+                        ),
               ),
             ),
           ],
@@ -106,19 +221,57 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
   }
 }
 
-// =======================================================
-// EMPLOYEE CARD
-// =======================================================
-
-class EmployeeCard extends StatelessWidget {
+/// =======================================================
+/// EMPLOYEE MODEL
+/// =======================================================
+class Employee {
+  final int id;
+  final String name;
+  final String phone;
+  final String email;
+  final String salary;
   final bool isActive;
 
-  const EmployeeCard({super.key, required this.isActive});
+  Employee({
+    required this.id,
+    required this.name,
+    required this.phone,
+    required this.email,
+    required this.salary,
+    required this.isActive,
+  });
+
+  factory Employee.fromJson(Map<String, dynamic> json) {
+    final parsedId = json['employee_id'] ?? json['id'];
+
+    return Employee(
+      id:
+          parsedId is int
+              ? parsedId
+              : int.tryParse(parsedId?.toString() ?? '') ??
+                  -1, // ✅ SAFE FALLBACK
+      name: json['name'] ?? '',
+      phone: json['phone'] ?? '',
+      email: json['email'] ?? '',
+      salary: json['salary']?.toString() ?? '0',
+      isActive: json['status'] == 'active',
+    );
+  }
+}
+
+/// =======================================================
+/// EMPLOYEE CARD
+/// =======================================================
+class EmployeeCard extends StatelessWidget {
+  final Employee employee;
+  final VoidCallback? onDelete;
+
+  const EmployeeCard({super.key, required this.employee, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = isActive ? Colors.green : Colors.red;
-    final statusText = isActive ? "Active" : "Blocked";
+    final statusColor = employee.isActive ? Colors.green : Colors.red;
+    final statusText = employee.isActive ? "Active" : "Blocked";
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -133,7 +286,6 @@ class EmployeeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          /// STATUS + MENU
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -155,31 +307,68 @@ class EmployeeCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const Icon(Icons.more_vert),
+              PopupMenuButton<String>(
+                onSelected: (value) {
+                  if (value == "toggle") {
+                    toggleEmployeeStatus(
+                      context,
+                      employee.id,
+                      employee.isActive,
+                    );
+                  }
+                },
+                itemBuilder:
+                    (context) => [
+                      PopupMenuItem<String>(
+                        value: "toggle",
+                        child: Row(
+                          children: [
+                            Icon(
+                              employee.isActive
+                                  ? Icons.block
+                                  : Icons.check_circle,
+                              color:
+                                  employee.isActive ? Colors.red : Colors.green,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              employee.isActive ? "Block" : "Unblock",
+                              style: TextStyle(
+                                color:
+                                    employee.isActive
+                                        ? Colors.red
+                                        : Colors.green,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+              ),
             ],
           ),
 
           const SizedBox(height: 10),
 
-          /// DETAILS
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: _infoColumn(
                   "Name",
-                  "Pritesh Pawar",
+                  employee.name,
                   "Salary",
-                  "₹25000",
-                  isStrike: !isActive,
+                  "₹${employee.salary}",
+                  isStrike: !employee.isActive,
                 ),
               ),
               Expanded(
                 child: _infoColumn(
                   "Mobile Number",
-                  "+91 9876543210",
+                  employee.phone,
                   "Email Address",
-                  "omkarkushare3@gmail.com",
+                  employee.email,
                 ),
               ),
             ],
@@ -187,79 +376,53 @@ class EmployeeCard extends StatelessWidget {
 
           const SizedBox(height: 14),
 
-          /// BUTTONS
           Row(
             children: [
-              // ================= EDIT =================
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      barrierDismissible: false,
-                      builder:
-                          (_) => Dialog(
-                            backgroundColor: Colors.transparent,
-                            insetPadding: const EdgeInsets.all(16),
-                            child: EditEmployeePopup(
-                              employee: employee, // 🔥 selected employee
-                            ),
-                          ),
+                  onPressed: () async {
+                    debugPrint("🆔 EDIT CLICKED ID => ${employee.id}");
+
+                    final employeeModel = EmployeeModel(
+                      id: employee.id, // ✅ DYNAMIC ID (FIXED)
+                      firstName:
+                          employee.name.split(' ').isNotEmpty
+                              ? employee.name.split(' ').first
+                              : '',
+                      lastName:
+                          employee.name.split(' ').length > 1
+                              ? employee.name.split(' ').sublist(1).join(' ')
+                              : '',
+                      mobile: employee.phone,
+                      email: employee.email,
+                      dob: '',
+                      password: '',
+                      expense: '0',
+                      salary: employee.salary,
+                      commission: '0',
+                      isActive: employee.isActive,
+                    );
+
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder:
+                            (_) => EditEmployeePopup(employee: employeeModel),
+                      ),
                     );
                   },
-                  icon: const Icon(Icons.edit, size: 18),
+                  icon: const Icon(Icons.edit),
                   label: const Text("Edit"),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.blue,
-                    side: const BorderSide(color: Colors.blue),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                  ),
                 ),
               ),
-
               const SizedBox(width: 12),
-
-              // ================= DELETE =================
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder:
-                          (_) => AlertDialog(
-                            title: const Text("Delete Employee"),
-                            content: const Text(
-                              "Are you sure you want to delete this employee?",
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: const Text("Cancel"),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.pop(context); // close dialog
-                                  onDelete(); // 🔥 remove from list
-                                },
-                                child: const Text(
-                                  "Delete",
-                                  style: TextStyle(color: Colors.red),
-                                ),
-                              ),
-                            ],
-                          ),
-                    );
-                  },
-                  icon: const Icon(Icons.delete, size: 18),
-                  label: const Text("Delete"),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                  label: const Text(
+                    "Delete",
+                    style: TextStyle(color: Colors.red),
                   ),
                 ),
               ),
@@ -269,386 +432,88 @@ class EmployeeCard extends StatelessWidget {
       ),
     );
   }
-
-  Widget _infoColumn(
-    String t1,
-    String v1,
-    String t2,
-    String v2, {
-    bool isStrike = false,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(t1, style: _labelStyle),
-        const SizedBox(height: 2),
-        Text(
-          v1,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            decoration:
-                isStrike ? TextDecoration.lineThrough : TextDecoration.none,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(t2, style: _labelStyle),
-        const SizedBox(height: 2),
-        Text(v2, style: const TextStyle(fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-
-  void onDelete() {}
 }
 
-class employee {}
+Future<void> toggleEmployeeStatus(
+  BuildContext context,
+  int employeeId,
+  bool isCurrentlyActive,
+) async {
+  final dio = Dio();
 
-const _labelStyle = TextStyle(color: Colors.grey, fontSize: 12);
+  final newStatus = isCurrentlyActive ? "blocked" : "active";
 
-// =======================================================
-// ADD EMPLOYEE POPUP
-// =======================================================
-class AddEmployeePopup extends StatefulWidget {
-  const AddEmployeePopup({super.key});
+  debugPrint("🔁 STATUS API HIT");
+  debugPrint("🆔 ID => $employeeId");
+  debugPrint("📤 NEW STATUS => $newStatus");
 
-  @override
-  State<AddEmployeePopup> createState() => _AddEmployeePopupState();
-}
-
-class _AddEmployeePopupState extends State<AddEmployeePopup> {
-  final TextEditingController dobCtrl = TextEditingController();
-  final ImagePicker _picker = ImagePicker();
-
-  File? aadharImage;
-  File? panImage;
-
-  InputDecoration _dec(String hint, {Widget? suffix}) {
-    return InputDecoration(
-      hintText: hint,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
+  try {
+    final response = await dio.patch(
+      "https://dashboard.theceramicstudio.in/api/employees/status/$employeeId",
+      data: {
+        "status": newStatus, // ✅ SIMPLE MAP (JSON)
+      },
+      options: Options(
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+        },
+        validateStatus: (_) => true, // 🔥 Dio exception avoid
       ),
-      suffixIcon: suffix,
-    );
-  }
-
-  // ================= IMAGE PICKER =================
-
-  Future<void> pickImage(bool isAadhar) async {
-    final XFile? image = await _picker.pickImage(
-      source: ImageSource.gallery, // camera हवं असेल तर ImageSource.camera
-      imageQuality: 70,
     );
 
-    if (image != null) {
-      setState(() {
-        if (isAadhar) {
-          aadharImage = File(image.path);
-        } else {
-          panImage = File(image.path);
-        }
-      });
+    debugPrint("📥 STATUS CODE => ${response.statusCode}");
+    debugPrint("📥 STATUS RESPONSE => ${response.data}");
+
+    if (response.statusCode == 200 &&
+        response.data is Map &&
+        response.data["success"] == true) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(response.data["message"])));
+
+      // 🔁 refresh list
+      final state =
+          context.findAncestorStateOfType<_EmployeeManagmentScreenState>();
+      state?.setState(() => state.isLoading = true);
+      await state?.fetchEmployees();
+    } else {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Failed to update status")));
     }
-  }
-
-  // ================= UI =================
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 650),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // HEADER
-            Row(
-              children: [
-                const Icon(Icons.person_add, color: Colors.orange),
-                const SizedBox(width: 8),
-                const Text(
-                  "Add New Employee",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                ),
-                const Spacer(),
-                InkWell(
-                  onTap: () => Navigator.pop(context),
-                  child: const Icon(Icons.close, color: Colors.red),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // PERSONAL INFO
-            const Text(
-              "Personal Information",
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(child: TextField(decoration: _dec("First name"))),
-                const SizedBox(width: 10),
-                Expanded(child: TextField(decoration: _dec("Last name"))),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-            TextField(
-              keyboardType: TextInputType.phone,
-              decoration: _dec("enter mobile number.."),
-            ),
-
-            const SizedBox(height: 12),
-            TextField(
-              keyboardType: TextInputType.emailAddress,
-              decoration: _dec("enter email address.."),
-            ),
-
-            const SizedBox(height: 12),
-            TextField(
-              controller: dobCtrl,
-              readOnly: true,
-              decoration: _dec(
-                "DD/MM/YYYY",
-                suffix: const Icon(Icons.calendar_today, size: 18),
-              ),
-              onTap: () async {
-                final date = await showDatePicker(
-                  context: context,
-                  firstDate: DateTime(1970),
-                  lastDate: DateTime.now(),
-                  initialDate: DateTime.now(),
-                );
-                if (date != null) {
-                  dobCtrl.text = "${date.day}/${date.month}/${date.year}";
-                }
-              },
-            ),
-
-            const SizedBox(height: 20),
-
-            // PAYROLL
-            const Text(
-              "Payroll & Access",
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-
-            const SizedBox(height: 10),
-            TextField(decoration: _dec("enter Access Password..")),
-            const SizedBox(height: 12),
-            TextField(
-              keyboardType: TextInputType.number,
-              decoration: _dec("enter Expense.."),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              keyboardType: TextInputType.number,
-              decoration: _dec("enter salary.."),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              keyboardType: TextInputType.number,
-              decoration: _dec("enter Commission (%).."),
-            ),
-
-            const SizedBox(height: 20),
-
-            // DOCUMENTS
-            const Text(
-              "Verification Documents",
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-
-            const SizedBox(height: 10),
-            _uploadTile(
-              title: "Upload Aadhar Card",
-              file: aadharImage,
-              onTap: () => pickImage(true),
-            ),
-
-            const SizedBox(height: 12),
-            _uploadTile(
-              title: "Upload Pan Card",
-              file: panImage,
-              onTap: () => pickImage(false),
-            ),
-
-            const SizedBox(height: 24),
-
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFA54A),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 36,
-                    vertical: 12,
-                  ),
-                ),
-                onPressed: () {
-                  // TODO: API / Firebase upload
-                  Navigator.pop(context);
-                },
-                child: const Text(
-                  "Save",
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ================= UPLOAD TILE =================
-
-  Widget _uploadTile({
-    required String title,
-    required File? file,
-    required VoidCallback onTap,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        GestureDetector(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    file == null ? title : "Image Selected",
-                    style: TextStyle(
-                      color: file == null ? Colors.grey : Colors.black,
-                    ),
-                  ),
-                ),
-                const Icon(Icons.upload),
-              ],
-            ),
-          ),
-        ),
-        if (file != null) ...[
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.file(
-              file,
-              height: 120,
-              width: double.infinity,
-              fit: BoxFit.cover,
-            ),
-          ),
-        ],
-      ],
-    );
+  } catch (e) {
+    debugPrint("❌ STATUS ERROR => $e");
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text("Status update failed")));
   }
 }
 
-/////
-class EditEmployeePopup extends StatefulWidget {
-  final employee;
-
-  const EditEmployeePopup({super.key, required this.employee});
-
-  @override
-  State<EditEmployeePopup> createState() => _EditEmployeePopupState();
-}
-
-class _EditEmployeePopupState extends State<EditEmployeePopup> {
-  late TextEditingController firstNameCtrl;
-  late TextEditingController lastNameCtrl;
-  late TextEditingController mobileCtrl;
-  late TextEditingController emailCtrl;
-  late TextEditingController dobCtrl;
-  late TextEditingController passwordCtrl;
-  late TextEditingController expenseCtrl;
-  late TextEditingController salaryCtrl;
-  late TextEditingController commissionCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    firstNameCtrl = TextEditingController(text: widget.employee.firstName);
-    lastNameCtrl = TextEditingController(text: widget.employee.lastName);
-    mobileCtrl = TextEditingController(text: widget.employee.mobile);
-    emailCtrl = TextEditingController(text: widget.employee.email);
-    dobCtrl = TextEditingController(text: widget.employee.dob);
-    passwordCtrl = TextEditingController(text: widget.employee.password);
-    expenseCtrl = TextEditingController(text: widget.employee.expense);
-    salaryCtrl = TextEditingController(text: widget.employee.salary);
-    commissionCtrl = TextEditingController(text: widget.employee.commission);
-  }
-
-  InputDecoration _dec(String hint) {
-    return InputDecoration(
-      hintText: hint,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              "Edit Employee Info",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-
-            const SizedBox(height: 16),
-
-            TextField(
-              controller: firstNameCtrl,
-              decoration: _dec("First name"),
-            ),
-            const SizedBox(height: 10),
-            TextField(controller: lastNameCtrl, decoration: _dec("Last name")),
-            const SizedBox(height: 10),
-            TextField(controller: mobileCtrl, decoration: _dec("Mobile")),
-            const SizedBox(height: 10),
-            TextField(controller: emailCtrl, decoration: _dec("Email")),
-
-            const SizedBox(height: 20),
-
-            ElevatedButton(
-              onPressed: () {
-                // update logic later
-                Navigator.pop(context);
-              },
-              child: const Text("Save"),
-            ),
-          ],
+/// =======================================================
+/// HELPER
+/// =======================================================
+Widget _infoColumn(
+  String title1,
+  String value1,
+  String title2,
+  String value2, {
+  bool isStrike = false,
+}) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(title1, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      Text(
+        value1,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          decoration: isStrike ? TextDecoration.lineThrough : null,
         ),
       ),
-    );
-  }
+      const SizedBox(height: 8),
+      Text(title2, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      Text(value2, style: const TextStyle(fontWeight: FontWeight.w600)),
+    ],
+  );
 }
