@@ -1,23 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-void main() {
-  runApp(const ProviderScope(child: MyApp()));
-}
-
-/// ================= APP =================
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: QualityManagementScreen(),
-    );
-  }
-}
-
 /// ================= MODEL =================
 class Quality {
   final String id;
@@ -83,7 +66,7 @@ class QualityManagementScreen extends ConsumerWidget {
         children: [
           /// TOP BAR
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 44, 16, 20),
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
             decoration: const BoxDecoration(
               color: Color(0xFFFFA54A),
               borderRadius: BorderRadius.only(
