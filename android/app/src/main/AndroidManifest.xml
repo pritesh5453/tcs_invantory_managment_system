@@ -2,21 +2,27 @@
 
     <!-- ================= PERMISSIONS ================= -->
 
-    <!-- Internet -->
+    <!-- Internet (API calls, file downloads) -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
-    <!-- Camera -->
+    <!-- Camera (Attendance / future features) -->
     <uses-permission android:name="android.permission.CAMERA"/>
 
-    <!-- Android 13+ Gallery permission -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-
-    <!-- Android 12 and below Gallery permission -->
+    <!-- Storage permissions : Android 12 and below -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
 
-    <!-- ================= QUERIES (WhatsApp etc.) ================= -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
+
+    <!-- Android 13+ media permissions (permission_handler compatibility) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+
+    <!-- ================= QUERIES (External apps / intents) ================= -->
     <queries>
         <package android:name="com.whatsapp"/>
         <package android:name="com.whatsapp.w4b"/>
@@ -29,9 +35,10 @@
 
     <!-- ================= APPLICATION ================= -->
     <application
-        android:label="TCS Inventory Management System"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:label="TCS Inventory Management System"
+        android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true">
 
         <activity
             android:name=".MainActivity"
@@ -40,13 +47,26 @@
             android:theme="@style/LaunchTheme"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:enableOnBackInvokedCallback="true">
+            android:enableOnBackInvokedCallback="true"
+            android:configChanges="
+                orientation|
+                keyboardHidden|
+                keyboard|
+                screenSize|
+                smallestScreenSize|
+                locale|
+                layoutDirection|
+                fontScale|
+                screenLayout|
+                density|
+                uiMode">
 
+            <!-- Flutter normal theme -->
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme"/>
 
+            <!-- App launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -54,6 +74,7 @@
 
         </activity>
 
+        <!-- Flutter embedding v2 -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>

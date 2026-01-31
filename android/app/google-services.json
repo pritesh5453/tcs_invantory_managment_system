@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "825785474150",
+    "project_id": "tcs-inventory-703dd",
+    "storage_bucket": "tcs-inventory-703dd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:825785474150:android:6ef79d10ae2e6f6c9da1a7",
+        "android_client_info": {
+          "package_name": "com.example.tcs"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQlf4IbPVenD3MVDqSkk5QM0JY50Krv-w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

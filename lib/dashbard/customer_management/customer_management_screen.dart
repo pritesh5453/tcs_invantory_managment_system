@@ -43,7 +43,7 @@ class Customer {
 class CustomerApi {
   static final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in",
+      baseUrl: "https://dashboarduat.theceramicstudio.in",
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
     ),

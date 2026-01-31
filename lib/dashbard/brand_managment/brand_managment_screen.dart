@@ -1,12 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 
+/// ================= MODEL =================
 class Brand {
-  String name;
-  bool isAvailable;
+  final int id;
+  final String name;
+  final String status;
 
-  Brand({required this.name, required this.isAvailable});
+  Brand({required this.id, required this.name, required this.status});
+
+  bool get isAvailable => status == "Available";
+
+  factory Brand.fromJson(Map<String, dynamic> json) {
+    return Brand(id: json['id'], name: json['name'], status: json['status']);
+  }
 }
 
+/// ================= SCREEN =================
 class BrandManagementScreen extends StatefulWidget {
   const BrandManagementScreen({super.key});
 
@@ -15,16 +25,42 @@ class BrandManagementScreen extends StatefulWidget {
 }
 
 class _BrandManagementScreenState extends State<BrandManagementScreen> {
-  List<Brand> brands = [
-    Brand(name: "New Product 01", isAvailable: true),
-    Brand(name: "New Product 02", isAvailable: false),
-  ];
+  final Dio dio = Dio(
+    BaseOptions(
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api/brands",
+      headers: {"Content-Type": "application/json"},
+    ),
+  );
 
-  /// 🔹 OPEN ADD / EDIT SHEET
-  void openBrandSheet({Brand? brand, int? index}) {
-    final nameController = TextEditingController(
-      text: brand != null ? brand.name : "",
-    );
+  bool loading = false;
+  List<Brand> brands = [];
+
+  @override
+  void initState() {
+    super.initState();
+    fetchBrands();
+  }
+
+  /// ================= LIST API =================
+  Future<void> fetchBrands() async {
+    setState(() => loading = true);
+    try {
+      final res = await dio.get(
+        "/list",
+        queryParameters: {"page": 1, "limit": 10},
+      );
+
+      final List list = res.data['brands'];
+      brands = list.map((e) => Brand.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint(e.toString());
+    }
+    setState(() => loading = false);
+  }
+
+  /// ================= ADD / EDIT SHEET =================
+  void openBrandSheet({Brand? brand}) {
+    final nameController = TextEditingController(text: brand?.name ?? "");
     bool isAvailable = brand?.isAvailable ?? true;
 
     showModalBottomSheet(
@@ -82,11 +118,11 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
                       DropdownMenuItem(value: true, child: Text("Available")),
                       DropdownMenuItem(
                         value: false,
-                        child: Text("Not Available"),
+                        child: Text("Unavailable"),
                       ),
                     ],
-                    onChanged: (value) {
-                      setModalState(() => isAvailable = value!);
+                    onChanged: (v) {
+                      setModalState(() => isAvailable = v!);
                     },
                     decoration: const InputDecoration(
                       labelText: "Availability Status",
@@ -106,27 +142,18 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
                           borderRadius: BorderRadius.circular(20),
                         ),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
                         if (brand == null) {
-                          // ADD
-                          setState(() {
-                            brands.add(
-                              Brand(
-                                name: nameController.text,
-                                isAvailable: isAvailable,
-                              ),
-                            );
-                          });
+                          await createBrand(nameController.text, isAvailable);
                         } else {
-                          // EDIT
-                          setState(() {
-                            brands[index!] = Brand(
-                              name: nameController.text,
-                              isAvailable: isAvailable,
-                            );
-                          });
+                          await updateBrand(
+                            brand.id,
+                            nameController.text,
+                            isAvailable,
+                          );
                         }
                         Navigator.pop(context);
+                        fetchBrands();
                       },
                       child: const Text("Save"),
                     ),
@@ -140,8 +167,24 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
     );
   }
 
-  /// 🔹 DELETE BRAND
-  void deleteBrand(int index) {
+  /// ================= CREATE API =================
+  Future<void> createBrand(String name, bool isAvailable) async {
+    await dio.post(
+      "/create",
+      data: {"name": name, "status": isAvailable ? "Available" : "Unavailable"},
+    );
+  }
+
+  /// ================= UPDATE API =================
+  Future<void> updateBrand(int id, String name, bool isAvailable) async {
+    await dio.put(
+      "/update/$id",
+      data: {"name": name, "status": isAvailable ? "Available" : "Unavailable"},
+    );
+  }
+
+  /// ================= DELETE API =================
+  void deleteBrand(int id) {
     showDialog(
       context: context,
       builder:
@@ -154,9 +197,10 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
                 child: const Text("Cancel"),
               ),
               TextButton(
-                onPressed: () {
-                  setState(() => brands.removeAt(index));
+                onPressed: () async {
                   Navigator.pop(context);
+                  await dio.delete("/delete/$id");
+                  fetchBrands();
                 },
                 child: const Text(
                   "Delete",
@@ -168,15 +212,15 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
     );
   }
 
+  /// ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xffF6F6F6),
-
       body: SafeArea(
         child: Column(
           children: [
-            /// 🔶 TOP BAR
+            /// TOP BAR
             Container(
               padding: const EdgeInsets.all(16),
               decoration: const BoxDecoration(
@@ -210,9 +254,7 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
                   ),
                   const SizedBox(width: 12),
                   InkWell(
-                    onTap: () {
-                      openBrandSheet(); // 👈 add brand sheet उघडायला
-                    },
+                    onTap: () => openBrandSheet(),
                     child: Container(
                       height: 44,
                       width: 44,
@@ -227,20 +269,26 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
               ),
             ),
 
-            /// 🔶 LIST
+            /// LIST
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: brands.length,
-                itemBuilder: (context, index) {
-                  final brand = brands[index];
-                  return BrandCard(
-                    brand: brand,
-                    onEdit: () => openBrandSheet(brand: brand, index: index),
-                    onDelete: () => deleteBrand(index),
-                  );
-                },
-              ),
+              child:
+                  loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : RefreshIndicator(
+                        onRefresh: fetchBrands,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: brands.length,
+                          itemBuilder: (context, index) {
+                            final brand = brands[index];
+                            return BrandCard(
+                              brand: brand,
+                              onEdit: () => openBrandSheet(brand: brand),
+                              onDelete: () => deleteBrand(brand.id),
+                            );
+                          },
+                        ),
+                      ),
             ),
           ],
         ),
@@ -249,6 +297,7 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
   }
 }
 
+/// ================= CARD =================
 class BrandCard extends StatelessWidget {
   final Brand brand;
   final VoidCallback onEdit;
@@ -285,7 +334,7 @@ class BrandCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              brand.isAvailable ? "Available" : "Not Available",
+              brand.isAvailable ? "Available" : "Unavailable",
               style: TextStyle(
                 fontSize: 12,
                 color: brand.isAvailable ? Colors.green : Colors.red,

@@ -1,5 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'add_new_supplier.dart';
+
+/// ================= MODEL =================
+class Supplier {
+  final int id;
+  final String name;
+  final String mobile;
+
+  Supplier({required this.id, required this.name, required this.mobile});
+
+  factory Supplier.fromJson(Map<String, dynamic> json) {
+    return Supplier(
+      id: json['id'],
+      name: json['name'],
+      mobile: json['mobile'].toString(),
+    );
+  }
+}
 
 class SupplierManagementScreen extends StatefulWidget {
   const SupplierManagementScreen({super.key});
@@ -10,10 +28,75 @@ class SupplierManagementScreen extends StatefulWidget {
 }
 
 class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
-  List<Map<String, String>> suppliers = [
-    {"name": "Pritesh Pawar", "mobile": "+91 8552011102"},
-    {"name": "Pritesh Pawar", "mobile": "+91 8552011102"},
-  ];
+  final Dio dio = Dio(
+    BaseOptions(
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api/suppliers",
+      headers: {"Content-Type": "application/json"},
+    ),
+  );
+
+  bool loading = false;
+  List<Supplier> suppliers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    fetchSuppliers();
+  }
+
+  /// ================= GET LIST API =================
+  Future<void> fetchSuppliers() async {
+    setState(() => loading = true);
+    try {
+      final res = await dio.get(
+        "/list",
+        queryParameters: {"page": 1, "limit": 10},
+      );
+
+      final List list = res.data['suppliers'];
+      suppliers = list.map((e) => Supplier.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint(e.toString());
+    }
+    setState(() => loading = false);
+  }
+
+  /// ================= DELETE API =================
+  void deleteSupplier(int id) {
+    showDialog(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text("Delete Supplier"),
+            content: const Text(
+              "Are you sure you want to delete this supplier?",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel"),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await dio.delete("/delete/$id");
+                  fetchSuppliers();
+                },
+                child: const Text(
+                  "Delete",
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+            ],
+          ),
+    );
+  }
+
+  /// ================= UPDATE API =================
+  Future<void> updateSupplier(int id, String name, String mobile) async {
+    await dio.put("/update/$id", data: {"name": name, "mobile": mobile});
+    fetchSuppliers();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,9 +105,9 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            /// 🔶 HEADER
+            /// 🔶 HEADER (UNCHANGED)
             Container(
-              height: 120, // ⭐ IMPORTANT FIX
+              height: 120,
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
               decoration: const BoxDecoration(
                 color: Color(0xffFFA54A),
@@ -38,7 +121,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      /// 🔍 SEARCH BAR
+                      /// 🔍 SEARCH BAR (UI ONLY)
                       Expanded(
                         child: Container(
                           height: 46,
@@ -61,7 +144,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
                       ),
                       const SizedBox(width: 12),
 
-                      /// ➕ ADD BUTTON
+                      /// ➕ ADD BUTTON (UNCHANGED)
                       InkWell(
                         onTap: () {
                           Navigator.push(
@@ -69,7 +152,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
                             MaterialPageRoute(
                               builder: (_) => const AddNewSupplierScreen(),
                             ),
-                          );
+                          ).then((_) => fetchSuppliers());
                         },
                         borderRadius: BorderRadius.circular(14),
                         child: Container(
@@ -96,43 +179,47 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
 
             /// 📋 SUPPLIER LIST
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: suppliers.length,
-                itemBuilder: (context, index) {
-                  final supplier = suppliers[index];
-                  return SupplierCard(
-                    index: index + 1,
-                    name: supplier["name"]!,
-                    mobile: supplier["mobile"]!,
-                    onEdit: () async {
-                      final updatedSupplier =
-                          await Navigator.push<Map<String, String>>(
-                            context,
-                            MaterialPageRoute(
-                              builder:
-                                  (_) => EditSupplierScreen(
-                                    index: index + 1,
-                                    name: supplier["name"]!,
-                                    mobile: supplier["mobile"]!,
-                                  ),
-                            ),
-                          );
+              child:
+                  loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : RefreshIndicator(
+                        onRefresh: fetchSuppliers,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          itemCount: suppliers.length,
+                          itemBuilder: (context, index) {
+                            final supplier = suppliers[index];
+                            return SupplierCard(
+                              index: index + 1,
+                              name: supplier.name,
+                              mobile: supplier.mobile,
+                              onEdit: () async {
+                                final updatedSupplier =
+                                    await Navigator.push<Map<String, String>>(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (_) => EditSupplierScreen(
+                                              id: supplier.id,
+                                              name: supplier.name,
+                                              mobile: supplier.mobile,
+                                            ),
+                                      ),
+                                    );
 
-                      if (updatedSupplier != null) {
-                        setState(() {
-                          suppliers[index] = updatedSupplier;
-                        });
-                      }
-                    },
-                    onDelete: () {
-                      setState(() {
-                        suppliers.removeAt(index);
-                      });
-                    },
-                  );
-                },
-              ),
+                                if (updatedSupplier != null) {
+                                  await updateSupplier(
+                                    supplier.id,
+                                    updatedSupplier["name"]!,
+                                    updatedSupplier["mobile"]!,
+                                  );
+                                }
+                              },
+                              onDelete: () => deleteSupplier(supplier.id),
+                            );
+                          },
+                        ),
+                      ),
             ),
           ],
         ),
@@ -141,7 +228,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
   }
 }
 
-/// 🧾 SUPPLIER CARD
+/// ================= SUPPLIER CARD =================
 class SupplierCard extends StatelessWidget {
   final int index;
   final String name;
@@ -225,15 +312,15 @@ class SupplierCard extends StatelessWidget {
   }
 }
 
-/// ✏️ EDIT SUPPLIER SCREEN
+/// ================= EDIT SUPPLIER SCREEN =================
 class EditSupplierScreen extends StatelessWidget {
-  final int index;
+  final int id;
   final String name;
   final String mobile;
 
   const EditSupplierScreen({
     super.key,
-    required this.index,
+    required this.id,
     required this.name,
     required this.mobile,
   });
@@ -290,6 +377,7 @@ class EditSupplierScreen extends StatelessWidget {
               const SizedBox(height: 6),
               TextField(
                 controller: mobileController,
+                keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),

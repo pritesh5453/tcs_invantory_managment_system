@@ -1,54 +1,103 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 
 /// ================= MODEL =================
 class Quality {
-  final String id;
+  final int id;
   final String name;
-  final bool isAvailable;
+  final String status;
 
-  Quality({required this.id, required this.name, required this.isAvailable});
+  Quality({required this.id, required this.name, required this.status});
 
-  Quality copyWith({String? name, bool? isAvailable}) {
+  bool get isAvailable => status == "Available";
+
+  factory Quality.fromJson(Map<String, dynamic> json) {
+    return Quality(id: json['id'], name: json['name'], status: json['status']);
+  }
+
+  Quality copyWith({String? name, String? status}) {
     return Quality(
       id: id,
       name: name ?? this.name,
-      isAvailable: isAvailable ?? this.isAvailable,
+      status: status ?? this.status,
     );
   }
 }
 
+/// ================= DIO CLIENT =================
+final dioProvider = Provider<Dio>((ref) {
+  return Dio(
+    BaseOptions(
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api/qualities",
+      headers: {"Content-Type": "application/json"},
+    ),
+  );
+});
+
 /// ================= PROVIDER =================
-final qualityProvider = StateNotifierProvider<QualityNotifier, List<Quality>>(
-  (ref) => QualityNotifier(),
-);
+final qualityProvider =
+    StateNotifierProvider<QualityNotifier, AsyncValue<List<Quality>>>(
+      (ref) => QualityNotifier(ref),
+    );
 
-class QualityNotifier extends StateNotifier<List<Quality>> {
-  QualityNotifier()
-    : super([
-        Quality(id: "01", name: "New Product 01", isAvailable: true),
-        Quality(id: "02", name: "New Product 02", isAvailable: false),
-        Quality(id: "03", name: "New Product 03", isAvailable: true),
-      ]);
+class QualityNotifier extends StateNotifier<AsyncValue<List<Quality>>> {
+  final Ref ref;
 
-  void add(Quality q) => state = [...state, q];
-
-  void update(Quality q) {
-    state = [
-      for (final e in state)
-        if (e.id == q.id) q else e,
-    ];
+  QualityNotifier(this.ref) : super(const AsyncLoading()) {
+    fetchQualities();
   }
 
-  void delete(String id) {
-    state = state.where((e) => e.id != id).toList();
+  Dio get dio => ref.read(dioProvider);
+
+  /// ---------- LIST ----------
+  Future<void> fetchQualities() async {
+    try {
+      final res = await dio.get(
+        "/list",
+        queryParameters: {"page": 1, "limit": 10},
+      );
+
+      final List data = res.data['qualities'];
+      state = AsyncData(data.map((e) => Quality.fromJson(e)).toList());
+    } catch (e, st) {
+      state = AsyncError(e, st);
+    }
   }
 
-  void toggle(String id, bool value) {
-    state = [
-      for (final e in state)
-        if (e.id == id) e.copyWith(isAvailable: value) else e,
-    ];
+  /// ---------- CREATE ----------
+  Future<void> createQuality(String name) async {
+    await dio.post(
+      "/create",
+      data: {
+        "name": name,
+        "status": "Available",
+        "createdAt": DateTime.now().toIso8601String(),
+      },
+    );
+    fetchQualities();
+  }
+
+  /// ---------- UPDATE ----------
+  Future<void> updateQuality(Quality q) async {
+    await dio.put(
+      "/update/${q.id}",
+      data: {"name": q.name, "status": q.status},
+    );
+    fetchQualities();
+  }
+
+  /// ---------- DELETE ----------
+  Future<void> deleteQuality(int id) async {
+    await dio.delete("/delete/$id");
+    fetchQualities();
+  }
+
+  /// ---------- TOGGLE STATUS ----------
+  Future<void> toggleStatus(Quality q, bool value) async {
+    await updateQuality(
+      q.copyWith(status: value ? "Available" : "unAvailable"),
+    );
   }
 }
 
@@ -58,13 +107,13 @@ class QualityManagementScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final list = ref.watch(qualityProvider);
+    final state = ref.watch(qualityProvider);
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       body: Column(
         children: [
-          /// TOP BAR
+          /// TOP BAR (UI SAME)
           Container(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
             decoration: const BoxDecoration(
@@ -117,10 +166,21 @@ class QualityManagementScreen extends ConsumerWidget {
 
           /// LIST
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: list.length,
-              itemBuilder: (_, i) => QualityCard(q: list[i]),
+            child: state.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text(e.toString())),
+              data:
+                  (list) => RefreshIndicator(
+                    onRefresh: () async {
+                      await ref.read(qualityProvider.notifier).fetchQualities();
+                    },
+                    child: ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      itemCount: list.length,
+                      itemBuilder: (_, i) => QualityCard(q: list[i]),
+                    ),
+                  ),
             ),
           ),
         ],
@@ -147,12 +207,12 @@ class QualityCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          /// STATUS + 3 DOT MENU
+          /// STATUS + MENU
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Chip(
-                label: Text(q.isAvailable ? "Available" : "Unavailable"),
+                label: Text(q.status),
                 backgroundColor:
                     q.isAvailable
                         ? const Color(0xFFE6F7E6)
@@ -162,42 +222,23 @@ class QualityCard extends ConsumerWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-
-              /// 3 DOT MENU
               PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert),
-                onSelected: (value) {
-                  if (value == 'available') {
-                    ref.read(qualityProvider.notifier).toggle(q.id, true);
-                  } else if (value == 'unavailable') {
-                    ref.read(qualityProvider.notifier).toggle(q.id, false);
+                onSelected: (v) {
+                  if (v == "available") {
+                    ref.read(qualityProvider.notifier).toggleStatus(q, true);
+                  } else {
+                    ref.read(qualityProvider.notifier).toggleStatus(q, false);
                   }
                 },
                 itemBuilder:
-                    (context) => const [
+                    (_) => const [
                       PopupMenuItem(
-                        value: 'available',
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.check_circle,
-                              color: Colors.green,
-                              size: 18,
-                            ),
-                            SizedBox(width: 8),
-                            Text("Available"),
-                          ],
-                        ),
+                        value: "available",
+                        child: Text("Available"),
                       ),
                       PopupMenuItem(
-                        value: 'unavailable',
-                        child: Row(
-                          children: [
-                            Icon(Icons.cancel, color: Colors.red, size: 18),
-                            SizedBox(width: 8),
-                            Text("Unavailable"),
-                          ],
-                        ),
+                        value: "unavailable",
+                        child: Text("Unavailable"),
                       ),
                     ],
               ),
@@ -209,7 +250,7 @@ class QualityCard extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _info("Quality Id", q.id),
+              _info("Quality Id", q.id.toString()),
               _info("Standard Name", q.name),
             ],
           ),
@@ -241,7 +282,7 @@ class QualityCard extends ConsumerWidget {
                     side: const BorderSide(color: Colors.red),
                   ),
                   onPressed: () {
-                    ref.read(qualityProvider.notifier).delete(q.id);
+                    ref.read(qualityProvider.notifier).deleteQuality(q.id);
                   },
                 ),
               ),
@@ -313,21 +354,15 @@ class _QualityPopupState extends ConsumerState<QualityPopup> {
                   borderRadius: BorderRadius.circular(30),
                 ),
               ),
-              onPressed: () {
+              onPressed: () async {
                 if (isEdit) {
-                  ref
+                  await ref
                       .read(qualityProvider.notifier)
-                      .update(widget.edit!.copyWith(name: ctrl.text));
+                      .updateQuality(widget.edit!.copyWith(name: ctrl.text));
                 } else {
-                  ref
+                  await ref
                       .read(qualityProvider.notifier)
-                      .add(
-                        Quality(
-                          id: DateTime.now().millisecondsSinceEpoch.toString(),
-                          name: ctrl.text,
-                          isAvailable: true,
-                        ),
-                      );
+                      .createQuality(ctrl.text);
                 }
                 Navigator.pop(context);
               },

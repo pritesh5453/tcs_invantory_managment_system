@@ -11,9 +11,11 @@ import 'package:tcs_invantory_managment_system/dashbard/customer_management/cust
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/dashboard_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/dilivery_chalan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/employee_managment/employee_managment_screen.dart';
+import 'package:tcs_invantory_managment_system/dashbard/orderbook/orderbook.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/Product_Management.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quality_managment/quality_managment_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/quotation.dart';
+import 'package:tcs_invantory_managment_system/dashbard/reports/reports_screen.dart';
 
 class HomeWithAnimatedDrawer extends StatefulWidget {
   const HomeWithAnimatedDrawer({super.key});
@@ -196,6 +198,10 @@ class MainScreenWidget extends StatelessWidget {
         return Quontation_home_screen();
       case "Delivery Challan":
         return DeliveryChalanScreen();
+      case "Reports":
+        return AdvanceAnalyticsScreen();
+      case "Order Book":
+        return OrderBookManagementScreen();
 
       default:
         return Center(

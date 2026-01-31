@@ -1,189 +1,175 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 
 class EditArchitectScreen extends StatefulWidget {
   final bool isEdit;
-  const EditArchitectScreen({super.key, this.isEdit = false});
+  final int architectId;
+
+  final String firstname;
+  final String lastname;
+  final String whatsapp;
+  final int commission;
+  final String birthdate;
+  final String remark;
+
+  const EditArchitectScreen({
+    super.key,
+    this.isEdit = false,
+    required this.architectId,
+    required this.firstname,
+    required this.lastname,
+    required this.whatsapp,
+    required this.commission,
+    required this.birthdate,
+    required this.remark,
+  });
 
   @override
-  State<EditArchitectScreen> createState() => _EditArchitectScreen();
+  State<EditArchitectScreen> createState() => _EditArchitectScreenState();
 }
 
-class _EditArchitectScreen extends State<EditArchitectScreen> {
-  final TextEditingController dobController = TextEditingController();
+class _EditArchitectScreenState extends State<EditArchitectScreen> {
+  late TextEditingController firstNameCtrl;
+  late TextEditingController lastNameCtrl;
+  late TextEditingController whatsappCtrl;
+  late TextEditingController commissionCtrl;
+  late TextEditingController dobController;
+  late TextEditingController remarkCtrl;
+
+  bool loading = false;
+
+  final Dio dio = Dio(
+    BaseOptions(
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api/architects",
+      headers: {"Content-Type": "application/json"},
+    ),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    firstNameCtrl = TextEditingController(text: widget.firstname);
+    lastNameCtrl = TextEditingController(text: widget.lastname);
+    whatsappCtrl = TextEditingController(text: widget.whatsapp);
+    commissionCtrl = TextEditingController(text: widget.commission.toString());
+    dobController = TextEditingController(
+      text: widget.birthdate.substring(0, 10),
+    );
+    remarkCtrl = TextEditingController(text: widget.remark);
+  }
+
+  /// ================= UPDATE API =================
+  Future<void> updateArchitect() async {
+    setState(() => loading = true);
+    try {
+      await dio.put(
+        "/update/${widget.architectId}",
+        data: {
+          "firstname": firstNameCtrl.text,
+          "lastname": lastNameCtrl.text,
+          "whatsapp": whatsappCtrl.text,
+          "remark": remarkCtrl.text,
+          "commission": int.parse(commissionCtrl.text),
+          "birthdate": widget.birthdate,
+          "createdAt": DateTime.now().toIso8601String(),
+        },
+      );
+
+      Navigator.pop(context, true); // 👈 success
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+    setState(() => loading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Stack(
-          children: [
-            Container(color: const Color(0xFFFA9C42)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.person, color: Colors.purple),
+                  const SizedBox(width: 12),
+                  const Text(
+                    "Edit Architect",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.red),
+                  ),
+                ],
+              ),
 
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Colors.white),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.person_add_alt,
-                                color: Colors.purple,
-                              ),
-                              const SizedBox(width: 20),
-                              Text(
-                                widget.isEdit
-                                    ? "Edit Architect"
-                                    : "Add Architect",
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          InkWell(
-                            onTap: () => Navigator.pop(context),
-                            child: const Icon(Icons.close, color: Colors.red),
-                          ),
-                        ],
-                      ),
+              const SizedBox(height: 20),
 
-                      const SizedBox(height: 20),
+              _field("First Name", firstNameCtrl),
+              _field("Last Name", lastNameCtrl),
+              _field("Whatsapp", whatsappCtrl, type: TextInputType.phone),
+              _field(
+                "Commission (%)",
+                commissionCtrl,
+                type: TextInputType.number,
+              ),
+              _field("Remarks", remarkCtrl, max: 3),
 
-                      _label("Employee Name"),
-                      Row(
-                        children: [
-                          Expanded(child: _textField("First name")),
-                          const SizedBox(width: 10),
-                          Expanded(child: _textField("Last name")),
-                        ],
-                      ),
+              const Spacer(),
 
-                      const SizedBox(height: 14),
-
-                      _label("Whatsapp No"),
-                      _textField("Enter Number..."),
-
-                      const SizedBox(height: 14),
-
-                      _label("Commission (%)"),
-                      _textField("%"),
-
-                      const SizedBox(height: 14),
-
-                      _label("Date Of Birth"),
-                      TextField(
-                        controller: dobController,
-                        readOnly: true,
-                        onTap: () async {
-                          DateTime? picked = await showDatePicker(
-                            context: context,
-                            initialDate: DateTime(2000),
-                            firstDate: DateTime(1950),
-                            lastDate: DateTime.now(),
-                          );
-                          if (picked != null) {
-                            dobController.text =
-                                "${picked.day.toString().padLeft(2, '0')}/"
-                                "${picked.month.toString().padLeft(2, '0')}/"
-                                "${picked.year}";
-                          }
-                        },
-                        decoration: _inputDecoration(
-                          "DD/MM/YYYY",
-                          icon: Icons.calendar_month,
-                        ),
-                      ),
-
-                      const SizedBox(height: 14),
-
-                      _label("Loyalty Points"),
-                      _textField("Enter Number..."),
-
-                      const SizedBox(height: 14),
-
-                      _label("Internal Remarks"),
-                      TextField(
-                        maxLines: 3,
-                        decoration: _inputDecoration(
-                          "Add internal notes for team reference only...",
-                        ),
-                      ),
-
-                      const SizedBox(height: 22),
-
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.pop(context),
-                              style: OutlinedButton.styleFrom(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                              ),
-                              child: const Text("Discard"),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () {},
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFFFA44D),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                              ),
-                              child: Text(
-                                widget.isEdit
-                                    ? "Update Architect"
-                                    : "Save Architect",
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+              ElevatedButton(
+                onPressed: loading ? null : updateArchitect,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFFA44D),
+                  minimumSize: const Size(double.infinity, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
                   ),
                 ),
+                child:
+                    loading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text("Update Architect"),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _label(String text) {
+  Widget _field(
+    String label,
+    TextEditingController ctrl, {
+    TextInputType type = TextInputType.text,
+    int max = 1,
+  }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold)),
-    );
-  }
-
-  //  TextField
-  Widget _textField(String hint) {
-    return TextField(decoration: _inputDecoration(hint));
-  }
-
-  InputDecoration _inputDecoration(String hint, {IconData? icon}) {
-    return InputDecoration(
-      hintText: hint,
-      suffixIcon: icon != null ? Icon(icon) : null,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: ctrl,
+            keyboardType: type,
+            maxLines: max,
+            decoration: InputDecoration(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

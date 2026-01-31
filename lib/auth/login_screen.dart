@@ -24,7 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in",
+      baseUrl: "https://dashboarduat.theceramicstudio.in",
       headers: {"Content-Type": "application/json"},
     ),
   );

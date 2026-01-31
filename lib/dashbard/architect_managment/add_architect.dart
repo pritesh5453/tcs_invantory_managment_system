@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 
 class AddArchitectScreen extends StatefulWidget {
   final bool isEdit;
@@ -9,7 +10,61 @@ class AddArchitectScreen extends StatefulWidget {
 }
 
 class _AddArchitectScreenState extends State<AddArchitectScreen> {
+  final TextEditingController firstNameCtrl = TextEditingController();
+  final TextEditingController lastNameCtrl = TextEditingController();
+  final TextEditingController whatsappCtrl = TextEditingController();
+  final TextEditingController commissionCtrl = TextEditingController();
   final TextEditingController dobController = TextEditingController();
+  final TextEditingController remarkCtrl = TextEditingController();
+
+  bool loading = false;
+  DateTime? selectedDob;
+
+  final Dio dio = Dio(
+    BaseOptions(
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api/architects",
+      headers: {"Content-Type": "application/json"},
+    ),
+  );
+
+  /// ================= CREATE API =================
+  Future<void> createArchitect() async {
+    if (firstNameCtrl.text.isEmpty ||
+        lastNameCtrl.text.isEmpty ||
+        whatsappCtrl.text.isEmpty ||
+        commissionCtrl.text.isEmpty ||
+        selectedDob == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please fill all required fields")),
+      );
+      return;
+    }
+
+    setState(() => loading = true);
+
+    try {
+      await dio.post(
+        "/create",
+        data: {
+          "firstname": firstNameCtrl.text,
+          "lastname": lastNameCtrl.text,
+          "whatsapp": whatsappCtrl.text,
+          "commission": commissionCtrl.text,
+          "birthdate":
+              "${selectedDob!.year}-${selectedDob!.month.toString().padLeft(2, '0')}-${selectedDob!.day.toString().padLeft(2, '0')}",
+          "remark": remarkCtrl.text,
+        },
+      );
+
+      Navigator.pop(context, true); // 👈 success → refresh list
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+
+    setState(() => loading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,10 +73,9 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-
             Container(color: const Color(0xFFFA9C42)),
 
-            // 🔳 White Card
+            /// 🔳 White Card
             Positioned(
               top: 0,
               left: 0,
@@ -29,10 +83,7 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
               bottom: 0,
               child: Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-
-                ),
+                decoration: const BoxDecoration(color: Colors.white),
                 child: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -42,8 +93,7 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
                         children: [
                           Row(
                             children: const [
-                              Icon(Icons.person_add_alt,
-                                  color: Colors.purple),
+                              Icon(Icons.person_add_alt, color: Colors.purple),
                               SizedBox(width: 20),
                               Text(
                                 "Add Architect",
@@ -56,8 +106,7 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
                           ),
                           InkWell(
                             onTap: () => Navigator.pop(context),
-                            child:
-                            const Icon(Icons.close, color: Colors.red),
+                            child: const Icon(Icons.close, color: Colors.red),
                           ),
                         ],
                       ),
@@ -67,21 +116,33 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
                       _label("Employee Name"),
                       Row(
                         children: [
-                          Expanded(child: _textField("First name")),
+                          Expanded(
+                            child: _textField("First name", firstNameCtrl),
+                          ),
                           const SizedBox(width: 10),
-                          Expanded(child: _textField("Last name")),
+                          Expanded(
+                            child: _textField("Last name", lastNameCtrl),
+                          ),
                         ],
                       ),
 
                       const SizedBox(height: 14),
 
                       _label("Whatsapp No"),
-                      _textField("Enter Number..."),
+                      _textField(
+                        "Enter Number...",
+                        whatsappCtrl,
+                        type: TextInputType.phone,
+                      ),
 
                       const SizedBox(height: 14),
 
                       _label("Commission (%)"),
-                      _textField("%"),
+                      _textField(
+                        "%",
+                        commissionCtrl,
+                        type: TextInputType.number,
+                      ),
 
                       const SizedBox(height: 14),
 
@@ -97,8 +158,9 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
                             lastDate: DateTime.now(),
                           );
                           if (picked != null) {
+                            selectedDob = picked;
                             dobController.text =
-                            "${picked.day.toString().padLeft(2, '0')}/"
+                                "${picked.day.toString().padLeft(2, '0')}/"
                                 "${picked.month.toString().padLeft(2, '0')}/"
                                 "${picked.year}";
                           }
@@ -111,13 +173,9 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
 
                       const SizedBox(height: 14),
 
-                      _label("Loyalty Points"),
-                      _textField("Enter Number..."),
-
-                      const SizedBox(height: 14),
-
                       _label("Internal Remarks"),
                       TextField(
+                        controller: remarkCtrl,
                         maxLines: 3,
                         decoration: _inputDecoration(
                           "Add internal notes for team reference only...",
@@ -130,12 +188,10 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
                         children: [
                           Expanded(
                             child: OutlinedButton(
-                              onPressed: () =>
-                                  Navigator.pop(context),
+                              onPressed: () => Navigator.pop(context),
                               style: OutlinedButton.styleFrom(
                                 shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                  BorderRadius.circular(30),
+                                  borderRadius: BorderRadius.circular(30),
                                 ),
                               ),
                               child: const Text("Discard"),
@@ -144,17 +200,24 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: ElevatedButton(
-                              onPressed: () {},
+                              onPressed: loading ? null : createArchitect,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                const Color(0xFFFFA44D),
+                                backgroundColor: const Color(0xFFFFA44D),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                  BorderRadius.circular(30),
+                                  borderRadius: BorderRadius.circular(30),
                                 ),
                               ),
                               child:
-                              const Text("Save Architect"),
+                                  loading
+                                      ? const SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                      : const Text("Save Architect"),
                             ),
                           ),
                         ],
@@ -170,30 +233,30 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
     );
   }
 
-
   Widget _label(String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Text(text,
-          style: const TextStyle(fontWeight: FontWeight.bold)),
+      child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold)),
     );
   }
 
-  //  TextField
-  Widget _textField(String hint) {
+  Widget _textField(
+    String hint,
+    TextEditingController ctrl, {
+    TextInputType type = TextInputType.text,
+  }) {
     return TextField(
+      controller: ctrl,
+      keyboardType: type,
       decoration: _inputDecoration(hint),
     );
   }
 
-  InputDecoration _inputDecoration(String hint,
-      {IconData? icon}) {
+  InputDecoration _inputDecoration(String hint, {IconData? icon}) {
     return InputDecoration(
       hintText: hint,
       suffixIcon: icon != null ? Icon(icon) : null,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
     );
   }
 }

@@ -1,18 +1,265 @@
 import 'package:flutter/material.dart';
-import 'package:tcs_invantory_managment_system/dashbard/architect_managment/add_architect.dart';
-import 'package:tcs_invantory_managment_system/dashbard/architect_managment/edit_architect.dart';
+import 'package:dio/dio.dart';
+import 'add_architect.dart';
+import 'edit_architect.dart';
 
-class ArchitectManagementScreen extends StatelessWidget {
+/// ================= ARCHITECT MODEL =================
+class Architect {
+  final int id;
+  final String firstname;
+  final String lastname;
+  final String whatsapp;
+  final int commission;
+  final String birthdate;
+
+  Architect({
+    required this.id,
+    required this.firstname,
+    required this.lastname,
+    required this.whatsapp,
+    required this.commission,
+    required this.birthdate,
+  });
+
+  factory Architect.fromJson(Map<String, dynamic> json) {
+    return Architect(
+      id: json['id'],
+      firstname: json['firstname'] ?? "",
+      lastname: json['lastname'] ?? "",
+      whatsapp: json['whatsapp'] ?? "",
+      commission: json['commission'] ?? 0,
+      birthdate: json['birthdate'] ?? "",
+    );
+  }
+}
+
+/// ================= CLIENT MODEL =================
+class Client {
+  final int id;
+  final String name;
+  final String lastName;
+  final String phone;
+  final String altPhone;
+  final String email;
+
+  Client({
+    required this.id,
+    required this.name,
+    required this.lastName,
+    required this.phone,
+    required this.altPhone,
+    required this.email,
+  });
+
+  factory Client.fromJson(Map<String, dynamic> json) {
+    return Client(
+      id: json['id'],
+      name: json['name'] ?? "",
+      lastName: json['Last_Name'] ?? "",
+      phone: json['phone'] ?? "",
+      altPhone: json['altphone'] ?? "",
+      email: json['email'] ?? "",
+    );
+  }
+}
+
+/// ================= SCREEN =================
+class ArchitectManagementScreen extends StatefulWidget {
   const ArchitectManagementScreen({super.key});
 
+  @override
+  State<ArchitectManagementScreen> createState() =>
+      _ArchitectManagementScreenState();
+}
+
+class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
+  final Dio dio = Dio(
+    BaseOptions(
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api/architects",
+      headers: {"Content-Type": "application/json"},
+    ),
+  );
+
+  bool loading = false;
+  List<Architect> architects = [];
+
+  @override
+  void initState() {
+    super.initState();
+    fetchArchitects();
+  }
+
+  /// ================= GET ARCHITECTS =================
+  Future<void> fetchArchitects() async {
+    setState(() => loading = true);
+    try {
+      final res = await dio.get("/list");
+      architects =
+          (res.data['architects'] as List)
+              .map((e) => Architect.fromJson(e))
+              .toList();
+    } catch (e) {
+      debugPrint("Fetch error: $e");
+    }
+    setState(() => loading = false);
+  }
+
+  /// ================= DELETE ARCHITECT =================
+  Future<void> deleteArchitect(int id) async {
+    await dio.delete("/delete/$id");
+    fetchArchitects();
+  }
+
+  void confirmDelete(int id) {
+    showDialog(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text("Delete Architect"),
+            content: const Text(
+              "Are you sure you want to delete this architect?",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel"),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  deleteArchitect(id);
+                },
+                child: const Text(
+                  "Delete",
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+            ],
+          ),
+    );
+  }
+
+  /// ================= CLIENT POPUP =================
+  void showClientPopup(int architectId) {
+    showDialog(
+      context: context,
+      builder: (_) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: SizedBox(
+            height: 420,
+            child: FutureBuilder(
+              future: dio.get("/getCustomersById/$architectId"),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final List data = snapshot.data?.data['customers'] ?? [];
+
+                if (data.isEmpty) {
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Icon(Icons.people_outline, size: 50, color: Colors.grey),
+                      SizedBox(height: 10),
+                      Text("No clients found"),
+                    ],
+                  );
+                }
+
+                final clients = data.map((e) => Client.fromJson(e)).toList();
+
+                return Column(
+                  children: [
+                    /// HEADER
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "Clients (${clients.length})",
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => Navigator.pop(context),
+                            child: const Icon(Icons.close, color: Colors.red),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+
+                    /// CLIENT LIST
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: clients.length,
+                        itemBuilder: (_, i) {
+                          final c = clients[i];
+                          return Container(
+                            margin: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Name : ${c.name} ${c.lastName}",
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                if (c.email.isNotEmpty)
+                                  Text(
+                                    "Email : ${c.email}",
+                                    style: const TextStyle(fontSize: 12.5),
+                                  ),
+                                if (c.phone.isNotEmpty)
+                                  Text(
+                                    "Phone : ${c.phone}",
+                                    style: const TextStyle(fontSize: 12.5),
+                                  ),
+                                if (c.altPhone.isNotEmpty)
+                                  Text(
+                                    "Alt Phone : ${c.altPhone}",
+                                    style: const TextStyle(fontSize: 12.5),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-
-      /// ================= TOP ORANGE AREA =================
       body: Column(
         children: [
+          /// TOP BAR
           Container(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
             decoration: const BoxDecoration(
@@ -24,56 +271,47 @@ class ArchitectManagementScreen extends StatelessWidget {
             ),
             child: SafeArea(
               bottom: false,
-              child: Column(
+              child: Row(
                 children: [
-                  /// HEADER
-                  const SizedBox(height: 14),
-
-                  /// SEARCH + ADD
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          height: 44,
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(22),
-                          ),
-                          child: Row(
-                            children: const [
-                              Icon(Icons.search, color: Colors.grey),
-                              SizedBox(width: 8),
-                              Text(
-                                "Search..",
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ),
+                  Expanded(
+                    child: Container(
+                      height: 44,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(22),
                       ),
-                      const SizedBox(width: 12),
-                      InkWell(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const AddArchitectScreen(),
-                            ),
-                          );
-                        },
+                      child: const Row(
+                        children: [
+                          Icon(Icons.search, color: Colors.grey),
+                          SizedBox(width: 8),
+                          Text(
+                            "Search..",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AddArchitectScreen(),
+                        ),
+                      ).then((_) => fetchArchitects());
+                    },
+                    child: Container(
+                      height: 44,
+                      width: 44,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.white),
                         borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          height: 44,
-                          width: 44,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white, width: 1.5),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(Icons.add, color: Colors.white),
-                        ),
                       ),
-                    ],
+                      child: const Icon(Icons.add, color: Colors.white),
+                    ),
                   ),
                 ],
               ),
@@ -82,17 +320,26 @@ class ArchitectManagementScreen extends StatelessWidget {
 
           const SizedBox(height: 10),
 
-          /// ================= LIST =================
+          /// LIST
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              children: const [
-                ArchitectCard(showOptions: true),
-                ArchitectCard(),
-                ArchitectCard(),
-                ArchitectCard(),
-              ],
-            ),
+            child:
+                loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : RefreshIndicator(
+                      onRefresh: fetchArchitects,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        itemCount: architects.length,
+                        itemBuilder: (context, index) {
+                          final a = architects[index];
+                          return ArchitectCard(
+                            architect: a,
+                            onDelete: () => confirmDelete(a.id),
+                            onClients: () => showClientPopup(a.id),
+                          );
+                        },
+                      ),
+                    ),
           ),
         ],
       ),
@@ -100,100 +347,101 @@ class ArchitectManagementScreen extends StatelessWidget {
   }
 }
 
-/// ===================================================================
-/// ARCHITECT CARD (SAME TO SAME)
-// ===================================================================
-
+/// ================= CARD =================
 class ArchitectCard extends StatelessWidget {
-  final bool showOptions;
+  final Architect architect;
+  final VoidCallback onDelete;
+  final VoidCallback onClients;
 
-  const ArchitectCard({super.key, this.showOptions = false});
+  const ArchitectCard({
+    super.key,
+    required this.architect,
+    required this.onDelete,
+    required this.onClients,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.black26),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          /// NAME + MENU
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  "Name : Sagar",
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  "Name : ${architect.firstname} ${architect.lastname}",
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.more_vert, size: 18),
                 onSelected: (value) {
-                  if (value == 'edit') {
+                  if (value == "edit") {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const EditArchitectScreen(isEdit: true),
+                        builder:
+                            (_) => EditArchitectScreen(
+                              isEdit: true,
+                              architectId: architect.id,
+                              firstname: architect.firstname,
+                              lastname: architect.lastname,
+                              whatsapp: architect.whatsapp,
+                              commission: architect.commission,
+                              birthdate: architect.birthdate,
+                              remark: "",
+                            ),
                       ),
                     );
+                  } else if (value == "clients") {
+                    onClients();
+                  } else if (value == "delete") {
+                    onDelete();
                   }
                 },
                 itemBuilder:
-                    (context) => [
-                      const PopupMenuItem(
-                        value: 'edit',
+                    (_) => const [
+                      PopupMenuItem(
+                        value: "edit",
                         child: Text("Edit Architect Info"),
                       ),
-                      if (showOptions)
-                        const PopupMenuItem(
-                          value: 'option1',
-                          child: Text("Option 1"),
+                      PopupMenuItem(
+                        value: "clients",
+                        child: Text("Client Count"),
+                      ),
+                      PopupMenuItem(
+                        value: "delete",
+                        child: Text(
+                          "Delete Architect",
+                          style: TextStyle(color: Colors.red),
                         ),
-                      if (showOptions)
-                        const PopupMenuItem(
-                          value: 'option2',
-                          child: Text("Option 2"),
-                        ),
+                      ),
                     ],
-                icon: const Icon(Icons.more_vert, size: 18),
               ),
             ],
           ),
-
           const SizedBox(height: 6),
-
-          /// WHATSAPP + COMMISSION
-          Row(
-            children: const [
-              Expanded(
-                child: Text(
-                  "Whatsapp No. : +91 9876543210",
-                  style: TextStyle(fontSize: 12.5),
-                ),
-              ),
-              Text("Commission : 9%", style: TextStyle(fontSize: 12.5)),
-            ],
+          Text(
+            "Whatsapp No. : +91 ${architect.whatsapp}",
+            style: const TextStyle(fontSize: 12.5),
           ),
-
-          const SizedBox(height: 4),
-
-          /// DOB + LOYALTY
-          Row(
-            children: const [
-              Expanded(
-                child: Text(
-                  "Date Of Birth : 17/12/2000",
-                  style: TextStyle(fontSize: 12.5),
-                ),
-              ),
-              Text("Loyalty Points : 5", style: TextStyle(fontSize: 12.5)),
-            ],
+          Text(
+            "Commission : ${architect.commission}%",
+            style: const TextStyle(fontSize: 12.5),
+          ),
+          Text(
+            "Date Of Birth : ${architect.birthdate.substring(0, 10)}",
+            style: const TextStyle(fontSize: 12.5),
           ),
         ],
       ),
