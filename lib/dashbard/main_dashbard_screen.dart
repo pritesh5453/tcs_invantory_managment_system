@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tcs_invantory_managment_system/auth/login_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Inventory%20Management/Inventory_Management.dart';
+import 'package:tcs_invantory_managment_system/dashbard/Payment%20History/payment_hostory_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Supplier%20managment/supplier_managment.dart';
 import 'package:tcs_invantory_managment_system/dashbard/architect_managment/architect_managment.dart';
 import 'package:tcs_invantory_managment_system/dashbard/brand_managment/brand_managment_screen.dart';
@@ -202,6 +203,8 @@ class MainScreenWidget extends StatelessWidget {
         return AdvanceAnalyticsScreen();
       case "Order Book":
         return OrderBookManagementScreen();
+      case "Payment History":
+        return PaymentHistoryScreen();
 
       default:
         return Center(
@@ -268,6 +271,7 @@ class AnimatedDrawerWidget extends StatelessWidget {
                     _item(context, Icons.local_shipping, "Delivery Challan"),
                     _item(context, Icons.report, "Reports"),
                     _item(context, Icons.book_online, "Order Book"),
+                    _item(context, Icons.payment, "Payment History"),
                     _item(context, Icons.logout, "Logout"),
                   ],
                 ),

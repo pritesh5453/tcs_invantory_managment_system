@@ -1,30 +1,46 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
-class AddOrderScreen extends StatefulWidget {
-  const AddOrderScreen({super.key});
+class EditOrderScreen extends StatefulWidget {
+  final Map order;
+
+  const EditOrderScreen({super.key, required this.order});
 
   @override
-  State<AddOrderScreen> createState() => _AddOrderScreenState();
+  State<EditOrderScreen> createState() => _EditOrderScreenState();
 }
 
-class _AddOrderScreenState extends State<AddOrderScreen> {
-  /// ================= CONTROLLERS =================
-  final TextEditingController productController = TextEditingController();
-  final TextEditingController brandController = TextEditingController();
-  final TextEditingController sizeController = TextEditingController();
-  final TextEditingController qualityController = TextEditingController();
-  final TextEditingController quantityController = TextEditingController();
-  final TextEditingController dateController = TextEditingController();
+class _EditOrderScreenState extends State<EditOrderScreen> {
+  late TextEditingController productController;
+  late TextEditingController brandController;
+  late TextEditingController sizeController;
+  late TextEditingController qualityController;
+  late TextEditingController quantityController;
+  late TextEditingController dateController;
 
   DateTime? selectedDate;
   bool isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    productController = TextEditingController(text: widget.order["name"]);
+    brandController = TextEditingController(text: widget.order["brand"]);
+    sizeController = TextEditingController(text: widget.order["size"]);
+    qualityController = TextEditingController(text: widget.order["quality"]);
+    quantityController = TextEditingController(text: widget.order["quantity"]);
+
+    final date = widget.order["date"].toString().split("T").first;
+    dateController = TextEditingController(text: date);
+    selectedDate = DateTime.parse(date);
+  }
 
   /// ================= DATE PICKER =================
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
+      initialDate: selectedDate ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime(2030),
     );
@@ -37,30 +53,18 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
     }
   }
 
-  /// ================= CREATE ORDER API =================
-  Future<void> _createOrder() async {
-    if (productController.text.isEmpty ||
-        brandController.text.isEmpty ||
-        sizeController.text.isEmpty ||
-        qualityController.text.isEmpty ||
-        quantityController.text.isEmpty ||
-        selectedDate == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
-      return;
-    }
-
+  /// ================= UPDATE ORDER API =================
+  Future<void> _updateOrder() async {
     setState(() => isLoading = true);
 
     try {
-      await Dio().post(
-        "https://dashboarduat.theceramicstudio.in/api/orderBook/create",
+      await Dio().put(
+        "https://dashboarduat.theceramicstudio.in/api/orderBook/update/${widget.order["id"]}",
         data: {
           "name": productController.text.trim(),
           "size": sizeController.text.trim(),
           "quality": qualityController.text.trim(),
-          "date": dateController.text.trim(), // yyyy-MM-dd
+          "date": dateController.text.trim(),
           "quantity": quantityController.text.trim(),
           "brand": brandController.text.trim(),
         },
@@ -70,16 +74,16 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Order created successfully"),
+          content: Text("Order updated successfully"),
           backgroundColor: Colors.green,
         ),
       );
 
-      Navigator.pop(context, true); // refresh list
+      Navigator.pop(context, true);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Failed to create order"),
+          content: Text("Update failed"),
           backgroundColor: Colors.red,
         ),
       );
@@ -116,7 +120,7 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
-                            "Add Order",
+                            "Edit Order",
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -132,16 +136,15 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                       const SizedBox(height: 16),
 
                       _label("Product Name"),
-                      _field(productController, "Search Product..."),
+                      _field(productController),
 
                       const SizedBox(height: 12),
 
                       _label("Brand Name"),
-                      _field(brandController, "Search or Type Brand..."),
+                      _field(brandController),
 
                       const SizedBox(height: 12),
 
-                      /// SIZE + QUALITY
                       Row(
                         children: [
                           Expanded(
@@ -149,7 +152,7 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _label("Size"),
-                                _field(sizeController, "Eg. 1200x1800"),
+                                _field(sizeController),
                               ],
                             ),
                           ),
@@ -159,7 +162,7 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _label("Quality"),
-                                _field(qualityController, "PREMIUM"),
+                                _field(qualityController),
                               ],
                             ),
                           ),
@@ -168,7 +171,6 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
 
                       const SizedBox(height: 12),
 
-                      /// DATE + QUANTITY
                       Row(
                         children: [
                           Expanded(
@@ -194,7 +196,7 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _label("Quantity"),
-                                _field(quantityController, "Eg. 1"),
+                                _field(quantityController),
                               ],
                             ),
                           ),
@@ -203,7 +205,6 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
 
                       const SizedBox(height: 20),
 
-                      /// BUTTONS
                       Row(
                         children: [
                           Expanded(
@@ -215,12 +216,9 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: ElevatedButton(
-                              onPressed: isLoading ? null : _createOrder,
+                              onPressed: isLoading ? null : _updateOrder,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFFFA54A),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
                               ),
                               child:
                                   isLoading
@@ -233,7 +231,7 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                                         ),
                                       )
                                       : const Text(
-                                        "Add Order",
+                                        "Update Order",
                                         style: TextStyle(color: Colors.white),
                                       ),
                             ),
@@ -260,15 +258,14 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
     ),
   );
 
-  Widget _field(TextEditingController controller, String hint) {
-    return TextField(controller: controller, decoration: _decoration(hint));
+  Widget _field(TextEditingController controller) {
+    return TextField(controller: controller, decoration: _decoration(""));
   }
 
   InputDecoration _decoration(String hint, {IconData? icon}) {
     return InputDecoration(
       hintText: hint,
       suffixIcon: icon != null ? Icon(icon) : null,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
     );
   }
