@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
+import 'dart:convert'; // JSON encode/decode ke liye
 import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -30,6 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
   );
 
   /// 🔐 LOGIN FUNCTION
+  // Login Screen me ye changes karo login function me:
   Future<void> login() async {
     if (mobileController.text.trim().isEmpty ||
         passwordController.text.trim().isEmpty) {
@@ -43,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final response = await dio.post(
         "/api/employees/login",
         data: {
-          "email": mobileController.text.trim(), // email OR mobile
+          "email": mobileController.text.trim(),
           "password": passwordController.text.trim(),
         },
       );
@@ -51,12 +54,36 @@ class _LoginScreenState extends State<LoginScreen> {
       final data = response.data;
 
       if (response.statusCode == 200 && data["success"] == true) {
-        /// 🔥 REMEMBER ME SAVE
+        /// 🔥 SAVE USER DATA TO SHARED PREFERENCES
         final prefs = await SharedPreferences.getInstance();
 
         if (rememberMe) {
           await prefs.setBool("isLoggedIn", true);
           await prefs.setString("token", data["token"]);
+
+          // Save role and user information
+          await prefs.setString("role", data["role"] ?? "employee");
+
+          // Save user data
+          final user = data["user"];
+          if (user != null) {
+            await prefs.setInt("userId", user["id"] ?? 0);
+            await prefs.setString("userName", user["name"] ?? "");
+            await prefs.setString("userEmail", user["email"] ?? "");
+            await prefs.setString("userPhone", user["phone"] ?? "");
+            await prefs.setString("profilePhoto", user["profile_photo"] ?? "");
+          }
+
+          // Save permissions if available (as JSON string)
+          final permissions = data["permissions"];
+          if (permissions != null) {
+            await prefs.setString("permissions", json.encode(permissions));
+            // PermissionManager ko bhi update karo
+            PermissionManager.updatePermissions(permissions);
+          } else {
+            await prefs.setString("permissions", "{}");
+            PermissionManager.updatePermissions({});
+          }
         } else {
           await prefs.clear();
         }

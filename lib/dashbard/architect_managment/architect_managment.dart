@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:tcs_invantory_managment_system/dashbard/architect_managment/architect_commision.dart';
 import 'add_architect.dart';
 import 'edit_architect.dart';
 
@@ -332,10 +333,23 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
                         itemCount: architects.length,
                         itemBuilder: (context, index) {
                           final a = architects[index];
-                          return ArchitectCard(
-                            architect: a,
-                            onDelete: () => confirmDelete(a.id),
-                            onClients: () => showClientPopup(a.id),
+
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (_) => CommissionPage(architectId: a.id),
+                                ),
+                              );
+                            },
+                            child: ArchitectCard(
+                              architect: a,
+                              onDelete: () => confirmDelete(a.id),
+                              onClients: () => showClientPopup(a.id),
+                            ),
                           );
                         },
                       ),
