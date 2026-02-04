@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class EditQuotationScreen extends StatefulWidget {
-  const EditQuotationScreen({super.key});
+  const EditQuotationScreen({super.key, required quotationId});
 
   @override
   State<EditQuotationScreen> createState() => _EditQuotationScreenState();

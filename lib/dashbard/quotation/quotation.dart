@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/add_quotation.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/dispatch_challan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/edit_quotation.dart';
@@ -12,34 +13,256 @@ class Quontation_home_screen extends StatefulWidget {
 }
 
 class _Quontation_home_screenState extends State<Quontation_home_screen> {
+  final Dio dio = Dio(
+    BaseOptions(
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      headers: {"Accept": "application/json"},
+    ),
+  );
+
+  List<Map<String, dynamic>> quotations = [];
+  bool loading = true;
+  String searchQuery = '';
+  List<Map<String, dynamic>> filteredQuotations = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchQuotations();
+  }
+
+  /// ================= FETCH QUOTATIONS API =================
+  Future<void> _fetchQuotations() async {
+    try {
+      final response = await dio.get("/Quotation/list");
+
+      if (response.data['success'] == true) {
+        setState(() {
+          quotations =
+              (response.data['quotations'] as List)
+                  .cast<Map<String, dynamic>>()
+                  .toList();
+
+          // Extract and store currentStock for each item in each quotation
+          for (var quotation in quotations) {
+            if (quotation['items'] != null && quotation['items'] is List) {
+              for (var item in quotation['items']) {
+                // Store currentStock in the item map
+                // This will be passed to InvoiceCard
+                item['currentStock'] = item['currentStock'] ?? 0;
+              }
+            }
+          }
+
+          filteredQuotations = quotations;
+          loading = false;
+        });
+      } else {
+        setState(() => loading = false);
+        _showErrorSnackbar("Failed to load quotations");
+      }
+    } catch (e) {
+      debugPrint("Quotations fetch error: $e");
+      setState(() => loading = false);
+      _showErrorSnackbar("Network error: $e");
+    }
+  }
+
+  /// ================= SEARCH FUNCTIONALITY =================
+  void _searchQuotations(String query) {
+    setState(() {
+      searchQuery = query;
+      if (query.isEmpty) {
+        filteredQuotations = quotations;
+      } else {
+        filteredQuotations =
+            quotations.where((quotation) {
+              final clientName =
+                  quotation['clientName']?.toString().toLowerCase() ?? '';
+              final quotationId =
+                  quotation['id']?.toString().toLowerCase() ?? '';
+              final contactNo =
+                  quotation['contactNo']?.toString().toLowerCase() ?? '';
+
+              return clientName.contains(query.toLowerCase()) ||
+                  quotationId.contains(query.toLowerCase()) ||
+                  contactNo.contains(query.toLowerCase());
+            }).toList();
+      }
+    });
+  }
+
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  /// ================= REFRESH FUNCTION =================
+  Future<void> _refreshQuotations() async {
+    setState(() => loading = true);
+    await _fetchQuotations();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            Header_ui(),
-            SizedBox(height: 20),
-            InvoiceCard(),
-            InvoiceCard(),
-          ],
+      body: RefreshIndicator(
+        onRefresh: _refreshQuotations,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            children: [
+              /// HEADER WITH SEARCH
+              _buildHeader(),
+
+              SizedBox(height: 20),
+
+              /// LOADING INDICATOR
+              if (loading)
+                Container(
+                  height: MediaQuery.of(context).size.height * 0.6,
+                  child: const Center(child: CircularProgressIndicator()),
+                )
+              /// EMPTY STATE
+              else if (filteredQuotations.isEmpty && !loading)
+                Container(
+                  height: MediaQuery.of(context).size.height * 0.6,
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          searchQuery.isEmpty
+                              ? Icons.receipt_long_outlined
+                              : Icons.search_off,
+                          size: 60,
+                          color: Colors.grey.shade400,
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          searchQuery.isEmpty
+                              ? "No quotations found"
+                              : "No results for '$searchQuery'",
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        if (searchQuery.isEmpty) ...[
+                          SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: _refreshQuotations,
+                            icon: Icon(Icons.refresh),
+                            label: Text("Refresh"),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                )
+              /// QUOTATION LIST
+              else
+                Column(
+                  children: [
+                    /// QUOTATION COUNT
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "Quotations (${filteredQuotations.length})",
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: _refreshQuotations,
+                            icon: Icon(Icons.refresh, size: 18),
+                            label: Text("Refresh"),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.orange,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    /// QUOTATION CARDS
+                    ...filteredQuotations
+                        .map(
+                          (quotation) => InvoiceCard(
+                            quotation: quotation,
+                            onEdit: () {
+                              // Navigate to edit screen with quotation data
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (context) => EditQuotationScreen(
+                                        quotationId: quotation['id'],
+
+                                        // Pass the entire quotation with currentStock
+                                      ),
+                                ),
+                              );
+                            },
+                            onPay: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (context) => SettlementScreen(
+                                        quotationId: quotation['id'],
+                                        dueAmount:
+                                            double.tryParse(
+                                              quotation['due_amount']
+                                                      ?.toString() ??
+                                                  '0',
+                                            ) ??
+                                            0,
+
+                                        // Pass currentStock data
+                                      ),
+                                ),
+                              );
+                            },
+                            onDispatch: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (context) => DispatchChallanScreen(
+                                        quotationId: quotation['id'],
+                                        quotationData: quotation,
+                                      ),
+                                ),
+                              );
+                            },
+                          ),
+                        )
+                        .toList(),
+
+                    SizedBox(height: 20),
+                  ],
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
-}
 
-class Header_ui extends StatelessWidget {
-  const Header_ui({super.key});
-
-  @override
-  Widget build(BuildContext context) {
+  /// ================= HEADER WIDGET =================
+  Widget _buildHeader() {
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: const BoxDecoration(
-          color: const Color(0xFFFFA54A),
+          color: Color(0xFFFFA54A),
           borderRadius: BorderRadius.only(
             bottomLeft: Radius.circular(25),
             bottomRight: Radius.circular(25),
@@ -50,10 +273,12 @@ class Header_ui extends StatelessWidget {
           children: [
             Row(
               children: [
+                /// SEARCH FIELD
                 Expanded(
                   child: TextField(
+                    onChanged: _searchQuotations,
                     decoration: InputDecoration(
-                      hintText: "Search..",
+                      hintText: "Search by client name, ID or contact...",
                       prefixIcon: const Icon(Icons.search),
                       filled: true,
                       fillColor: Colors.white,
@@ -64,8 +289,10 @@ class Header_ui extends StatelessWidget {
                     ),
                   ),
                 ),
+
                 const SizedBox(width: 12),
 
+                /// ADD BUTTON
                 InkWell(
                   borderRadius: BorderRadius.circular(12),
                   onTap: () {
@@ -96,11 +323,90 @@ class Header_ui extends StatelessWidget {
   }
 }
 
+/// ================= INVOICE CARD WIDGET =================
 class InvoiceCard extends StatelessWidget {
-  const InvoiceCard({super.key});
+  final Map<String, dynamic> quotation;
+  final VoidCallback onEdit;
+  final VoidCallback onPay;
+  final VoidCallback onDispatch;
+
+  const InvoiceCard({
+    super.key,
+    required this.quotation,
+    required this.onEdit,
+    required this.onPay,
+    required this.onDispatch,
+  });
+
+  /// ================= FORMAT DATE =================
+  String _formatDate(String dateString) {
+    try {
+      final date = DateTime.parse(dateString);
+      return "${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}";
+    } catch (e) {
+      return dateString;
+    }
+  }
+
+  /// ================= FORMAT AMOUNT =================
+  String _formatAmount(String amount) {
+    try {
+      final value = double.tryParse(amount) ?? 0;
+      if (value == 0) return "₹0";
+
+      if (value >= 10000000) {
+        return "₹${(value / 10000000).toStringAsFixed(2)}Cr";
+      } else if (value >= 100000) {
+        return "₹${(value / 100000).toStringAsFixed(2)}L";
+      } else if (value >= 1000) {
+        return "₹${(value / 1000).toStringAsFixed(2)}K";
+      }
+
+      return "₹${value.toStringAsFixed(2)}";
+    } catch (e) {
+      return "₹$amount";
+    }
+  }
+
+  /// ================= GET STATUS =================
+  Widget _buildStatus() {
+    final isSettled = quotation['isSettled'] == 1;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: isSettled ? const Color(0xFFE7F7E9) : const Color(0xFFFFF4E5),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        isSettled ? "Settled" : "Active",
+        style: TextStyle(
+          color: isSettled ? const Color(0xFF2E7D32) : const Color(0xFFF57C00),
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Store currentStock values (not displayed but stored)
+    final List<int> currentStockList = [];
+    if (quotation['items'] != null && quotation['items'] is List) {
+      for (var item in quotation['items']) {
+        final currentStock = item['currentStock'] ?? 0;
+        currentStockList.add(
+          currentStock is int
+              ? currentStock
+              : int.tryParse(currentStock.toString()) ?? 0,
+        );
+      }
+    }
+
+    // currentStockList is now stored but not displayed
+    // You can pass this to other widgets if needed
+
     return Container(
       margin: const EdgeInsets.all(12),
       padding: const EdgeInsets.all(14),
@@ -118,114 +424,142 @@ class InvoiceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE7F7E9),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text(
-              "Active",
-              style: TextStyle(
-                color: Color(0xFF2E7D32),
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
+          /// STATUS & QUOTATION ID
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildStatus(),
+              Text(
+                "Q#${quotation['id']}",
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
+            ],
           ),
 
           const SizedBox(height: 10),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              Text(
-                "Pritesh Pawar",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-              ),
-              Text("06/01/2026", style: TextStyle(color: Colors.grey)),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
+          /// CLIENT NAME & DATE
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              amountColumn("Grand Total", "₹90,000"),
+              Expanded(
+                child: Text(
+                  quotation['clientName']?.toString() ?? "N/A",
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                _formatDate(quotation['createdAt']?.toString() ?? ""),
+                style: const TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+
+          /// CONTACT
+          if (quotation['contactNo'] != null &&
+              quotation['contactNo'].toString().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                quotation['contactNo'].toString(),
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+              ),
+            ),
+
+          const SizedBox(height: 14),
+
+          /// AMOUNT ROW
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              amountColumn(
+                "Grand Total",
+                _formatAmount(quotation['grandTotal']?.toString() ?? "0"),
+              ),
               divider(),
-              amountColumn("Paid Amount", "₹00.00"),
+              amountColumn(
+                "Paid Amount",
+                _formatAmount(quotation['paid_amount']?.toString() ?? "0"),
+              ),
               divider(),
-              amountColumn("Due Amount", "₹90,000", valueColor: Colors.orange),
+              amountColumn(
+                "Due Amount",
+                _formatAmount(quotation['due_amount']?.toString() ?? "0"),
+                valueColor: Colors.orange,
+              ),
             ],
           ),
 
           const SizedBox(height: 16),
 
+          /// ACTION BUTTONS
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               /// Edit Button
               OutlinedButton.icon(
-                icon: Icon(Icons.edit, color: Colors.blue),
-                label: Text("Edit", style: TextStyle(color: Colors.blue)),
+                icon: const Icon(Icons.edit, color: Colors.blue),
+                label: const Text("Edit", style: TextStyle(color: Colors.blue)),
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.blue), // Outline color
+                  side: const BorderSide(color: Colors.blue),
                 ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder:
-                          (context) =>
-                              EditQuotationScreen(), // Replace with your screen
-                    ),
-                  );
-                },
+                onPressed: onEdit,
               ),
 
-              // const SizedBox(width: 10),
-              Spacer(flex: 1),
+              const Spacer(flex: 1),
 
               /// Pay Button
-              outlinedButton(
-                icon: Icons.credit_card,
-                label: "Pay",
-                color: Colors.orange,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const SettlementScreen(),
-                    ),
-                  );
-                },
+              InkWell(
+                onTap: onPay,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.orange),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.credit_card, size: 16, color: Colors.orange),
+                      SizedBox(width: 6),
+                      Text("Pay", style: TextStyle(color: Colors.orange)),
+                    ],
+                  ),
+                ),
               ),
 
-              Spacer(flex: 1),
+              const Spacer(flex: 1),
 
+              /// More Options Button
               PopupMenuButton<String>(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
                 onSelected: (value) {
                   if (value == "delivery_chalan") {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const DispatchChallanScreen(),
-                      ),
-                    );
+                    onDispatch();
                   }
+                  // Add more actions for other options if needed
                 },
                 itemBuilder:
-                    (context) => const [
-                      PopupMenuItem(
+                    (context) => [
+                      const PopupMenuItem(
                         value: "delivery_chalan",
                         child: Text("Delivery Chalan"),
                       ),
-                      PopupMenuItem(value: "code", child: Text("Code")),
-                      PopupMenuItem(value: "name", child: Text("Name")),
+                      const PopupMenuItem(
+                        value: "view_details",
+                        child: Text("View Details"),
+                      ),
                     ],
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -252,54 +586,42 @@ class InvoiceCard extends StatelessWidget {
     );
   }
 
+  /// ================= HELPER WIDGETS =================
   static Widget amountColumn(
     String title,
     String value, {
     Color valueColor = Colors.black,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-            color: valueColor,
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
+            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ],
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: valueColor,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 
   static Widget divider() {
-    return Container(height: 36, width: 1, color: Colors.grey.shade300);
-  }
-
-  static Widget outlinedButton({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(color: color),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 6),
-            Text(label, style: TextStyle(color: color)),
-          ],
-        ),
-      ),
+    return Container(
+      height: 36,
+      width: 1,
+      color: Colors.grey.shade300,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
     );
   }
 }

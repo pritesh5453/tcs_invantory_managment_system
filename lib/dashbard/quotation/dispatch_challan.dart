@@ -1,17 +1,221 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 
 class DispatchChallanScreen extends StatefulWidget {
-  const DispatchChallanScreen({super.key});
+  final int quotationId;
+  final Map<String, dynamic> quotationData;
+
+  const DispatchChallanScreen({
+    super.key,
+    required this.quotationId,
+    required this.quotationData,
+  });
 
   @override
   State<DispatchChallanScreen> createState() => _DispatchChallanScreenState();
 }
 
 class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
+  final TextEditingController dispatchCtrl = TextEditingController(text: "0");
+  final Dio dio = Dio(
+    BaseOptions(
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      headers: {"Accept": "application/json"},
+    ),
+  );
+
+  // Form controllers
+  final firstNameCtrl = TextEditingController();
+  final lastNameCtrl = TextEditingController();
+  final contactCtrl = TextEditingController();
+  final vehicleCtrl = TextEditingController();
+
   int dispatchQty = 0;
+  bool isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-fill vehicle number with default
+    vehicleCtrl.text = "MH-15";
+    debugPrint("Quotation Data: ${widget.quotationData}");
+  }
+
+  @override
+  void dispose() {
+    firstNameCtrl.dispose();
+    lastNameCtrl.dispose();
+    contactCtrl.dispose();
+    vehicleCtrl.dispose();
+    super.dispose();
+  }
+
+  int getTotalWarehouseBoxes() {
+    int total = 0;
+
+    final items = widget.quotationData['items'];
+    if (items != null && items is List) {
+      for (final item in items) {
+        final stock = item['currentStock'] ?? 0;
+
+        total += stock is int ? stock : int.tryParse(stock.toString()) ?? 0;
+      }
+    }
+
+    return total;
+  }
+
+  /// ================= GET FIRST ITEM =================
+  Map<String, dynamic>? getFirstItem() {
+    final items = widget.quotationData['items'];
+    if (items != null && items is List && items.isNotEmpty) {
+      return items[0];
+    }
+    return null;
+  }
+
+  /// ================= GET PENDING BOXES =================
+  int getPendingBoxes() {
+    final firstItem = getFirstItem();
+    if (firstItem != null) {
+      final remainingBoxes = firstItem['remainingBoxes'] ?? 0;
+      return remainingBoxes is int
+          ? remainingBoxes
+          : int.tryParse(remainingBoxes.toString()) ?? 0;
+    }
+    return 0;
+  }
+
+  /// ================= VALIDATE FORM =================
+  bool _validateForm() {
+    if (firstNameCtrl.text.trim().isEmpty) {
+      _showSnackbar("Please enter first name");
+      return false;
+    }
+    if (lastNameCtrl.text.trim().isEmpty) {
+      _showSnackbar("Please enter last name");
+      return false;
+    }
+    if (contactCtrl.text.trim().isEmpty) {
+      _showSnackbar("Please enter contact number");
+      return false;
+    }
+    if (contactCtrl.text.trim().length < 10) {
+      _showSnackbar("Please enter valid contact number");
+      return false;
+    }
+    if (vehicleCtrl.text.trim().isEmpty) {
+      _showSnackbar("Please enter vehicle number");
+      return false;
+    }
+    if (dispatchQty <= 0) {
+      _showSnackbar("Please enter dispatch quantity");
+      return false;
+    }
+
+    // Check if dispatch quantity exceeds pending boxes
+    final pendingBoxes = getPendingBoxes();
+    if (dispatchQty > pendingBoxes) {
+      _showSnackbar(
+        "Dispatch quantity cannot exceed pending boxes ($pendingBoxes)",
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  /// ================= GENERATE CHALLAN API =================
+  Future<void> _generateChallan() async {
+    if (!_validateForm()) {
+      return;
+    }
+
+    setState(() => isLoading = true);
+
+    try {
+      // Get first item details
+      final firstItem = getFirstItem();
+      if (firstItem == null) {
+        _showSnackbar("No items found in quotation", isError: true);
+        return;
+      }
+
+      // Prepare request body
+      final body = {
+        "quotationId": widget.quotationId,
+        "client": widget.quotationData['clientName']?.toString() ?? "",
+        "contact": widget.quotationData['contactNo']?.toString() ?? "",
+        "address": widget.quotationData['address']?.toString() ?? "",
+        "driverDetails": {
+          "deliveryBoy":
+              "${firstNameCtrl.text.trim()} ${lastNameCtrl.text.trim()}",
+          "contact": contactCtrl.text.trim(),
+          "tempo": vehicleCtrl.text.trim(),
+        },
+        "items": [
+          {
+            "productId": firstItem['productId'],
+            "productName": firstItem['productName']?.toString() ?? "",
+            "rate": firstItem['rate']?.toString() ?? "0",
+            "dispatchBoxes": dispatchQty,
+          },
+        ],
+      };
+
+      debugPrint("Generating challan with body: ${body.toString()}");
+
+      final response = await dio.post("/dispatch/generateChallan", data: body);
+
+      if (response.data['success'] == true) {
+        _showSnackbar(
+          response.data['message'] ??
+              "Delivery Challan Generated Successfully!",
+          isError: false,
+        );
+
+        // Reset form
+        firstNameCtrl.clear();
+        lastNameCtrl.clear();
+        contactCtrl.clear();
+        vehicleCtrl.text = "MH-15";
+        setState(() => dispatchQty = 0);
+
+        // Close screen after 2 seconds
+        Future.delayed(const Duration(seconds: 2), () {
+          Navigator.pop(context, true);
+        });
+      } else {
+        _showSnackbar(
+          response.data['message'] ?? "Failed to generate challan",
+          isError: true,
+        );
+      }
+    } catch (e) {
+      debugPrint("Generate challan error: $e");
+      _showSnackbar("Network error: ${e.toString()}", isError: true);
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  /// ================= SHOW SNACKBAR =================
+  void _showSnackbar(String message, {bool isError = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final firstItem = getFirstItem();
+    final productName = firstItem?['productName']?.toString() ?? "Product";
+    final pendingBoxes = getPendingBoxes();
+
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: true,
@@ -46,6 +250,8 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
               ),
 
               const SizedBox(height: 16),
+
+              /// DELIVERY BOY DETAILS
               const Text(
                 "Delivery Boy",
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
@@ -53,9 +259,9 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Expanded(child: _inputField("First name")),
+                  Expanded(child: _inputField(firstNameCtrl, "First name")),
                   const SizedBox(width: 10),
-                  Expanded(child: _inputField("Last name")),
+                  Expanded(child: _inputField(lastNameCtrl, "Last name")),
                 ],
               ),
 
@@ -65,7 +271,11 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 6),
-              _inputField("Enter Number..."),
+              _inputField(
+                contactCtrl,
+                "Enter Number...",
+                keyboardType: TextInputType.phone,
+              ),
 
               const SizedBox(height: 12),
               const Text(
@@ -73,7 +283,7 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 6),
-              _inputField("MH-15"),
+              _inputField(vehicleCtrl, "MH-15"),
 
               const SizedBox(height: 14),
               const Text(
@@ -82,25 +292,25 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
               ),
               const SizedBox(height: 6),
               Row(
-                children: const [
-                  CircleAvatar(radius: 4, backgroundColor: Colors.green),
-                  SizedBox(width: 6),
+                children: [
+                  const CircleAvatar(radius: 4, backgroundColor: Colors.green),
+                  const SizedBox(width: 6),
                   Text(
-                    "In Warehouse: 380 boxes",
-                    style: TextStyle(fontSize: 12),
+                    "In Warehouse: ${getTotalWarehouseBoxes()} boxes",
+                    style: const TextStyle(fontSize: 12),
                   ),
                 ],
               ),
 
               const SizedBox(height: 10),
-              const Text(
-                "Yogesh Tiles",
-                style: TextStyle(fontWeight: FontWeight.w600),
+              Text(
+                productName,
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),
-              const Text(
-                "Pending in Quote: Boxes",
-                style: TextStyle(color: Colors.red, fontSize: 12,),
+              Text(
+                "Pending in Quote: $pendingBoxes Boxes",
+                style: const TextStyle(color: Colors.red, fontSize: 12),
               ),
 
               const SizedBox(height: 12),
@@ -121,28 +331,44 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
                       ),
                       child: Row(
                         children: [
-                          Text(
-                            dispatchQty.toString().padLeft(2, '0'),
-                            style: const TextStyle(fontSize: 16),
+                          /// MANUAL INPUT
+                          Expanded(
+                            child: TextField(
+                              controller: dispatchCtrl,
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.left,
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                isDense: true,
+                              ),
+                              onChanged: (value) {
+                                final qty = int.tryParse(value) ?? 0;
+                                _setDispatchQty(qty);
+                              },
+                            ),
                           ),
-                          const Spacer(),
+
+                          /// ARROWS
                           Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               InkWell(
                                 onTap: () {
-                                  setState(() => dispatchQty++);
+                                  _setDispatchQty(dispatchQty + 1);
                                 },
-                                child: const Icon(Icons.arrow_drop_up, size: 20),
+                                child: const Icon(
+                                  Icons.arrow_drop_up,
+                                  size: 20,
+                                ),
                               ),
                               InkWell(
                                 onTap: () {
-                                  if (dispatchQty > 0) {
-                                    setState(() => dispatchQty--);
-                                  }
+                                  _setDispatchQty(dispatchQty - 1);
                                 },
-                                child:
-                                const Icon(Icons.arrow_drop_down, size: 20),
+                                child: const Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 20,
+                                ),
                               ),
                             ],
                           ),
@@ -159,6 +385,8 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
               ),
 
               const Spacer(),
+
+              /// ACTION BUTTONS
               Row(
                 children: [
                   Expanded(
@@ -173,7 +401,8 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
                             borderRadius: BorderRadius.circular(22),
                           ),
                         ),
-                        onPressed: null,
+                        onPressed:
+                            isLoading ? null : () => Navigator.pop(context),
                         child: const Text("Cancel"),
                       ),
                     ),
@@ -190,13 +419,21 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
                             borderRadius: BorderRadius.circular(22),
                           ),
                         ),
-                        onPressed: () {
-                          // TODO: Generate Challan Logic
-                        },
-                        child: const Text(
-                          "Generate Challan",
-                          style: TextStyle(color: Colors.white),
-                        ),
+                        onPressed: isLoading ? null : _generateChallan,
+                        child:
+                            isLoading
+                                ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                : const Text(
+                                  "Generate Challan",
+                                  style: TextStyle(color: Colors.white),
+                                ),
                       ),
                     ),
                   ),
@@ -209,16 +446,40 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
     );
   }
 
-  Widget _inputField(String hint) {
+  void _setDispatchQty(int value) {
+    final maxBoxes = getTotalWarehouseBoxes();
+    final pending = getPendingBoxes();
+    final maxAllowed = maxBoxes < pending ? maxBoxes : pending;
+
+    if (value < 0) value = 0;
+
+    if (value > maxAllowed) {
+      _showSnackbar("Cannot exceed available stock ($maxAllowed)");
+      value = maxAllowed;
+    }
+
+    setState(() {
+      dispatchQty = value;
+      dispatchCtrl.text = dispatchQty.toString();
+    });
+  }
+
+  Widget _inputField(
+    TextEditingController controller,
+    String hint, {
+    TextInputType keyboardType = TextInputType.text,
+  }) {
     return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
       decoration: InputDecoration(
         hintText: hint,
         isDense: true,
-        contentPadding:
-        const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 14,
         ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
