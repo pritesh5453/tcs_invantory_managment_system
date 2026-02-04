@@ -2,6 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'Product_Management.dart';
 
+/// ================= BATCH FORM MODEL =================
+class BatchForm {
+  final TextEditingController batchNo;
+  final TextEditingController qty;
+  final TextEditingController location;
+
+  BatchForm({String batchNo = "", String qty = "", String location = ""})
+    : batchNo = TextEditingController(text: batchNo),
+      qty = TextEditingController(text: qty),
+      location = TextEditingController(text: location);
+}
+
 /// ================= EDIT PRODUCT SHEET =================
 class EditProductSheet extends StatefulWidget {
   final int productId;
@@ -27,65 +39,196 @@ class _EditProductSheetState extends State<EditProductSheet> {
 
   late TextEditingController productNameCtrl;
   late TextEditingController sizeCtrl;
-  late TextEditingController brandCtrl;
   late TextEditingController rateCtrl;
   late TextEditingController coverageCtrl;
 
-  String selectedQuality = "";
-  String selectedCategory = "";
-  String selectedStatus = "";
+  /// DROPDOWN DATA
+  List<Map<String, dynamic>> brands = [];
+  List<Map<String, dynamic>> qualities = [];
+  List<Map<String, dynamic>> categories = [];
+
+  String? selectedBrand;
+  String? selectedQuality;
+  String? selectedCategory;
 
   bool godownKKW = false;
-  bool godownMN = false;
   bool godownTCS = false;
 
-  bool loading = false;
+  bool loading = true;
+  bool saving = false;
+
+  List<BatchForm> batchForms = [];
 
   @override
   void initState() {
     super.initState();
+    _initData();
+  }
 
-    /// PREFILL DATA
+  /// ================= INITIALIZE DATA =================
+  Future<void> _initData() async {
+    try {
+      // Fetch all dropdown data in parallel
+      await Future.wait([
+        _fetchBrands(),
+        _fetchQualities(),
+        _fetchCategories(),
+      ]);
+
+      // Prefill form data after dropdowns are loaded
+      _prefillForm();
+
+      setState(() => loading = false);
+    } catch (e) {
+      debugPrint("Initialization error: $e");
+      setState(() => loading = false);
+    }
+  }
+
+  /// ================= FETCH BRANDS =================
+  Future<void> _fetchBrands() async {
+    try {
+      final response = await dio.get("/brands/list");
+      if (response.data['success'] == true) {
+        setState(() {
+          brands =
+              (response.data['brands'] as List)
+                  .where((brand) => brand['status'] == "Available")
+                  .cast<Map<String, dynamic>>()
+                  .toList();
+        });
+      }
+    } catch (e) {
+      debugPrint("Brands fetch error: $e");
+    }
+  }
+
+  /// ================= FETCH QUALITIES =================
+  Future<void> _fetchQualities() async {
+    try {
+      final response = await dio.get("/qualities/list");
+      if (response.data['success'] == true) {
+        setState(() {
+          qualities =
+              (response.data['qualities'] as List)
+                  .where((quality) => quality['status'] == "Available")
+                  .cast<Map<String, dynamic>>()
+                  .toList();
+        });
+      }
+    } catch (e) {
+      debugPrint("Qualities fetch error: $e");
+    }
+  }
+
+  /// ================= FETCH CATEGORIES =================
+  Future<void> _fetchCategories() async {
+    try {
+      final response = await dio.get("/categories/list");
+      if (response.data['success'] == true) {
+        setState(() {
+          categories =
+              (response.data['categories'] as List)
+                  .where((category) => category['status'] == "Available")
+                  .cast<Map<String, dynamic>>()
+                  .toList();
+        });
+      }
+    } catch (e) {
+      debugPrint("Categories fetch error: $e");
+    }
+  }
+
+  /// ================= PREFILL FORM =================
+  void _prefillForm() {
+    // Initialize text controllers
     productNameCtrl = TextEditingController(text: widget.product.name);
-    sizeCtrl = TextEditingController(text: widget.product.size ?? "");
-    brandCtrl = TextEditingController(text: widget.product.brand ?? "");
+    sizeCtrl = TextEditingController(text: widget.product.size);
     rateCtrl = TextEditingController(text: widget.product.rate);
-    coverageCtrl = TextEditingController(text: widget.product.cov ?? "");
+    coverageCtrl = TextEditingController(text: widget.product.cov);
 
-    selectedQuality = widget.product.quality;
-    selectedCategory = widget.product.category;
-    selectedStatus = widget.product.availQty > 0 ? "In Stock" : "Out of Stock";
+    // Helper function to check if value is integer
+    bool isInteger(String? value) {
+      if (value == null || value.isEmpty) return false;
+      return int.tryParse(value) != null;
+    }
 
+    // Set selected dropdown values with integer handling
+    // Brand: if value is integer or empty, set to null
+    selectedBrand =
+        (widget.product.brand != null &&
+                widget.product.brand!.isNotEmpty &&
+                !isInteger(widget.product.brand!))
+            ? widget.product.brand
+            : null;
+
+    // Quality: if value is integer or empty, set to null
+    selectedQuality =
+        (widget.product.quality != null &&
+                widget.product.quality!.isNotEmpty &&
+                !isInteger(widget.product.quality!))
+            ? widget.product.quality
+            : null;
+
+    // Category: if value is integer or empty, set to null
+    selectedCategory =
+        (widget.product.category != null &&
+                widget.product.category!.isNotEmpty &&
+                !isInteger(widget.product.category!))
+            ? widget.product.category
+            : null;
+
+    /// ===== GODOWN PREFILL =====
     final godowns = widget.product.godown.split(",");
     godownKKW = godowns.contains("KKW");
-    godownMN = godowns.contains("MN");
     godownTCS = godowns.contains("TCS");
+
+    /// ===== BATCHES PREFILL =====
+    if (widget.product.batches.isNotEmpty) {
+      for (final b in widget.product.batches) {
+        batchForms.add(
+          BatchForm(
+            batchNo: b['batch_no']?.toString() ?? "",
+            qty: b['qty']?.toString() ?? "",
+            location: b['location']?.toString() ?? "",
+          ),
+        );
+      }
+    } else {
+      batchForms.add(BatchForm());
+    }
   }
 
   /// ================= UPDATE API =================
   Future<void> updateProduct() async {
-    setState(() => loading = true);
+    setState(() => saving = true);
 
     final godownList = <String>[];
     if (godownKKW) godownList.add("KKW");
-    if (godownMN) godownList.add("MN");
     if (godownTCS) godownList.add("TCS");
 
     final body = {
       "name": productNameCtrl.text.trim(),
       "size": sizeCtrl.text.trim(),
-      "brand": brandCtrl.text.trim(),
+      "brand": selectedBrand,
       "category": selectedCategory,
       "quality": selectedQuality,
       "rate": rateCtrl.text.trim(),
       "status": "",
       "link": "",
-      "godown": godownList.join(","),
-      "description": "",
       "cov": coverageCtrl.text.trim(),
-      "image": widget.product.image,
-      "availQty": widget.product.availQty,
-      "batches": widget.product.batches,
+      "godown": godownList,
+      "description": "",
+      "batches":
+          batchForms
+              .map(
+                (b) => {
+                  "batchNo": b.batchNo.text.trim(),
+                  "qty": b.qty.text.trim(),
+                  "location": b.location.text.trim(),
+                },
+              )
+              .toList(),
     };
 
     try {
@@ -96,7 +239,6 @@ class _EditProductSheetState extends State<EditProductSheet> {
 
       if (res.data['success'] == true) {
         Navigator.pop(context, true);
-
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(res.data['message']),
@@ -114,12 +256,23 @@ class _EditProductSheetState extends State<EditProductSheet> {
       );
     }
 
-    setState(() => loading = false);
+    setState(() => saving = false);
   }
 
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
+    if (loading) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Container(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -150,34 +303,101 @@ class _EditProductSheetState extends State<EditProductSheet> {
               ],
             ),
 
-            _label("Product Name *"),
+            _label("Product Name"),
             _textField(controller: productNameCtrl),
 
-            _label("Product Size *"),
+            _label("Size"),
             _textField(controller: sizeCtrl),
 
-            _label("Brand Name *"),
-            _textField(controller: brandCtrl),
-
-            _label("Quality *"),
-            _dropdown(
-              value: selectedQuality,
-              items: const ["PREMIUM", "COMMERCIAL", "PROJECT"],
-              onChanged: (v) => setState(() => selectedQuality = v!),
+            /// BRAND DROPDOWN FROM API
+            _label("Brand"),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade400),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedBrand,
+                  isExpanded: true,
+                  hint: const Text("Select Brand"),
+                  items:
+                      brands.map<DropdownMenuItem<String>>((brand) {
+                        return DropdownMenuItem<String>(
+                          value: brand['name'],
+                          child: Text(brand['name']),
+                        );
+                      }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      selectedBrand = value;
+                    });
+                  },
+                ),
+              ),
             ),
 
-            _label("Category *"),
-            _dropdown(
-              value: selectedCategory,
-              items: const ["TILES", "ADHESIVE", "MARBLE"],
-              onChanged: (v) => setState(() => selectedCategory = v!),
+            /// QUALITY DROPDOWN FROM API
+            _label("Quality"),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade400),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedQuality,
+                  isExpanded: true,
+                  hint: const Text("Select Quality"),
+                  items:
+                      qualities.map<DropdownMenuItem<String>>((quality) {
+                        return DropdownMenuItem<String>(
+                          value: quality['name'],
+                          child: Text(quality['name']),
+                        );
+                      }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      selectedQuality = value;
+                    });
+                  },
+                ),
+              ),
             ),
 
-            _label("Rate *"),
+            /// CATEGORY DROPDOWN FROM API
+            _label("Category"),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade400),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedCategory,
+                  isExpanded: true,
+                  hint: const Text("Select Category"),
+                  items:
+                      categories.map<DropdownMenuItem<String>>((category) {
+                        return DropdownMenuItem<String>(
+                          value: category['name'],
+                          child: Text(category['name']),
+                        );
+                      }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      selectedCategory = value;
+                    });
+                  },
+                ),
+              ),
+            ),
+
+            _label("Rate"),
             _textField(controller: rateCtrl, type: TextInputType.number),
-
-            _label("Status"),
-            Text(selectedStatus),
 
             _label("Godown"),
             Row(
@@ -187,7 +407,6 @@ class _EditProductSheetState extends State<EditProductSheet> {
                   godownKKW,
                   (v) => setState(() => godownKKW = v),
                 ),
-                _checkBox("MN", godownMN, (v) => setState(() => godownMN = v)),
                 _checkBox(
                   "TCS",
                   godownTCS,
@@ -196,8 +415,86 @@ class _EditProductSheetState extends State<EditProductSheet> {
               ],
             ),
 
-            _label("Coverage Product"),
+            _label("Product Cov"),
             _textField(controller: coverageCtrl),
+
+            const SizedBox(height: 12),
+            const Text(
+              "Stock Batches",
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    batchForms.add(BatchForm());
+                  });
+                },
+                icon: const Icon(Icons.add),
+                label: const Text("Add Batch"),
+              ),
+            ),
+
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: batchForms.length,
+              itemBuilder: (_, i) {
+                final b = batchForms[i];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _textField(
+                              controller: b.batchNo,
+                              hint: "Batch No",
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _textField(
+                              controller: b.qty,
+                              hint: "Qty",
+                              type: TextInputType.number,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _textField(
+                              controller: b.location,
+                              hint: "Location",
+                            ),
+                          ),
+                          if (batchForms.length > 1)
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () {
+                                setState(() {
+                                  batchForms.removeAt(i);
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
 
             const SizedBox(height: 16),
 
@@ -210,14 +507,14 @@ class _EditProductSheetState extends State<EditProductSheet> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-                onPressed: loading ? null : updateProduct,
+                onPressed: saving ? null : updateProduct,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 30,
                     vertical: 10,
                   ),
                   child:
-                      loading
+                      saving
                           ? const SizedBox(
                             height: 18,
                             width: 18,
@@ -237,7 +534,7 @@ class _EditProductSheetState extends State<EditProductSheet> {
   }
 }
 
-/// ================= REUSABLE =================
+/// ================= HELPERS =================
 Widget _label(String text) => Padding(
   padding: const EdgeInsets.only(top: 10, bottom: 4),
   child: Text(
@@ -249,24 +546,12 @@ Widget _label(String text) => Padding(
 Widget _textField({
   required TextEditingController controller,
   TextInputType type = TextInputType.text,
+  String? hint,
 }) => TextField(
   controller: controller,
   keyboardType: type,
   decoration: InputDecoration(
-    isDense: true,
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-  ),
-);
-
-Widget _dropdown({
-  required String value,
-  required List<String> items,
-  required ValueChanged<String?> onChanged,
-}) => DropdownButtonFormField<String>(
-  value: value,
-  items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-  onChanged: onChanged,
-  decoration: InputDecoration(
+    hintText: hint,
     isDense: true,
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
   ),

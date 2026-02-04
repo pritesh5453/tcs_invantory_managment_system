@@ -1,8 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/add%20product.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/edit_product.dart';
-import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/view_preducts_screen.dart';
+import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/product_view_screen.dart';
 
 /// ================= PRODUCT MODEL =================
 class Product {
@@ -17,8 +19,54 @@ class Product {
   final String godown;
   final String image;
   final String imageUrl;
-  final int availQty;
-  final List batches;
+  final int qty;
+  final List<dynamic> batches;
+
+  // Calculate available quantity from batches
+  int get availableQuantity {
+    print('=== DEBUG: Calculating available quantity for product ${id} ===');
+    print('Number of batches: ${batches.length}');
+
+    if (batches.isEmpty) {
+      print('No batches found, returning 0');
+      return 0;
+    }
+
+    int total = 0;
+    for (int i = 0; i < batches.length; i++) {
+      var batch = batches[i];
+      print('Batch ${i + 1}: $batch');
+
+      // Check if batch is Map
+      if (batch is Map<String, dynamic>) {
+        final batchQty = batch['qty'];
+        print('  Batch quantity: $batchQty (type: ${batchQty.runtimeType})');
+
+        if (batchQty != null) {
+          if (batchQty is int) {
+            total += batchQty;
+            print('  Added $batchQty (int)');
+          } else if (batchQty is String) {
+            final parsedQty = int.tryParse(batchQty) ?? 0;
+            total += parsedQty;
+            print('  Added $parsedQty (parsed from string: $batchQty)');
+          } else if (batchQty is double) {
+            total += batchQty.toInt();
+            print('  Added ${batchQty.toInt()} (converted from double)');
+          } else if (batchQty is num) {
+            total += batchQty.toInt();
+            print('  Added ${batchQty.toInt()} (converted from num)');
+          }
+        }
+      } else {
+        print('  Batch is not a Map, skipping. Type: ${batch.runtimeType}');
+      }
+    }
+
+    print('Total available quantity: $total');
+    print('=== DEBUG END ===\n');
+    return total;
+  }
 
   Product({
     required this.id,
@@ -32,25 +80,47 @@ class Product {
     required this.godown,
     required this.image,
     required this.imageUrl,
-    required this.availQty,
+    required this.qty,
     required this.batches,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
+    print('=== DEBUG: Parsing product ${json['id']} ===');
+    print('Raw batches data: ${json['batches']}');
+    print('Type of batches: ${json['batches']?.runtimeType}');
+
+    final batches = json['batches'] ?? [];
+
+    // Ensure batches is a List
+    List<dynamic> batchesList = [];
+    if (batches is List) {
+      batchesList = batches;
+    } else if (batches is String) {
+      // Handle case where batches might be a string
+      try {
+        batchesList = jsonDecode(batches) ?? [];
+      } catch (e) {
+        print('Error parsing batches string: $e');
+      }
+    }
+
+    print('Parsed batches list length: ${batchesList.length}');
+    print('=== DEBUG END ===\n');
+
     return Product(
-      id: json['id'],
+      id: json['id'] ?? 0,
       name: json['name'] ?? "",
       size: json['size'] ?? "",
       brand: json['brand'] ?? "",
       category: json['category'] ?? "",
       quality: json['quality'] ?? "",
-      rate: json['rate'] ?? "0",
+      rate: json['rate']?.toString() ?? "0",
       cov: json['cov'] ?? "",
-      godown: json['godown'] ?? "",
+      godown: json['godown']?.toString() ?? "",
       image: json['image'] ?? "default-product.jpg",
       imageUrl: json['image_url'] ?? "",
-      availQty: json['availQty'] ?? 0,
-      batches: json['batches'] ?? [],
+      qty: json['qty'] ?? json['availQty'] ?? 0,
+      batches: batchesList,
     );
   }
 }
@@ -82,6 +152,8 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
       BaseOptions(
         baseUrl: "https://dashboarduat.theceramicstudio.in/api",
         headers: {"Accept": "application/json"},
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
       ),
     );
 
@@ -130,6 +202,7 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     setState(() => loadingMore = true);
 
     try {
+      print('=== DEBUG: Fetching page $page ===');
       final res = await _dio.get(
         "/product/list",
         queryParameters: {"page": page},
@@ -139,7 +212,20 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
         final List list = res.data['products'];
         final pagination = res.data['pagination'];
 
-        final newProducts = list.map((e) => Product.fromJson(e)).toList();
+        print('Fetched ${list.length} products');
+
+        final newProducts = <Product>[];
+        for (var i = 0; i < list.length; i++) {
+          try {
+            final product = Product.fromJson(list[i]);
+            newProducts.add(product);
+            print(
+              'Added product ${product.id} with ${product.batches.length} batches',
+            );
+          } catch (e) {
+            print('Error parsing product at index $i: $e');
+          }
+        }
 
         if (mounted) {
           setState(() {
@@ -312,8 +398,8 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
                                     isScrollControlled: true,
                                     builder:
                                         (_) => EditProductSheet(
-                                          product: products[i],
                                           productId: products[i].id,
+                                          product: products[i],
                                         ),
                                   );
                                 },
@@ -323,7 +409,7 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
                                     MaterialPageRoute(
                                       builder:
                                           (_) => ProductViewScreen(
-                                            product: products[i],
+                                            productId: products[i].id,
                                           ),
                                     ),
                                   );
@@ -370,6 +456,9 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Calculate available quantity from batches
+    final availableQty = product.availableQuantity;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
@@ -392,16 +481,16 @@ class ProductCard extends StatelessWidget {
                 ),
                 decoration: BoxDecoration(
                   color:
-                      product.availQty > 0
+                      availableQty > 0
                           ? Colors.green.shade100
                           : Colors.red.shade100,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  product.availQty > 0 ? "In Stock" : "Out of Stock",
+                  availableQty > 0 ? "In Stock" : "Out of Stock",
                   style: TextStyle(
                     fontSize: 12,
-                    color: product.availQty > 0 ? Colors.green : Colors.red,
+                    color: availableQty > 0 ? Colors.green : Colors.red,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -518,7 +607,7 @@ class ProductCard extends StatelessWidget {
 
           const SizedBox(height: 8),
           Text(
-            "Batches: ${product.batches.length} | Qty: ${product.availQty}",
+            "Batches: ${product.batches.length} | Available Qty: $availableQty",
             style: const TextStyle(fontSize: 12),
           ),
         ],
