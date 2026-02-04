@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/Product_Management.dart';
 
 class ProductViewScreen extends StatelessWidget {
-  const ProductViewScreen({super.key});
+  const ProductViewScreen({super.key, required Product product});
 
   @override
   Widget build(BuildContext context) {

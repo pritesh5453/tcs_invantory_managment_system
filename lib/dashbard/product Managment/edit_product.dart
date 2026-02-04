@@ -1,35 +1,123 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'Product_Management.dart';
 
 /// ================= EDIT PRODUCT SHEET =================
 class EditProductSheet extends StatefulWidget {
-  const EditProductSheet({super.key});
+  final int productId;
+  final Product product;
+
+  const EditProductSheet({
+    super.key,
+    required this.productId,
+    required this.product,
+  });
 
   @override
   State<EditProductSheet> createState() => _EditProductSheetState();
 }
 
 class _EditProductSheetState extends State<EditProductSheet> {
-  /// Controllers (normally API se prefill karoge)
-  final TextEditingController productNameCtrl = TextEditingController(
-    text: "Sagar Marble",
-  );
-  final TextEditingController sizeCtrl = TextEditingController(
-    text: "600x1200",
-  );
-  final TextEditingController brandCtrl = TextEditingController(text: "Somany");
-  final TextEditingController rateCtrl = TextEditingController(text: "150");
-  final TextEditingController coverageCtrl = TextEditingController(
-    text: "15.5",
+  final Dio dio = Dio(
+    BaseOptions(
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      headers: {"Accept": "application/json"},
+    ),
   );
 
-  String selectedQuality = "Premium";
-  String selectedCategory = "Marble";
-  String selectedStatus = "In Stock";
+  late TextEditingController productNameCtrl;
+  late TextEditingController sizeCtrl;
+  late TextEditingController brandCtrl;
+  late TextEditingController rateCtrl;
+  late TextEditingController coverageCtrl;
 
-  bool godownKKW = true;
+  String selectedQuality = "";
+  String selectedCategory = "";
+  String selectedStatus = "";
+
+  bool godownKKW = false;
   bool godownMN = false;
   bool godownTCS = false;
 
+  bool loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    /// PREFILL DATA
+    productNameCtrl = TextEditingController(text: widget.product.name);
+    sizeCtrl = TextEditingController(text: widget.product.size ?? "");
+    brandCtrl = TextEditingController(text: widget.product.brand ?? "");
+    rateCtrl = TextEditingController(text: widget.product.rate);
+    coverageCtrl = TextEditingController(text: widget.product.cov ?? "");
+
+    selectedQuality = widget.product.quality;
+    selectedCategory = widget.product.category;
+    selectedStatus = widget.product.availQty > 0 ? "In Stock" : "Out of Stock";
+
+    final godowns = widget.product.godown.split(",");
+    godownKKW = godowns.contains("KKW");
+    godownMN = godowns.contains("MN");
+    godownTCS = godowns.contains("TCS");
+  }
+
+  /// ================= UPDATE API =================
+  Future<void> updateProduct() async {
+    setState(() => loading = true);
+
+    final godownList = <String>[];
+    if (godownKKW) godownList.add("KKW");
+    if (godownMN) godownList.add("MN");
+    if (godownTCS) godownList.add("TCS");
+
+    final body = {
+      "name": productNameCtrl.text.trim(),
+      "size": sizeCtrl.text.trim(),
+      "brand": brandCtrl.text.trim(),
+      "category": selectedCategory,
+      "quality": selectedQuality,
+      "rate": rateCtrl.text.trim(),
+      "status": "",
+      "link": "",
+      "godown": godownList.join(","),
+      "description": "",
+      "cov": coverageCtrl.text.trim(),
+      "image": widget.product.image,
+      "availQty": widget.product.availQty,
+      "batches": widget.product.batches,
+    };
+
+    try {
+      final res = await dio.put(
+        "/product/products/${widget.productId}",
+        data: body,
+      );
+
+      if (res.data['success'] == true) {
+        Navigator.pop(context, true);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.data['message']),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("UPDATE ERROR: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Update failed"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+
+    setState(() => loading = false);
+  }
+
+  /// ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -74,26 +162,22 @@ class _EditProductSheetState extends State<EditProductSheet> {
             _label("Quality *"),
             _dropdown(
               value: selectedQuality,
-              items: const ["Premium", "Standard", "Economy"],
+              items: const ["PREMIUM", "COMMERCIAL", "PROJECT"],
               onChanged: (v) => setState(() => selectedQuality = v!),
             ),
 
             _label("Category *"),
             _dropdown(
               value: selectedCategory,
-              items: const ["Marble", "Tiles", "Granite"],
+              items: const ["TILES", "ADHESIVE", "MARBLE"],
               onChanged: (v) => setState(() => selectedCategory = v!),
             ),
 
             _label("Rate *"),
             _textField(controller: rateCtrl, type: TextInputType.number),
 
-            _label("Status *"),
-            _dropdown(
-              value: selectedStatus,
-              items: const ["In Stock", "Out of Stock"],
-              onChanged: (v) => setState(() => selectedStatus = v!),
-            ),
+            _label("Status"),
+            Text(selectedStatus),
 
             _label("Godown"),
             Row(
@@ -117,7 +201,6 @@ class _EditProductSheetState extends State<EditProductSheet> {
 
             const SizedBox(height: 16),
 
-            /// UPDATE BUTTON
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton(
@@ -127,13 +210,23 @@ class _EditProductSheetState extends State<EditProductSheet> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-                onPressed: () {
-                  /// 👉 Yaha UPDATE PRODUCT API lagegi
-                  Navigator.pop(context);
-                },
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 30, vertical: 10),
-                  child: Text("Update"),
+                onPressed: loading ? null : updateProduct,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 30,
+                    vertical: 10,
+                  ),
+                  child:
+                      loading
+                          ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                          : const Text("Update"),
                 ),
               ),
             ),
@@ -144,8 +237,7 @@ class _EditProductSheetState extends State<EditProductSheet> {
   }
 }
 
-/// ================= REUSABLE WIDGETS =================
-
+/// ================= REUSABLE =================
 Widget _label(String text) => Padding(
   padding: const EdgeInsets.only(top: 10, bottom: 4),
   child: Text(

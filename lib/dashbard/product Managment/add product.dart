@@ -47,10 +47,7 @@ class _AddProductSheetState extends State<AddProductSheet> {
               children: [
                 const Text(
                   "Add Product",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, color: Colors.red),
@@ -83,10 +80,7 @@ class _AddProductSheetState extends State<AddProductSheet> {
             ),
 
             _label("Rate *"),
-            _textField(
-              controller: rateCtrl,
-              type: TextInputType.number,
-            ),
+            _textField(controller: rateCtrl, type: TextInputType.number),
 
             _label("Status *"),
             _dropdown(
@@ -103,11 +97,7 @@ class _AddProductSheetState extends State<AddProductSheet> {
                   godownKKW,
                   (v) => setState(() => godownKKW = v),
                 ),
-                _checkBox(
-                  "MN",
-                  godownMN,
-                  (v) => setState(() => godownMN = v),
-                ),
+                _checkBox("MN", godownMN, (v) => setState(() => godownMN = v)),
                 _checkBox(
                   "TCS",
                   godownTCS,
@@ -167,49 +157,32 @@ Widget _label(String text) => Padding(
 Widget _textField({
   required TextEditingController controller,
   TextInputType type = TextInputType.text,
-}) =>
-    TextField(
-      controller: controller,
-      keyboardType: type,
-      decoration: InputDecoration(
-        isDense: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
+}) => TextField(
+  controller: controller,
+  keyboardType: type,
+  decoration: InputDecoration(
+    isDense: true,
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+  ),
+);
 
 Widget _dropdown({
   required String value,
   required List<String> items,
   required ValueChanged<String?> onChanged,
-}) =>
-    DropdownButtonFormField<String>(
-      value: value,
-      items: items
-          .map(
-            (e) => DropdownMenuItem(
-              value: e,
-              child: Text(e),
-            ),
-          )
-          .toList(),
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        isDense: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
+}) => DropdownButtonFormField<String>(
+  value: value,
+  items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+  onChanged: onChanged,
+  decoration: InputDecoration(
+    isDense: true,
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+  ),
+);
 
-Widget _checkBox(
-  String label,
-  bool value,
-  ValueChanged<bool> onChanged,
-) =>
-    Row(
-      children: [
-        Checkbox(
-          value: value,
-          onChanged: (v) => onChanged(v ?? false),
-        ),
-        Text(label),
-      ],
-    );
+Widget _checkBox(String label, bool value, ValueChanged<bool> onChanged) => Row(
+  children: [
+    Checkbox(value: value, onChanged: (v) => onChanged(v ?? false)),
+    Text(label),
+  ],
+);

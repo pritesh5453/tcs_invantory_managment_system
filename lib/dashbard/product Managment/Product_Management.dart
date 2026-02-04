@@ -1,12 +1,232 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/add%20product.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/edit_product.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/view_preducts_screen.dart';
 
+/// ================= PRODUCT MODEL =================
+class Product {
+  final int id;
+  final String name;
+  final String size;
+  final String brand;
+  final String category;
+  final String quality;
+  final String rate;
+  final String cov;
+  final String godown;
+  final String image;
+  final String imageUrl;
+  final int availQty;
+  final List batches;
+
+  Product({
+    required this.id,
+    required this.name,
+    required this.size,
+    required this.brand,
+    required this.category,
+    required this.quality,
+    required this.rate,
+    required this.cov,
+    required this.godown,
+    required this.image,
+    required this.imageUrl,
+    required this.availQty,
+    required this.batches,
+  });
+
+  factory Product.fromJson(Map<String, dynamic> json) {
+    return Product(
+      id: json['id'],
+      name: json['name'] ?? "",
+      size: json['size'] ?? "",
+      brand: json['brand'] ?? "",
+      category: json['category'] ?? "",
+      quality: json['quality'] ?? "",
+      rate: json['rate'] ?? "0",
+      cov: json['cov'] ?? "",
+      godown: json['godown'] ?? "",
+      image: json['image'] ?? "default-product.jpg",
+      imageUrl: json['image_url'] ?? "",
+      availQty: json['availQty'] ?? 0,
+      batches: json['batches'] ?? [],
+    );
+  }
+}
+
 /// ================= SCREEN =================
-class ProductRegistrationScreen extends StatelessWidget {
+class ProductRegistrationScreen extends StatefulWidget {
   const ProductRegistrationScreen({super.key});
 
+  @override
+  State<ProductRegistrationScreen> createState() =>
+      _ProductRegistrationScreenState();
+}
+
+class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
+  late Dio _dio;
+  final ScrollController _scrollController = ScrollController();
+
+  bool loading = false;
+  bool loadingMore = false;
+  bool hasMore = true;
+
+  int page = 1;
+  List<Product> products = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+        headers: {"Accept": "application/json"},
+      ),
+    );
+
+    fetchProducts();
+
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >=
+              _scrollController.position.maxScrollExtent - 200 &&
+          !loadingMore &&
+          hasMore) {
+        fetchMoreProducts();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// ================= FIRST LOAD / REFRESH =================
+  Future<void> fetchProducts() async {
+    setState(() {
+      page = 1;
+      hasMore = true;
+      products.clear();
+      loading = true;
+    });
+
+    try {
+      await fetchMoreProducts();
+    } finally {
+      if (mounted) {
+        setState(() {
+          loading = false;
+        });
+      }
+    }
+  }
+
+  /// ================= LOAD MORE =================
+  Future<void> fetchMoreProducts() async {
+    if (!hasMore || loadingMore) return;
+
+    setState(() => loadingMore = true);
+
+    try {
+      final res = await _dio.get(
+        "/product/list",
+        queryParameters: {"page": page},
+      );
+
+      if (res.data != null && res.data['products'] != null) {
+        final List list = res.data['products'];
+        final pagination = res.data['pagination'];
+
+        final newProducts = list.map((e) => Product.fromJson(e)).toList();
+
+        if (mounted) {
+          setState(() {
+            page++;
+            products.addAll(newProducts);
+
+            if (page > pagination['totalPages']) {
+              hasMore = false;
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("PAGINATION ERROR: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Failed to load products: ${e.toString()}"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+
+    if (mounted) {
+      setState(() => loadingMore = false);
+    }
+  }
+
+  /// ================= DELETE PRODUCT =================
+  Future<void> deleteProduct(int productId) async {
+    try {
+      final res = await _dio.delete("/product/delete/$productId");
+
+      if (res.data['success'] == true) {
+        if (mounted) {
+          setState(() {
+            products.removeWhere((p) => p.id == productId);
+          });
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.data['message'] ?? "Product deleted"),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("DELETE ERROR: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Delete failed"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showDeleteDialog(BuildContext context, int productId) {
+    showDialog(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text("Delete Product"),
+            content: const Text(
+              "Are you sure you want to delete this product?",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel"),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  deleteProduct(productId);
+                },
+                child: const Text(
+                  "Delete",
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+            ],
+          ),
+    );
+  }
+
+  /// ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -49,7 +269,11 @@ class ProductRegistrationScreen extends StatelessWidget {
                   const SizedBox(width: 12),
                   InkWell(
                     onTap: () {
-                      openAddProductSheet(context);
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        builder: (_) => const AddProductSheet(),
+                      );
                     },
                     child: Container(
                       height: 42,
@@ -67,10 +291,60 @@ class ProductRegistrationScreen extends StatelessWidget {
 
             /// LIST
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: const [ProductCard(), ProductCard()],
-              ),
+              child:
+                  loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : RefreshIndicator(
+                        onRefresh: fetchProducts,
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.all(16),
+                          itemCount: products.length + (hasMore ? 1 : 0),
+                          itemBuilder: (_, i) {
+                            if (i < products.length) {
+                              return ProductCard(
+                                product: products[i],
+                                onDelete:
+                                    (id) => _showDeleteDialog(context, id),
+                                onEdit: () {
+                                  showModalBottomSheet(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    builder:
+                                        (_) => EditProductSheet(
+                                          product: products[i],
+                                          productId: products[i].id,
+                                        ),
+                                  );
+                                },
+                                onView: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder:
+                                          (_) => ProductViewScreen(
+                                            product: products[i],
+                                          ),
+                                    ),
+                                  );
+                                },
+                              );
+                            } else {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                child: Center(
+                                  child:
+                                      loadingMore
+                                          ? const CircularProgressIndicator()
+                                          : const SizedBox(),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      ),
             ),
           ],
         ),
@@ -81,7 +355,18 @@ class ProductRegistrationScreen extends StatelessWidget {
 
 /// ================= PRODUCT CARD =================
 class ProductCard extends StatelessWidget {
-  const ProductCard({super.key});
+  final Product product;
+  final Function(int) onDelete;
+  final VoidCallback onEdit;
+  final VoidCallback onView;
+
+  const ProductCard({
+    super.key,
+    required this.product,
+    required this.onDelete,
+    required this.onEdit,
+    required this.onView,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -96,7 +381,7 @@ class ProductCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          /// TOP ROW
+          /// TOP
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -106,14 +391,17 @@ class ProductCard extends StatelessWidget {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade100,
+                  color:
+                      product.availQty > 0
+                          ? Colors.green.shade100
+                          : Colors.red.shade100,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Text(
-                  "In Stock",
+                child: Text(
+                  product.availQty > 0 ? "In Stock" : "Out of Stock",
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.green,
+                    color: product.availQty > 0 ? Colors.green : Colors.red,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -121,16 +409,11 @@ class ProductCard extends StatelessWidget {
               PopupMenuButton<String>(
                 onSelected: (value) {
                   if (value == 'view') {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ProductViewScreen(),
-                      ),
-                    );
+                    onView();
                   } else if (value == 'edit') {
-                    openEditProductSheet(context);
+                    onEdit();
                   } else if (value == 'delete') {
-                    showDeleteDialog(context);
+                    onDelete(product.id);
                   }
                 },
                 itemBuilder:
@@ -149,7 +432,6 @@ class ProductCard extends StatelessWidget {
                           title: Text("Edit"),
                         ),
                       ),
-
                       PopupMenuItem(
                         value: 'delete',
                         child: ListTile(
@@ -169,100 +451,78 @@ class ProductCard extends StatelessWidget {
 
           /// IMAGE + DETAILS
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
                 height: 80,
                 width: 80,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
-                  image: const DecorationImage(
-                    image: AssetImage("assets/images/marble.png"),
-                    fit: BoxFit.cover,
-                  ),
+                  color: Colors.grey[200],
                 ),
+                child:
+                    product.imageUrl.isNotEmpty
+                        ? ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.network(
+                            product.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Center(
+                                child: Icon(Icons.image, color: Colors.grey),
+                              );
+                            },
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            },
+                          ),
+                        )
+                        : const Center(
+                          child: Icon(Icons.image, color: Colors.grey),
+                        ),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "Sagar Marbel",
-                      style: TextStyle(
+                      product.name,
+                      style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
                       ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    SizedBox(height: 4),
-                    Text("Category: Marbel"),
-                    Text("Brand: Somany"),
-                    Text("Rate: ₹150"),
+                    const SizedBox(height: 4),
+                    Text(
+                      "Category: ${product.category}",
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    Text(
+                      "Quality: ${product.quality}",
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    Text(
+                      "Rate: ₹${product.rate}",
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ],
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 10),
-
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [Text("Quality: Premium"), Text("Godown: KKW")],
-          ),
-
-          const SizedBox(height: 6),
-
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [Text("Batches: 2"), Text("Total Qty: 120")],
+          const SizedBox(height: 8),
+          Text(
+            "Batches: ${product.batches.length} | Qty: ${product.availQty}",
+            style: const TextStyle(fontSize: 12),
           ),
         ],
       ),
     );
   }
-}
-
-/// ================= Add Product =================
-void openAddProductSheet(BuildContext context) {
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => const AddProductSheet(),
-  );
-}
-
-/// ================= Edit Product =================
-
-void openEditProductSheet(BuildContext context) {
-  debugPrint("EDIT SHEET OPEN");
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    builder: (_) => const EditProductSheet(),
-  );
-}
-
-/// ================= DIALOGS =================
-
-void showDeleteDialog(BuildContext context) {
-  showDialog(
-    context: context,
-    builder:
-        (_) => AlertDialog(
-          title: const Text("Delete Product"),
-          content: const Text("Are you sure you want to delete this product?"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Delete", style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        ),
-  );
 }
