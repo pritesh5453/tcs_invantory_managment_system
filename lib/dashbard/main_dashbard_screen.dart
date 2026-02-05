@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert'; // JSON ke liye
+import 'dart:convert';
 import 'package:tcs_invantory_managment_system/auth/login_screen.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
+import 'package:tcs_invantory_managment_system/dashbard/Employee%20Attendance/employee_attendance.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Inventory%20Management/Inventory_Management.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Payment%20History/payment_hostory_screen.dart';
+import 'package:tcs_invantory_managment_system/dashbard/Special_Access/employee_list.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Supplier%20managment/supplier_managment.dart';
 import 'package:tcs_invantory_managment_system/dashbard/architect_managment/architect_managment.dart';
 import 'package:tcs_invantory_managment_system/dashbard/brand_managment/brand_managment_screen.dart';
@@ -25,7 +27,7 @@ import 'package:tcs_invantory_managment_system/dashbard/reports/reports_screen.d
 class MenuItem {
   final String title;
   final IconData icon;
-  final String moduleName; // API se match karne ke liye module name
+  final String moduleName;
 
   MenuItem({required this.title, required this.icon, required this.moduleName});
 }
@@ -112,6 +114,12 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
       title: "Payment History",
       icon: Icons.payment,
       moduleName: "Quotation Management",
+    ),
+    MenuItem(title: "Permissions", icon: Icons.access_time, moduleName: ""),
+    MenuItem(
+      title: "Employee Attendance",
+      icon: Icons.calendar_today,
+      moduleName: "Employee Attendance",
     ),
     MenuItem(title: "Logout", icon: Icons.logout, moduleName: ""),
   ];
@@ -428,7 +436,10 @@ class MainScreenWidget extends StatelessWidget {
         return OrderBookManagementScreen();
       case "Payment History":
         return PaymentHistoryScreen();
-
+      case "Permissions":
+        return EmployeesListScreen();
+      case "Employee Attendance":
+        return EmployeeAttendanceScreen();
       default:
         return Center(
           child: Text(
