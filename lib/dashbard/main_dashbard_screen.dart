@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:tcs_invantory_managment_system/auth/login_screen.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Employee%20Attendance/employee_attendance.dart';
+import 'package:tcs_invantory_managment_system/dashbard/Expence%20Panel/expence_panel.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Inventory%20Management/Inventory_Management.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Payment%20History/payment_hostory_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Special_Access/employee_list.dart';
@@ -113,13 +114,18 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
     MenuItem(
       title: "Payment History",
       icon: Icons.payment,
-      moduleName: "Quotation Management",
+      moduleName: "Payment History",
     ),
     MenuItem(title: "Permissions", icon: Icons.access_time, moduleName: ""),
     MenuItem(
       title: "Employee Attendance",
       icon: Icons.calendar_today,
       moduleName: "Employee Attendance",
+    ),
+    MenuItem(
+      title: "Expense Stock Management",
+      icon: Icons.calendar_today,
+      moduleName: "Expense Stock Management",
     ),
     MenuItem(title: "Logout", icon: Icons.logout, moduleName: ""),
   ];
@@ -440,6 +446,8 @@ class MainScreenWidget extends StatelessWidget {
         return EmployeesListScreen();
       case "Employee Attendance":
         return EmployeeAttendanceScreen();
+      case "Expense Stock Management":
+        return ExpenseStockManagementScreen();
       default:
         return Center(
           child: Text(
