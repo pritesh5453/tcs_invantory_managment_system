@@ -427,6 +427,7 @@ class _DashboardPageState extends State<DashboardPage> {
   // 🔶 ASSIGNED TASK CARD - Now using dynamic API data
   Widget _assignedTaskCard(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
+    final height = MediaQuery.of(context).size.height;
 
     return Container(
       padding: EdgeInsets.all(width * 0.035),
@@ -512,49 +513,88 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
           const SizedBox(height: 10),
 
-          // Dynamic rows from API
+          // Dynamic rows from API with Scrollbar
           if (userWiseOrders.isNotEmpty)
-            ...userWiseOrders.map((employee) {
-              return Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: width * 0.03,
-                  vertical: 8,
+            Container(
+              height: height * 0.15, // Adjust height as needed
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
+              child: Scrollbar(
+                thumbVisibility: true, // Always show scrollbar
+                trackVisibility: true, // Show track
+                thickness: 6.0, // Scrollbar thickness
+                radius: const Radius.circular(10), // Rounded corners
+                child: ListView.builder(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: width * 0.03,
+                    vertical: 4,
+                  ),
+                  itemCount: userWiseOrders.length,
+                  itemBuilder: (context, index) {
+                    final employee = userWiseOrders[index];
+                    return Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        border:
+                            index < userWiseOrders.length - 1
+                                ? const Border(
+                                  bottom: BorderSide(
+                                    color: Color(0xFFF0F0F0),
+                                    width: 1.0,
+                                  ),
+                                )
+                                : null,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              employee['employeeName'] ?? 'N/A',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              (employee['customerCount'] ?? 0).toString(),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              (employee['quotationCount'] ?? 0).toString(),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.green,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        employee['employeeName'] ?? 'N/A',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        (employee['customerCount'] ?? 0).toString(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        (employee['quotationCount'] ?? 0).toString(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList()
+              ),
+            )
           else
-            Padding(
+            Container(
+              height: height * 0.15,
               padding: EdgeInsets.symmetric(horizontal: width * 0.03),
-              child: const Center(
-                child: Text(
-                  'No data available',
-                  style: TextStyle(color: Colors.grey),
-                ),
+              alignment: Alignment.center,
+              child: const Text(
+                'No data available',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
               ),
             ),
         ],

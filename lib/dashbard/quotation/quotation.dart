@@ -4,6 +4,7 @@ import 'package:tcs_invantory_managment_system/dashbard/quotation/add_quotation.
 import 'package:tcs_invantory_managment_system/dashbard/quotation/dispatch_challan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/edit_quotation.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/settlement.dart';
+import 'package:tcs_invantory_managment_system/dashbard/quotation/follow_up_screen.dart'; // Import the FollowUpScreen
 
 class Quontation_home_screen extends StatefulWidget {
   const Quontation_home_screen({super.key});
@@ -242,6 +243,24 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                                 ),
                               );
                             },
+                            onFollowUp: () {
+                              // Open FollowUpScreen as a dialog
+                              showDialog(
+                                context: context,
+                                builder:
+                                    (context) => FollowUpScreen(
+                                      quotationId: quotation['id'],
+                                      onFollowUpSaved: () {
+                                        // Callback when follow-up is saved
+                                        _refreshQuotations(); // Refresh the quotations list
+                                        _showSnackbar(
+                                          "Follow-up saved successfully!",
+                                          isError: false,
+                                        );
+                                      },
+                                    ),
+                              );
+                            },
                           ),
                         )
                         .toList(),
@@ -252,6 +271,16 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showSnackbar(String message, {bool isError = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        duration: Duration(seconds: 2),
       ),
     );
   }
@@ -329,6 +358,7 @@ class InvoiceCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onPay;
   final VoidCallback onDispatch;
+  final VoidCallback? onFollowUp;
 
   const InvoiceCard({
     super.key,
@@ -336,6 +366,7 @@ class InvoiceCard extends StatelessWidget {
     required this.onEdit,
     required this.onPay,
     required this.onDispatch,
+    this.onFollowUp,
   });
 
   /// ================= FORMAT DATE =================
@@ -547,18 +578,47 @@ class InvoiceCard extends StatelessWidget {
                 onSelected: (value) {
                   if (value == "delivery_chalan") {
                     onDispatch();
+                  } else if (value == "view_details") {
+                    // Implement view details action
+                    _showSnackbar(context, "View Details feature coming soon!");
+                  } else if (value == "follow_up") {
+                    // Call follow up action
+                    if (onFollowUp != null) {
+                      onFollowUp!();
+                    }
                   }
-                  // Add more actions for other options if needed
                 },
                 itemBuilder:
                     (context) => [
                       const PopupMenuItem(
                         value: "delivery_chalan",
-                        child: Text("Delivery Chalan"),
+                        child: Row(
+                          children: [
+                            Icon(Icons.local_shipping, size: 18),
+                            SizedBox(width: 8),
+                            Text("Delivery Challan"),
+                          ],
+                        ),
                       ),
                       const PopupMenuItem(
                         value: "view_details",
-                        child: Text("View Details"),
+                        child: Row(
+                          children: [
+                            Icon(Icons.visibility, size: 18),
+                            SizedBox(width: 8),
+                            Text("View Details"),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: "follow_up",
+                        child: Row(
+                          children: [
+                            Icon(Icons.calendar_today, size: 18),
+                            SizedBox(width: 8),
+                            Text("Follow Up"),
+                          ],
+                        ),
                       ),
                     ],
                 child: Container(
@@ -583,6 +643,12 @@ class InvoiceCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _showSnackbar(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
   }
 

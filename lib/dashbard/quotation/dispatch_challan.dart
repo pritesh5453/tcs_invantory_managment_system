@@ -37,7 +37,7 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
   void initState() {
     super.initState();
     // Auto-fill vehicle number with default
-    vehicleCtrl.text = "MH-15";
+    _inputField(contactCtrl, "MH-15", keyboardType: TextInputType.phone);
     debugPrint("Quotation Data: ${widget.quotationData}");
   }
 
@@ -113,11 +113,11 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
       return false;
     }
 
-    // Check if dispatch quantity exceeds pending boxes
-    final pendingBoxes = getPendingBoxes();
-    if (dispatchQty > pendingBoxes) {
+    // Check if dispatch quantity exceeds warehouse boxes
+    final warehouseBoxes = getTotalWarehouseBoxes();
+    if (dispatchQty > warehouseBoxes) {
       _showSnackbar(
-        "Dispatch quantity cannot exceed pending boxes ($pendingBoxes)",
+        "Cannot exceed available stock in warehouse ($warehouseBoxes boxes)",
       );
       return false;
     }
@@ -165,7 +165,7 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
 
       debugPrint("Generating challan with body: ${body.toString()}");
 
-      final response = await dio.post("/dispatch/generateChallan", data: body);
+      final response = await dio.post("/Quotation/generate-dc", data: body);
 
       if (response.data['success'] == true) {
         _showSnackbar(
@@ -215,18 +215,18 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
     final firstItem = getFirstItem();
     final productName = firstItem?['productName']?.toString() ?? "Product";
     final pendingBoxes = getPendingBoxes();
+    final warehouseBoxes = getTotalWarehouseBoxes();
 
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              /// HEADER
-              Row(
+        child: Column(
+          children: [
+            // Header with back button
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
@@ -248,146 +248,194 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
                   ),
                 ],
               ),
+            ),
 
-              const SizedBox(height: 16),
+            // Scrollable form content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 4),
 
-              /// DELIVERY BOY DETAILS
-              const Text(
-                "Delivery Boy",
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(child: _inputField(firstNameCtrl, "First name")),
-                  const SizedBox(width: 10),
-                  Expanded(child: _inputField(lastNameCtrl, "Last name")),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-              const Text(
-                "Contact Number",
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 6),
-              _inputField(
-                contactCtrl,
-                "Enter Number...",
-                keyboardType: TextInputType.phone,
-              ),
-
-              const SizedBox(height: 12),
-              const Text(
-                "Vehicle number (tempo)",
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 6),
-              _inputField(vehicleCtrl, "MH-15"),
-
-              const SizedBox(height: 14),
-              const Text(
-                "Items for Dispatch",
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  const CircleAvatar(radius: 4, backgroundColor: Colors.green),
-                  const SizedBox(width: 6),
-                  Text(
-                    "In Warehouse: ${getTotalWarehouseBoxes()} boxes",
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 10),
-              Text(
-                productName,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                "Pending in Quote: $pendingBoxes Boxes",
-                style: const TextStyle(color: Colors.red, fontSize: 12),
-              ),
-
-              const SizedBox(height: 12),
-              const Text(
-                "Dispatch Now",
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      height: 48,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade400),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        children: [
-                          /// MANUAL INPUT
-                          Expanded(
-                            child: TextField(
-                              controller: dispatchCtrl,
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.left,
-                              decoration: const InputDecoration(
-                                border: InputBorder.none,
-                                isDense: true,
-                              ),
-                              onChanged: (value) {
-                                final qty = int.tryParse(value) ?? 0;
-                                _setDispatchQty(qty);
-                              },
-                            ),
-                          ),
-
-                          /// ARROWS
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              InkWell(
-                                onTap: () {
-                                  _setDispatchQty(dispatchQty + 1);
-                                },
-                                child: const Icon(
-                                  Icons.arrow_drop_up,
-                                  size: 20,
-                                ),
-                              ),
-                              InkWell(
-                                onTap: () {
-                                  _setDispatchQty(dispatchQty - 1);
-                                },
-                                child: const Icon(
-                                  Icons.arrow_drop_down,
-                                  size: 20,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                    /// DELIVERY BOY DETAILS
+                    const Text(
+                      "Delivery Boy",
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    "Box",
-                    style: TextStyle(fontWeight: FontWeight.w500),
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _inputField(firstNameCtrl, "First name"),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(child: _inputField(lastNameCtrl, "Last name")),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+                    const Text(
+                      "Contact Number",
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    _inputField(
+                      contactCtrl,
+                      "Enter Number...",
+                      keyboardType: TextInputType.phone,
+                    ),
+
+                    const SizedBox(height: 12),
+                    const Text(
+                      "Vehicle number (tempo)",
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    _inputField(vehicleCtrl, "MH-15"),
+
+                    const SizedBox(height: 14),
+                    const Text(
+                      "Items for Dispatch",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const CircleAvatar(
+                          radius: 4,
+                          backgroundColor: Colors.green,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          "In Warehouse: $warehouseBoxes boxes",
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 10),
+                    Text(
+                      productName,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text(
+                          "Pending in Quote: $pendingBoxes Boxes",
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+                    const Text(
+                      "Dispatch Now",
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            height: 48,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey.shade400),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                /// MANUAL INPUT
+                                Expanded(
+                                  child: TextField(
+                                    controller: dispatchCtrl,
+                                    keyboardType: TextInputType.number,
+                                    textAlign: TextAlign.left,
+                                    decoration: const InputDecoration(
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                    ),
+                                    onChanged: (value) {
+                                      final qty = int.tryParse(value) ?? 0;
+                                      _setDispatchQty(qty);
+                                    },
+                                  ),
+                                ),
+
+                                /// ARROWS
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    InkWell(
+                                      onTap: () {
+                                        _setDispatchQty(dispatchQty + 1);
+                                      },
+                                      child: const Icon(
+                                        Icons.arrow_drop_up,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    InkWell(
+                                      onTap: () {
+                                        _setDispatchQty(dispatchQty - 1);
+                                      },
+                                      child: const Icon(
+                                        Icons.arrow_drop_down,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          "Box",
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+
+                    // Extra space at the bottom of scrollable content
+                    const SizedBox(height: 100),
+                  ],
+                ),
               ),
+            ),
 
-              const Spacer(),
-
-              /// ACTION BUTTONS
-              Row(
+            // Fixed buttons at bottom
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  top: BorderSide(color: Colors.grey.shade300, width: 1),
+                ),
+              ),
+              child: Row(
                 children: [
                   Expanded(
                     child: SizedBox(
@@ -439,23 +487,23 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
   void _setDispatchQty(int value) {
-    final maxBoxes = getTotalWarehouseBoxes();
-    final pending = getPendingBoxes();
-    final maxAllowed = maxBoxes < pending ? maxBoxes : pending;
+    final warehouseBoxes = getTotalWarehouseBoxes();
 
     if (value < 0) value = 0;
 
-    if (value > maxAllowed) {
-      _showSnackbar("Cannot exceed available stock ($maxAllowed)");
-      value = maxAllowed;
+    if (value > warehouseBoxes) {
+      _showSnackbar(
+        "Cannot exceed available stock in warehouse ($warehouseBoxes boxes)",
+      );
+      value = warehouseBoxes;
     }
 
     setState(() {
