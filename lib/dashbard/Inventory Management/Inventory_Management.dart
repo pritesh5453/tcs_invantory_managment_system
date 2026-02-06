@@ -1,17 +1,108 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'package:tcs_invantory_managment_system/dashbard/Inventory%20Management/add_Inventory.dart';
+import 'package:tcs_invantory_managment_system/dashbard/Inventory%20Management/edit_inventory.dart';
 
-class InventoryManagementScreen extends StatelessWidget {
+class InventoryManagementScreen extends StatefulWidget {
   const InventoryManagementScreen({super.key});
+
+  @override
+  State<InventoryManagementScreen> createState() =>
+      _InventoryManagementScreenState();
+}
+
+class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
+  final Dio _dio = Dio();
+  List<dynamic> purchases = [];
+  List<dynamic> filteredPurchases = [];
+  bool isLoading = true;
+  String searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    fetchPurchases();
+  }
+
+  Future<void> fetchPurchases() async {
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final response = await _dio.get(
+        'https://dashboarduat.theceramicstudio.in/api/purchase/list',
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        setState(() {
+          purchases = response.data['purchases'];
+          filteredPurchases = purchases;
+          isLoading = false;
+        });
+      } else {
+        throw Exception('Failed to load purchases');
+      }
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+      });
+      print('Error fetching purchases: $e');
+    }
+  }
+
+  void filterPurchases(String query) {
+    setState(() {
+      searchQuery = query;
+      if (query.isEmpty) {
+        filteredPurchases = purchases;
+      } else {
+        filteredPurchases =
+            purchases.where((purchase) {
+              final billNo = purchase['bill_no'].toString().toLowerCase();
+              final clientName =
+                  purchase['client_name'].toString().toLowerCase();
+              final clientContact =
+                  purchase['client_contact'].toString().toLowerCase();
+              final searchLower = query.toLowerCase();
+
+              return billNo.contains(searchLower) ||
+                  clientName.contains(searchLower) ||
+                  clientContact.contains(searchLower);
+            }).toList();
+      }
+    });
+  }
+
+  String formatDate(String dateString) {
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return dateString;
+    }
+  }
+
+  // Edit function
+  void _openEditInventorySheet(
+    BuildContext context,
+    Map<String, dynamic> purchase,
+  ) {
+    EditInventorySheet.show(context, purchase: purchase).then((_) {
+      // Refresh the list after editing
+      fetchPurchases();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xffF6F6F6),
-
-      /// TOP BAR
       body: SafeArea(
         child: Column(
           children: [
+            // Top Bar
             Container(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
               decoration: const BoxDecoration(
@@ -31,21 +122,40 @@ class InventoryManagementScreen extends StatelessWidget {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(24),
                       ),
-                      child: const Row(
+                      child: Row(
                         children: [
-                          Icon(Icons.search, color: Colors.grey),
-                          SizedBox(width: 8),
-                          Text(
-                            "Search..",
-                            style: TextStyle(color: Colors.grey),
+                          const Icon(Icons.search, color: Colors.grey),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              onChanged: filterPurchases,
+                              decoration: const InputDecoration(
+                                hintText: "Search by bill no, name, phone...",
+                                hintStyle: TextStyle(color: Colors.grey),
+                                border: InputBorder.none,
+                                isDense: true,
+                              ),
+                            ),
                           ),
+                          if (searchQuery.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: () {
+                                _searchController.clear();
+                                filterPurchases('');
+                              },
+                            ),
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   InkWell(
-                    onTap: () => openAddInventorySheet(context),
+                    onTap:
+                        () => AddInventorySheet.show(context).then((_) {
+                          fetchPurchases();
+                        }),
                     child: Container(
                       height: 40,
                       width: 40,
@@ -60,22 +170,211 @@ class InventoryManagementScreen extends StatelessWidget {
               ),
             ),
 
-            /// LIST
+            // List
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: 4,
-                itemBuilder: (_, i) => InventoryCard(),
-              ),
+              child:
+                  isLoading
+                      ? const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xffFFA54A),
+                        ),
+                      )
+                      : filteredPurchases.isEmpty
+                      ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.inventory,
+                              size: 64,
+                              color: Colors.grey,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              searchQuery.isEmpty
+                                  ? 'No purchases found'
+                                  : 'No results for "$searchQuery"',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            if (searchQuery.isNotEmpty)
+                              TextButton(
+                                onPressed: () {
+                                  _searchController.clear();
+                                  filterPurchases('');
+                                },
+                                child: const Text('Clear search'),
+                              ),
+                          ],
+                        ),
+                      )
+                      : RefreshIndicator(
+                        color: const Color(0xffFFA54A),
+                        onRefresh: fetchPurchases,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: filteredPurchases.length,
+                          itemBuilder: (_, index) {
+                            final purchase = filteredPurchases[index];
+                            return InventoryCard(
+                              purchase: purchase,
+                              onEdit: () {
+                                // Call the edit function
+                                _openEditInventorySheet(context, purchase);
+                              },
+                              onDelete: () {
+                                showDeleteDialog(context, purchase);
+                              },
+                              onView: () {
+                                openInventoryView(context, purchase);
+                              },
+                            );
+                          },
+                        ),
+                      ),
             ),
           ],
         ),
       ),
     );
   }
+
+  void openInventoryView(BuildContext context, Map<String, dynamic> purchase) {
+    showDialog(
+      context: context,
+      builder:
+          (_) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        "Purchase Details",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.red),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  Text("Bill no: ${purchase['bill_no']}"),
+                  Text("Client: ${purchase['client_name']}"),
+                  Text("Contact: ${purchase['client_contact']}"),
+                  Text("Date: ${formatDate(purchase['purchase_date'])}"),
+
+                  // Show all items
+                  const SizedBox(height: 16),
+                  const Text(
+                    "Items:",
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  ...(purchase['items'] as List).map(
+                    (item) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 8),
+                        Text("• Product ID: ${item['product_id']}"),
+                        Text("  Batch: ${item['batch_no']}"),
+                        Text("  Quantity: ${item['qty']}"),
+                        Text("  Rate: ₹${item['rate']}"),
+                        Text("  Total: ₹${item['total']}"),
+                        Text("  Godown: ${item['godown']}"),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+                  Text("Sub Total: ₹${purchase['subtotal']}"),
+                ],
+              ),
+            ),
+          ),
+    );
+  }
+
+  void showDeleteDialog(BuildContext context, Map<String, dynamic> purchase) {
+    showDialog(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text("Delete Purchase"),
+            content: Text("Delete purchase ${purchase['bill_no']}?"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel"),
+              ),
+              TextButton(
+                onPressed: () async {
+                  try {
+                    final response = await _dio.delete(
+                      'https://dashboarduat.theceramicstudio.in/api/purchase/${purchase['id']}',
+                    );
+
+                    if (response.statusCode == 200) {
+                      Navigator.pop(context);
+                      fetchPurchases();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Purchase ${purchase['bill_no']} deleted',
+                          ),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    } else {
+                      throw Exception('Failed to delete');
+                    }
+                  } catch (e) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to delete: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+                child: const Text(
+                  "Delete",
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+            ],
+          ),
+    );
+  }
 }
 
 class InventoryCard extends StatelessWidget {
+  final Map<String, dynamic> purchase;
+  final VoidCallback onView;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const InventoryCard({
+    super.key,
+    required this.purchase,
+    required this.onView,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -84,27 +383,32 @@ class InventoryCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          /// TOP
+          // Top
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                "Bill no. 14-44",
-                style: TextStyle(fontWeight: FontWeight.w600),
+              Text(
+                "Bill no. ${purchase['bill_no']}",
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
               ),
               PopupMenuButton<String>(
                 onSelected: (value) {
-                  if (value == 'view') {
-                    openInventoryView(context);
-                  } else if (value == 'edit') {
-                    openEditInventorySheet(context);
-                  } else if (value == 'delete') {
-                    showDeleteDialog(context);
-                  }
+                  if (value == 'view') onView();
+                  if (value == 'edit') onEdit();
                 },
                 itemBuilder:
                     (_) => const [
@@ -122,189 +426,53 @@ class InventoryCard extends StatelessWidget {
                           title: Text("Edit"),
                         ),
                       ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: ListTile(
-                          leading: Icon(Icons.delete, color: Colors.red),
-                          title: Text(
-                            "Delete",
-                            style: TextStyle(color: Colors.red),
-                          ),
-                        ),
-                      ),
                     ],
               ),
             ],
           ),
 
-          const SizedBox(height: 6),
-          const Text("Pritesh Pawar"),
-          const Text("+91 9876543210"),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
+          Text(purchase['client_name']),
+          Text(purchase['client_contact']),
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              Text("Purchase Date: 17/12/2000"),
-              Text("Sub Total: ₹1399", style: TextStyle(color: Colors.green)),
+            children: [
+              Text("Date: ${_formatDate(purchase['purchase_date'])}"),
+              Text(
+                "₹${purchase['subtotal']}",
+                style: const TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
             ],
           ),
+
+          // Items summary
+          if ((purchase['items'] as List).isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                Text(
+                  "Items: ${(purchase['items'] as List).length} item${(purchase['items'] as List).length > 1 ? 's' : ''}",
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
         ],
       ),
     );
   }
-}
 
-void openInventoryView(BuildContext context) {
-  showDialog(
-    context: context,
-    builder:
-        (_) => Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      "Purchase Details",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.red),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                const Text("Bill no: 14-44"),
-                const Text("Client: Pritesh Pawar"),
-                const Text("Product ID: 1344"),
-                const Text("Batch: 13"),
-                const Text("Quantity: 44"),
-                const Text("Rate: ₹195"),
-                const Text("Total: ₹1399"),
-                const Text("Godown: KKW"),
-              ],
-            ),
-          ),
-        ),
-  );
-}
-
-void openAddInventorySheet(BuildContext context) {
-  openInventorySheet(context, title: "Add Inventory");
-}
-
-void openEditInventorySheet(BuildContext context) {
-  openInventorySheet(context, title: "Edit Inventory Info");
-}
-
-void openInventorySheet(BuildContext context, {required String title}) {
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    builder:
-        (_) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            16,
-            16,
-            MediaQuery.of(context).viewInsets.bottom + 16,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.red),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                _tf("Purchase Date"),
-                _tf("Bill Number"),
-                _tf("Client Name"),
-                _tf("Client Contact"),
-                const SizedBox(height: 10),
-                const Text(
-                  "Add Product",
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                _tf("Product"),
-                _tf("Size"),
-                _tf("Quality"),
-                _tf("Rate"),
-                _tf("Batch"),
-                _tf("Quantity"),
-                _tf("Total"),
-                _tf("COV"),
-                _tf("Godown"),
-                const SizedBox(height: 14),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xffFFA54A),
-                    ),
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text("Save"),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-  );
-}
-
-Widget _tf(String hint) => Padding(
-  padding: const EdgeInsets.only(bottom: 10),
-  child: TextField(
-    decoration: InputDecoration(
-      hintText: hint,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      isDense: true,
-    ),
-  ),
-);
-
-void showDeleteDialog(BuildContext context) {
-  showDialog(
-    context: context,
-    builder:
-        (_) => AlertDialog(
-          title: const Text("Delete"),
-          content: const Text("Delete this inventory?"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Delete", style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        ),
-  );
+  String _formatDate(String dateString) {
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return dateString;
+    }
+  }
 }
