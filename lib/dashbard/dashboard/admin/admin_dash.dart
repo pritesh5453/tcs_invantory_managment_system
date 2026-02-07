@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/request_screen.dart';
@@ -54,6 +55,90 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  // Add this method to fetch chart data
+  Future<void> _fetchChartData() async {
+    try {
+      final response = await _dio.get('/dashboard/chart-data');
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final data = response.data['data'];
+
+        // Parse sales vs purchase data
+        final salesPurchaseList = List<Map<String, dynamic>>.from(
+          data['salesVsPurchase'] ?? [],
+        );
+        setState(() {
+          salesVsPurchaseData =
+              salesPurchaseList.map((item) {
+                return SalesVsPurchaseData(
+                  month: item['month'] ?? '',
+                  purchase:
+                      double.tryParse(item['purchase']?.toString() ?? '0') ?? 0,
+                );
+              }).toList();
+        });
+
+        // Parse cash flow data
+        final cashFlowList = List<Map<String, dynamic>>.from(
+          data['cashFlow'] ?? [],
+        );
+        setState(() {
+          cashFlowData =
+              cashFlowList.map((item) {
+                return CashFlowData(
+                  day: item['day'] ?? '',
+                  inAmount:
+                      double.tryParse(item['inAmount']?.toString() ?? '0') ?? 0,
+                  outAmount:
+                      double.tryParse(item['outAmount']?.toString() ?? '0') ??
+                      0,
+                );
+              }).toList();
+        });
+      }
+    } catch (e) {
+      print('Error fetching chart data: $e');
+      // For testing, use the sample data you provided
+      setState(() {
+        salesVsPurchaseData = [
+          SalesVsPurchaseData(month: 'Jan', purchase: 537500.00),
+          SalesVsPurchaseData(month: 'Feb', purchase: 156410.00),
+        ];
+        cashFlowData = [
+          CashFlowData(day: 'Fri', inAmount: 50000.00, outAmount: 537500.00),
+          CashFlowData(day: 'Tue', inAmount: 81646.00, outAmount: 500000.00),
+          CashFlowData(day: 'Wed', inAmount: 42000.00, outAmount: 150000.00),
+          CashFlowData(day: 'Thu', inAmount: 0.00, outAmount: 950.00),
+          CashFlowData(day: 'Fri', inAmount: 0.00, outAmount: 5460.00),
+        ];
+      });
+    }
+  }
+
+  // Update _fetchAllData method to include chart data
+  Future<void> _fetchAllData() async {
+    setState(() {
+      isLoading = true;
+      errorMessage = '';
+    });
+
+    try {
+      await Future.wait([
+        _fetchDashboardStats(),
+        _fetchUserWiseOrders(),
+        _fetchChartData(), // Add this line
+      ]);
+    } catch (e) {
+      setState(() {
+        errorMessage = e.toString();
+      });
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
   // Fetch User Wise Orders API
   Future<void> _fetchUserWiseOrders() async {
     try {
@@ -78,26 +163,6 @@ class _DashboardPageState extends State<DashboardPage> {
       }
     } on DioException catch (e) {
       throw Exception('User orders error: ${e.message}');
-    }
-  }
-
-  // Fetch all data
-  Future<void> _fetchAllData() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = '';
-    });
-
-    try {
-      await Future.wait([_fetchDashboardStats(), _fetchUserWiseOrders()]);
-    } catch (e) {
-      setState(() {
-        errorMessage = e.toString();
-      });
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
     }
   }
 
@@ -701,6 +766,9 @@ class _DashboardPageState extends State<DashboardPage> {
     required String title,
     required bool isPurchase,
   }) {
+    final chartData = isPurchase ? salesVsPurchaseData : cashFlowData;
+    final hasData = chartData.isNotEmpty;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -742,7 +810,7 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               const Spacer(),
               if (isPurchase)
-                _filterChip("LAST 4 MONTHS")
+                _filterChip("LAST ${salesVsPurchaseData.length} MONTHS")
               else
                 Row(
                   children: [
@@ -758,33 +826,248 @@ class _DashboardPageState extends State<DashboardPage> {
             height: 180,
             width: double.infinity,
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
+              color: Colors.white,
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    isPurchase ? Icons.shopping_cart : Icons.trending_up,
-                    color: Colors.grey,
-                    size: 40,
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    "Chart Here",
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    isPurchase ? "Last 4 Months" : "Cash Flow Analysis",
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
+            child:
+                hasData
+                    ? isPurchase
+                        ? _buildPurchaseChart()
+                        : _buildCashFlowChart()
+                    : Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            isPurchase
+                                ? Icons.shopping_cart
+                                : Icons.trending_up,
+                            color: Colors.grey,
+                            size: 40,
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            "No Chart Data",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPurchaseChart() {
+    // Find max value for scaling
+    final maxValue =
+        salesVsPurchaseData.isNotEmpty
+            ? salesVsPurchaseData
+                .map((e) => e.purchase)
+                .reduce((a, b) => a > b ? a : b)
+            : 0;
+
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: maxValue * 1.2, // Add 20% padding
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              tooltipBgColor: Colors.white,
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                return BarTooltipItem(
+                  '${salesVsPurchaseData[groupIndex].month}\n₹${rod.toY.toInt()}',
+                  TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+                );
+              },
+            ),
+          ),
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                // In _buildPurchaseChart and _buildCashFlowChart, update the getTitlesWidget for left axis:
+                getTitlesWidget: (value, meta) {
+                  if (value >= 1000000) {
+                    return Text(
+                      '₹${(value / 1000000).toStringAsFixed(1)}M',
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    );
+                  } else if (value >= 1000) {
+                    return Text(
+                      '₹${(value / 1000).toStringAsFixed(0)}K',
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    );
+                  } else {
+                    return Text(
+                      '₹${value.toInt()}',
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    );
+                  }
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  return Text(
+                    '₹${value.toInt() ~/ 1000}K',
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  );
+                },
+                reservedSize: 40,
+              ),
+            ),
+            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: maxValue > 0 ? maxValue / 4 : 100000,
+            getDrawingHorizontalLine:
+                (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+          ),
+          borderData: FlBorderData(show: false),
+          barGroups:
+              salesVsPurchaseData.asMap().entries.map((entry) {
+                final index = entry.key;
+                final data = entry.value;
+                return BarChartGroupData(
+                  x: index,
+                  barRods: [
+                    BarChartRodData(
+                      toY: data.purchase,
+                      width: 20,
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ],
+                );
+              }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCashFlowChart() {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: LineChart(
+        LineChartData(
+          lineTouchData: LineTouchData(
+            enabled: true,
+            touchTooltipData: LineTouchTooltipData(
+              tooltipBgColor: Colors.white,
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots
+                    .map((spot) {
+                      final index = spot.x.toInt();
+                      if (index >= 0 && index < cashFlowData.length) {
+                        final data = cashFlowData[index];
+                        return LineTooltipItem(
+                          '${data.day}\nIN: ₹${data.inAmount.toInt()}\nOUT: ₹${data.outAmount.toInt()}',
+                          const TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        );
+                      }
+                      return null;
+                    })
+                    .where((item) => item != null)
+                    .toList();
+              },
+            ),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawHorizontalLine: true,
+            drawVerticalLine: false,
+            horizontalInterval: 200000,
+            getDrawingHorizontalLine:
+                (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+          ),
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final index = value.toInt();
+                  if (index >= 0 && index < cashFlowData.length) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(
+                        cashFlowData[index].day,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    );
+                  }
+                  return const Text('');
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  return Text(
+                    '₹${value.toInt() ~/ 1000}K',
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  );
+                },
+                reservedSize: 40,
+              ),
+            ),
+            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          borderData: FlBorderData(
+            show: true,
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          minX: 0,
+          maxX: cashFlowData.length > 0 ? cashFlowData.length - 1 : 0,
+          minY: 0,
+          lineBarsData: [
+            // IN amount line (green)
+            LineChartBarData(
+              spots:
+                  cashFlowData.asMap().entries.map((entry) {
+                    return FlSpot(entry.key.toDouble(), entry.value.inAmount);
+                  }).toList(),
+              isCurved: true,
+              color: Colors.green,
+              barWidth: 3,
+              isStrokeCapRound: true,
+              dotData: FlDotData(show: true),
+              belowBarData: BarAreaData(show: false),
+            ),
+            // OUT amount line (red)
+            LineChartBarData(
+              spots:
+                  cashFlowData.asMap().entries.map((entry) {
+                    return FlSpot(entry.key.toDouble(), entry.value.outAmount);
+                  }).toList(),
+              isCurved: true,
+              color: Colors.red,
+              barWidth: 3,
+              isStrokeCapRound: true,
+              dotData: FlDotData(show: true),
+              belowBarData: BarAreaData(show: false),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -870,4 +1153,28 @@ class _StatCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// Add these to your state variables
+List<SalesVsPurchaseData> salesVsPurchaseData = [];
+List<CashFlowData> cashFlowData = [];
+
+// Add these classes at the top of your file (outside the widget classes)
+class SalesVsPurchaseData {
+  final String month;
+  final double purchase;
+
+  SalesVsPurchaseData({required this.month, required this.purchase});
+}
+
+class CashFlowData {
+  final String day;
+  final double inAmount;
+  final double outAmount;
+
+  CashFlowData({
+    required this.day,
+    required this.inAmount,
+    required this.outAmount,
+  });
 }

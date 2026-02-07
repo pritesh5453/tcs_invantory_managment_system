@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "825785474150",
-    "project_id": "tcs-inventory-703dd",
-    "storage_bucket": "tcs-inventory-703dd.firebasestorage.app"
+    "project_number": "683997775119",
+    "project_id": "the-ceramic-studio-5b7e0",
+    "storage_bucket": "the-ceramic-studio-5b7e0.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:825785474150:android:6ef79d10ae2e6f6c9da1a7",
+        "mobilesdk_app_id": "1:683997775119:android:6f6d644b746a5e0193ea7a",
         "android_client_info": {
           "package_name": "com.example.tcs"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBQlf4IbPVenD3MVDqSkk5QM0JY50Krv-w"
+          "current_key": "AIzaSyCppW10ghFpmXhPgcB9WG3Uy5qKl4kl1zA"
         }
       ],
       "services": {

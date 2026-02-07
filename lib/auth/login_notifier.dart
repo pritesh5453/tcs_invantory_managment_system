@@ -1,3 +1,4 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 //import 'package:flutter_riverpod/legacy.dart';
@@ -16,6 +17,8 @@ class LoginNotifier extends StateNotifier<AsyncValue<void>> {
   LoginNotifier() : super(const AsyncValue.data(null));
 
   Future<void> login(String username, String password, context) async {
+      String? token = await FirebaseMessaging.instance.getToken();
+  debugPrint("🔥 FCM TOKEN => $token");
     // FirebaseMessaging messaging = FirebaseMessaging.instance;
     // String? token = await messaging.getToken();
     // print("token $token");
@@ -25,7 +28,7 @@ class LoginNotifier extends StateNotifier<AsyncValue<void>> {
       final response = await ApiService().postRequest(endpoint, {
         'username': username,
         'password': password,
-        'fcm_token': "",
+        'fcm_token': token,
       });
       print(
         "response*****************************************************************",

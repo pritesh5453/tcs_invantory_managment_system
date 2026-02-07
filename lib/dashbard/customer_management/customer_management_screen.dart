@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
-import 'package:tcs_invantory_managment_system/dashbard/customer_management/add_customer.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/add_followUp.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/edit_customer.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/history.dart';
@@ -75,10 +74,17 @@ class CustomerManagementScreen extends StatefulWidget {
 
 class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
   late Future<List<Customer>> customerFuture;
+  List<Customer> _allCustomers = []; // Store all customers
+  List<Customer> _filteredCustomers = []; // Store filtered customers
+  String _searchQuery = ''; // Search query
+  final TextEditingController _searchController =
+      TextEditingController(); // Add controller
 
   @override
   void initState() {
     super.initState();
+    _allCustomers = [];
+    _filteredCustomers = [];
     _loadCustomers();
   }
 
@@ -87,6 +93,57 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
     setState(() {
       customerFuture = CustomerApi.fetchCustomers();
     });
+
+    // Update local lists after fetching data
+    final customers = await CustomerApi.fetchCustomers();
+    setState(() {
+      _allCustomers = customers;
+      _filteredCustomers = customers;
+      _searchQuery = '';
+      _searchController.clear(); // Clear search field
+    });
+  }
+
+  void _filterCustomers(String query) {
+    setState(() {
+      _searchQuery = query;
+      if (query.isEmpty) {
+        _filteredCustomers = _allCustomers;
+      } else {
+        _filteredCustomers =
+            _allCustomers.where((customer) {
+              final fullName =
+                  '${customer.name} ${customer.lastName}'.toLowerCase();
+              final phone = customer.phone.toLowerCase();
+              final searchLower = query.toLowerCase();
+
+              return fullName.contains(searchLower) ||
+                  phone.contains(searchLower) ||
+                  customer.name.toLowerCase().contains(searchLower) ||
+                  customer.lastName.toLowerCase().contains(searchLower);
+            }).toList();
+      }
+    });
+  }
+
+  // Add this method in _CustomerManagementScreenState
+  void _updateCustomerLists(List<Customer> customers) {
+    if (mounted) {
+      setState(() {
+        _allCustomers = customers;
+        if (_searchQuery.isEmpty) {
+          _filteredCustomers = customers;
+        } else {
+          _filterCustomers(_searchQuery);
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   /// 🔽 Pull to refresh handler
@@ -101,6 +158,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            /// ================= APP BAR =================
             /// ================= APP BAR =================
             Container(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
@@ -121,44 +179,50 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(24),
                       ),
-                      child: const Row(
+                      child: Row(
                         children: [
-                          Icon(Icons.search, size: 20, color: Colors.grey),
-                          SizedBox(width: 8),
-                          Text(
-                            "Search..",
-                            style: TextStyle(color: Colors.grey),
+                          const Icon(
+                            Icons.search,
+                            size: 20,
+                            color: Colors.grey,
                           ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController, // Add controller
+                              decoration: const InputDecoration(
+                                hintText: "Search by name or phone...",
+                                border: InputBorder.none,
+                                hintStyle: TextStyle(color: Colors.grey),
+                              ),
+                              onChanged: _filterCustomers, // Trigger search
+                              style: const TextStyle(color: Colors.black),
+                            ),
+                          ),
+                          if (_searchQuery.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(
+                                Icons.clear,
+                                size: 18,
+                                color: Colors.grey,
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                _filterCustomers(''); // Clear search
+                              },
+                            ),
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Container(
-                    height: 46,
-                    width: 46,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.white),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.add, color: Colors.white),
-                      onPressed: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AddCustomerScreen(),
-                          ),
-                        );
-                        _loadCustomers(); // ✅ refresh after add
-                      },
-                    ),
-                  ),
+                  // ... rest of your code remains same
                 ],
               ),
             ),
 
             /// ================= LIST =================
+            // Modify FutureBuilder:
             Expanded(
               child: RefreshIndicator(
                 color: Colors.orange,
@@ -176,20 +240,38 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                       );
                     }
 
-                    final customers = snapshot.data!;
+                    // Update lists after widget is built
+                    if (snapshot.hasData) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        _updateCustomerLists(snapshot.data!);
+                      });
+                    }
 
-                    if (customers.isEmpty) {
-                      return const Center(child: Text("No customers found"));
+                    // Decide which list to display
+                    List<Customer> displayCustomers;
+                    if (_searchQuery.isEmpty) {
+                      displayCustomers = snapshot.hasData ? snapshot.data! : [];
+                    } else {
+                      displayCustomers = _filteredCustomers;
+                    }
+
+                    if (displayCustomers.isEmpty) {
+                      return Center(
+                        child: Text(
+                          _searchQuery.isNotEmpty
+                              ? "No customers found for '$_searchQuery'"
+                              : "No customers found",
+                        ),
+                      );
                     }
 
                     return ListView.builder(
-                      physics:
-                          const AlwaysScrollableScrollPhysics(), // 🔥 important
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(16),
-                      itemCount: customers.length,
+                      itemCount: displayCustomers.length,
                       itemBuilder: (_, index) {
                         return CustomerCard(
-                          customer: customers[index],
+                          customer: displayCustomers[index],
                           onRefresh: _loadCustomers,
                         );
                       },

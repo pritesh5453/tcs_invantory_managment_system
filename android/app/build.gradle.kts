@@ -1,21 +1,22 @@
 plugins {
     id("com.android.application")
-    // START: FlutterFire Configuration
+
+    // Firebase
     id("com.google.gms.google-services")
-    // END: FlutterFire Configuration
+
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
     namespace = "com.example.tcs"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
     defaultConfig {
         applicationId = "com.example.tcs"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdk = 23
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -23,6 +24,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+
+        // 🔥 REQUIRED
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -34,6 +38,15 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+
+    // Firebase BOM
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+
+    // 🔥 Desugaring Library (Latest)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 flutter {

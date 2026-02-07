@@ -54,12 +54,12 @@ class _EmployeeRolePermissionScreenState
       if (response.statusCode == 200 && response.data['success'] == true) {
         final Map<String, dynamic> perms = response.data['permissions'] ?? {};
 
-        permissions = perms.map(
-          (key, value) => MapEntry(key, value == true),
-        );
+        final sortedKeys = perms.keys.toList()..sort();
+
+        permissions = {for (var key in sortedKeys) key: perms[key] == true};
       }
-    } catch (_) {}
-    finally {
+    } catch (_) {
+    } finally {
       setState(() => isLoading = false);
     }
   }
@@ -96,44 +96,45 @@ class _EmployeeRolePermissionScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text("Permissions - ${widget.employeeName}"),
-      ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : permissions.isEmpty
+      appBar: AppBar(title: Text("Permissions - ${widget.employeeName}")),
+      body:
+          isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : permissions.isEmpty
               ? const Center(child: Text("No permissions found"))
               : Column(
-                  children: [
-                    Expanded(
-                      child: ListView(
-                        children: permissions.keys.map((key) {
-                          return CheckboxListTile(
-                            title: Text(
-                              key,
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                            value: permissions[key],
-                            onChanged: (val) {
-                              setState(() {
-                                permissions[key] = val ?? false;
-                              });
-                            },
-                          );
-                        }).toList(),
-                      ),
+                children: [
+                  Expanded(
+                    child: ListView(
+                      children:
+                          permissions.keys.map((key) {
+                            return CheckboxListTile(
+                              title: Text(
+                                key,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              value: permissions[key],
+                              onChanged: (val) {
+                                setState(() {
+                                  permissions[key] = val ?? false;
+                                });
+                              },
+                            );
+                          }).toList(),
                     ),
+                  ),
 
-                    /// SAVE BUTTON
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 46,
-                        child: ElevatedButton(
-                          onPressed: isSaving ? null : _savePermissions,
-                          child: isSaving
-                              ? const SizedBox(
+                  /// SAVE BUTTON
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 46,
+                      child: ElevatedButton(
+                        onPressed: isSaving ? null : _savePermissions,
+                        child:
+                            isSaving
+                                ? const SizedBox(
                                   height: 20,
                                   width: 20,
                                   child: CircularProgressIndicator(
@@ -141,12 +142,12 @@ class _EmployeeRolePermissionScreenState
                                     color: Colors.white,
                                   ),
                                 )
-                              : const Text("Save Permissions"),
-                        ),
+                                : const Text("Save Permissions"),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
     );
   }
 

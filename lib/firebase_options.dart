@@ -17,10 +17,7 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -28,15 +25,9 @@ class DefaultFirebaseOptions {
       case TargetPlatform.iOS:
         return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -50,19 +41,49 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBQlf4IbPVenD3MVDqSkk5QM0JY50Krv-w',
-    appId: '1:825785474150:android:6ef79d10ae2e6f6c9da1a7',
-    messagingSenderId: '825785474150',
-    projectId: 'tcs-inventory-703dd',
-    storageBucket: 'tcs-inventory-703dd.firebasestorage.app',
+    apiKey: 'AIzaSyCppW10ghFpmXhPgcB9WG3Uy5qKl4kl1zA',
+    appId: '1:683997775119:android:6f6d644b746a5e0193ea7a',
+    messagingSenderId: '683997775119',
+    projectId: 'the-ceramic-studio-5b7e0',
+    storageBucket: 'the-ceramic-studio-5b7e0.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAC8-5jIzDPjiqtDiuEArrLHhSM30UNqw8',
-    appId: '1:825785474150:ios:2980f1c24a9e00e59da1a7',
-    messagingSenderId: '825785474150',
-    projectId: 'tcs-inventory-703dd',
-    storageBucket: 'tcs-inventory-703dd.firebasestorage.app',
+    apiKey: 'AIzaSyAJXrbDgWuH7_YiiVsVDj_YRwhaCBZTK4M',
+    appId: '1:683997775119:ios:4ad6ef098aa4b9fc93ea7a',
+    messagingSenderId: '683997775119',
+    projectId: 'the-ceramic-studio-5b7e0',
+    storageBucket: 'the-ceramic-studio-5b7e0.firebasestorage.app',
     iosBundleId: 'com.example.tcsInvantoryManagmentSystem',
   );
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyCQGojESkmndp1gQK6wgi_0s3nDWtohlV4',
+    appId: '1:683997775119:web:bb6ce211fabfdac493ea7a',
+    messagingSenderId: '683997775119',
+    projectId: 'the-ceramic-studio-5b7e0',
+    authDomain: 'the-ceramic-studio-5b7e0.firebaseapp.com',
+    storageBucket: 'the-ceramic-studio-5b7e0.firebasestorage.app',
+    measurementId: 'G-2RDYQ2B6ZY',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'AIzaSyAJXrbDgWuH7_YiiVsVDj_YRwhaCBZTK4M',
+    appId: '1:683997775119:ios:4ad6ef098aa4b9fc93ea7a',
+    messagingSenderId: '683997775119',
+    projectId: 'the-ceramic-studio-5b7e0',
+    storageBucket: 'the-ceramic-studio-5b7e0.firebasestorage.app',
+    iosBundleId: 'com.example.tcsInvantoryManagmentSystem',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyCQGojESkmndp1gQK6wgi_0s3nDWtohlV4',
+    appId: '1:683997775119:web:d153ce3172fcff6193ea7a',
+    messagingSenderId: '683997775119',
+    projectId: 'the-ceramic-studio-5b7e0',
+    authDomain: 'the-ceramic-studio-5b7e0.firebaseapp.com',
+    storageBucket: 'the-ceramic-studio-5b7e0.firebasestorage.app',
+    measurementId: 'G-4406WS8DSS',
+  );
+
 }
