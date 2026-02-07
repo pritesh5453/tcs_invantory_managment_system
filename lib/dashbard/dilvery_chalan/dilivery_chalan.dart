@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/update_timeline.dart';
 
 /// ================= MODEL =================
@@ -45,6 +46,12 @@ class DeliveryChalanScreen extends StatefulWidget {
 }
 
 class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
+  late bool canView;
+  late bool canUpdateTimeline;
+  late bool canDelete;
+  late bool canPrint;
+  late bool canReturnPrint;
+
   final Dio dio = Dio(
     BaseOptions(
       baseUrl:
@@ -59,6 +66,17 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
   @override
   void initState() {
     super.initState();
+
+    canView = PermissionManager.hasPermission("Delivery Challans_View");
+    canUpdateTimeline = PermissionManager.hasPermission(
+      "Delivery Challans_Update",
+    );
+    canDelete = PermissionManager.hasPermission("Delivery Challans_Delete");
+    canPrint = PermissionManager.hasPermission("Delivery Challans_Print");
+    canReturnPrint = PermissionManager.hasPermission(
+      "Delivery Challans_ReturnPrint",
+    );
+
     fetchChallans();
   }
 
@@ -178,11 +196,25 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
                 child: const Text("Cancel"),
               ),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: () {
-                  Navigator.pop(context);
-                  deleteChallan(id);
-                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: canDelete ? Colors.red : Colors.grey,
+                ),
+                onPressed:
+                    canDelete
+                        ? () {
+                          Navigator.pop(context);
+                          deleteChallan(id);
+                        }
+                        : () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                "You don't have permission to delete delivery challan",
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        },
                 child: const Text("Delete"),
               ),
             ],
@@ -198,6 +230,16 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!canView) {
+      return const Scaffold(
+        body: Center(
+          child: Text(
+            "You don't have permission to view Delivery Challans",
+            style: TextStyle(color: Colors.red, fontSize: 16),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFF6F7F9),
       body: Column(
@@ -287,17 +329,62 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
               PopupMenuButton<String>(
                 onSelected: (value) {
                   if (value == "dc") {
+                    if (!canPrint) {
+                      _showError("You don't have permission to print DC");
+                      return;
+                    }
                     _printPdf(challanId: chalan.id, isReturn: false);
-                  } else {
+                  }
+
+                  if (value == "return") {
+                    if (!canReturnPrint) {
+                      _showError(
+                        "You don't have permission to print Return DC",
+                      );
+                      return;
+                    }
                     _printPdf(challanId: chalan.id, isReturn: true);
                   }
                 },
                 itemBuilder:
-                    (context) => const [
-                      PopupMenuItem(value: "dc", child: Text("DC Print")),
+                    (_) => [
+                      PopupMenuItem(
+                        value: "dc",
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.print,
+                              color: canPrint ? Colors.black : Colors.grey,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              "DC Print",
+                              style: TextStyle(
+                                color: canPrint ? Colors.black : Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       PopupMenuItem(
                         value: "return",
-                        child: Text("Return DC Print"),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.print,
+                              color:
+                                  canReturnPrint ? Colors.black : Colors.grey,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              "Return DC Print",
+                              style: TextStyle(
+                                color:
+                                    canReturnPrint ? Colors.black : Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
               ),
@@ -323,30 +410,61 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder:
-                          (_) => UpdateTimelineScreen(challanId: chalan.id),
+              Opacity(
+                opacity: canUpdateTimeline ? 1 : 0.4,
+                child: OutlinedButton.icon(
+                  onPressed:
+                      canUpdateTimeline
+                          ? () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder:
+                                    (_) => UpdateTimelineScreen(
+                                      challanId: chalan.id,
+                                    ),
+                              ),
+                            );
+                          }
+                          : () {
+                            _showError(
+                              "You don't have permission to update delivery timeline",
+                            );
+                          },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor:
+                        canUpdateTimeline ? Colors.blue : Colors.grey,
+                  ),
+                  icon: Icon(
+                    Icons.location_on_outlined,
+                    color: canUpdateTimeline ? Colors.blue : Colors.grey,
+                  ),
+                  label: Text(
+                    "Update Timeline",
+                    style: TextStyle(
+                      color: canUpdateTimeline ? Colors.blue : Colors.grey,
                     ),
-                  );
-                },
-                icon: const Icon(
-                  Icons.location_on_outlined,
-                  color: Colors.blue,
-                ),
-                label: const Text(
-                  "Update Timeline",
-                  style: TextStyle(color: Colors.blue),
+                  ),
                 ),
               ),
-              OutlinedButton(
-                onPressed: () => _showDeleteConfirm(chalan.id),
-                child: const Text(
-                  "Delete",
-                  style: TextStyle(color: Colors.red),
+
+              Opacity(
+                opacity: canDelete ? 1 : 0.4,
+                child: OutlinedButton(
+                  onPressed:
+                      canDelete
+                          ? () => _showDeleteConfirm(chalan.id)
+                          : () {
+                            _showError(
+                              "You don't have permission to delete delivery challan",
+                            );
+                          },
+                  child: Text(
+                    "Delete",
+                    style: TextStyle(
+                      color: canDelete ? Colors.red : Colors.grey,
+                    ),
+                  ),
                 ),
               ),
             ],

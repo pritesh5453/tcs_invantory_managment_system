@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Inventory%20Management/add_Inventory.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Inventory%20Management/edit_inventory.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
 class InventoryManagementScreen extends StatefulWidget {
   const InventoryManagementScreen({super.key});
@@ -12,6 +13,8 @@ class InventoryManagementScreen extends StatefulWidget {
 }
 
 class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
+  late bool canAddInventory;
+  late bool canDeleteInventory;
   final Dio _dio = Dio();
   List<dynamic> purchases = [];
   List<dynamic> filteredPurchases = [];
@@ -22,6 +25,13 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   @override
   void initState() {
     super.initState();
+
+    canAddInventory = PermissionManager.hasPermission(
+      "Inventory Management_Add",
+    );
+    canDeleteInventory = PermissionManager.hasPermission(
+      "Inventory Management_Delete",
+    );
     fetchPurchases();
   }
 
@@ -153,17 +163,33 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                   const SizedBox(width: 12),
                   InkWell(
                     onTap:
-                        () => AddInventorySheet.show(context).then((_) {
-                          fetchPurchases();
-                        }),
-                    child: Container(
-                      height: 40,
-                      width: 40,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white),
-                        borderRadius: BorderRadius.circular(12),
+                        canAddInventory
+                            ? () {
+                              AddInventorySheet.show(context).then((_) {
+                                fetchPurchases();
+                              });
+                            }
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to add inventory.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                    child: Opacity(
+                      opacity: canAddInventory ? 1 : 0.4,
+                      child: Container(
+                        height: 40,
+                        width: 40,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.add, color: Colors.white),
                       ),
-                      child: const Icon(Icons.add, color: Colors.white),
                     ),
                   ),
                 ],
@@ -220,11 +246,23 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                             final purchase = filteredPurchases[index];
                             return InventoryCard(
                               purchase: purchase,
+
+                              canDelete: canDeleteInventory,
                               onEdit: () {
-                                // Call the edit function
                                 _openEditInventorySheet(context, purchase);
                               },
                               onDelete: () {
+                                if (!canDeleteInventory) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        "You don't have permission to delete inventory.",
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
                                 showDeleteDialog(context, purchase);
                               },
                               onView: () {
@@ -363,6 +401,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
 
 class InventoryCard extends StatelessWidget {
   final Map<String, dynamic> purchase;
+  final bool canDelete;
   final VoidCallback onView;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -370,6 +409,8 @@ class InventoryCard extends StatelessWidget {
   const InventoryCard({
     super.key,
     required this.purchase,
+
+    required this.canDelete,
     required this.onView,
     required this.onEdit,
     required this.onDelete,
@@ -408,7 +449,9 @@ class InventoryCard extends StatelessWidget {
               PopupMenuButton<String>(
                 onSelected: (value) {
                   if (value == 'view') onView();
-                  if (value == 'edit') onEdit();
+                  if (value == 'edit') {
+                    onEdit();
+                  }
                 },
                 itemBuilder:
                     (_) => const [

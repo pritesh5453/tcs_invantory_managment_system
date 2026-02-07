@@ -4,34 +4,35 @@ import 'dart:convert';
 
 class PermissionManager {
   static Map<String, bool> _permissions = {};
-  
+
+  /// Load permissions from SharedPreferences
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final permissionsString = prefs.getString("permissions") ?? "{}";
-    _permissions = Map<String, bool>.from(json.decode(permissionsString));
+
+    final Map<String, dynamic> decoded = json.decode(permissionsString);
+
+    _permissions = decoded.map((key, value) => MapEntry(key, value == true));
   }
-  
-  static bool hasViewPermission(String moduleName) {
-    // Module name se permission key generate karo
-    final viewPermissionKey = "${moduleName}_View";
-    return _permissions[viewPermissionKey] ?? false;
+
+  /// Check specific permission
+  static bool hasPermission(String permissionKey) {
+    return _permissions[permissionKey] == true;
   }
-  
+
+  /// Check if user has ANY permission of a module
   static bool hasAnyPermission(String moduleName) {
-    // Check karo kisi bhi permission ka (Add, Edit, View, Delete)
-    final permissionKeys = [
-      "${moduleName}_Add",
-      "${moduleName}_Edit", 
-      "${moduleName}_View",
-      "${moduleName}_Delete",
-    ];
-    
-    return permissionKeys.any((key) => _permissions[key] ?? false);
+    return _permissions.keys.any(
+      (key) => key.startsWith(moduleName) && _permissions[key] == true,
+    );
   }
-  
+
   static Map<String, bool> get allPermissions => _permissions;
-  
+
+  /// Update permissions at login
   static void updatePermissions(Map<String, dynamic> newPermissions) {
-    _permissions = Map<String, bool>.from(newPermissions);
+    _permissions = newPermissions.map(
+      (key, value) => MapEntry(key, value == true),
+    );
   }
 }

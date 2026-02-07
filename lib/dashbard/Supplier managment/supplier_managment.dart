@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'add_new_supplier.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
 /// ================= MODEL =================
 class Supplier {
@@ -28,6 +29,10 @@ class SupplierManagementScreen extends StatefulWidget {
 }
 
 class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
+  late bool canAddSupplier;
+  late bool canEditSupplier;
+  late bool canDeleteSupplier;
+
   final Dio dio = Dio(
     BaseOptions(
       baseUrl: "https://dashboarduat.theceramicstudio.in/api/suppliers",
@@ -41,6 +46,17 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
   @override
   void initState() {
     super.initState();
+
+    canAddSupplier = PermissionManager.hasPermission("Supplier Management_Add");
+
+    canEditSupplier = PermissionManager.hasPermission(
+      "Supplier Management_Edit",
+    );
+
+    canDeleteSupplier = PermissionManager.hasPermission(
+      "Supplier Management_Delete",
+    );
+
     fetchSuppliers();
   }
 
@@ -146,26 +162,45 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
 
                       /// ➕ ADD BUTTON (UNCHANGED)
                       InkWell(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const AddNewSupplierScreen(),
-                            ),
-                          ).then((_) => fetchSuppliers());
-                        },
+                        onTap:
+                            canAddSupplier
+                                ? () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder:
+                                          (_) => const AddNewSupplierScreen(),
+                                    ),
+                                  ).then((_) => fetchSuppliers());
+                                }
+                                : () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        "You don't have permission to add supplier.",
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                },
                         borderRadius: BorderRadius.circular(14),
-                        child: Container(
-                          height: 46,
-                          width: 46,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white, width: 1.5),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(
-                            Icons.add,
-                            color: Colors.white,
-                            size: 26,
+                        child: Opacity(
+                          opacity: canAddSupplier ? 1 : 0.4,
+                          child: Container(
+                            height: 46,
+                            width: 46,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 1.5,
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.add,
+                              color: Colors.white,
+                              size: 26,
+                            ),
                           ),
                         ),
                       ),
@@ -193,6 +228,8 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
                               index: index + 1,
                               name: supplier.name,
                               mobile: supplier.mobile,
+                              canEdit: canEditSupplier,
+                              canDelete: canDeleteSupplier,
                               onEdit: () async {
                                 final updatedSupplier =
                                     await Navigator.push<Map<String, String>>(
@@ -233,6 +270,8 @@ class SupplierCard extends StatelessWidget {
   final int index;
   final String name;
   final String mobile;
+  final bool canEdit;
+  final bool canDelete;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -241,6 +280,8 @@ class SupplierCard extends StatelessWidget {
     required this.index,
     required this.name,
     required this.mobile,
+    required this.canEdit,
+    required this.canDelete,
     required this.onEdit,
     required this.onDelete,
   });
@@ -290,19 +331,50 @@ class SupplierCard extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              OutlinedButton.icon(
-                onPressed: onEdit,
-                icon: const Icon(Icons.edit, size: 18),
-                label: const Text("Edit"),
-              ),
-              const Spacer(),
-              OutlinedButton(
-                onPressed: onDelete,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red,
-                  side: const BorderSide(color: Colors.red),
+              Opacity(
+                opacity: canEdit ? 1 : 0.4,
+                child: OutlinedButton.icon(
+                  onPressed:
+                      canEdit
+                          ? onEdit
+                          : () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "You don't have permission to edit supplier.",
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          },
+                  icon: const Icon(Icons.edit, size: 18),
+                  label: const Text("Edit"),
                 ),
-                child: const Text("Delete"),
+              ),
+
+              const Spacer(),
+              Opacity(
+                opacity: canDelete ? 1 : 0.4,
+                child: OutlinedButton(
+                  onPressed:
+                      canDelete
+                          ? onDelete
+                          : () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "You don't have permission to delete supplier.",
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                  ),
+                  child: const Text("Delete"),
+                ),
               ),
             ],
           ),

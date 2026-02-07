@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
 /// ================= MODEL =================
 class Quality {
@@ -107,6 +108,12 @@ class QualityManagementScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final canAdd = PermissionManager.hasPermission("Quality Management_Add");
+    final canEdit = PermissionManager.hasPermission("Quality Management_Edit");
+    final canDelete = PermissionManager.hasPermission(
+      "Quality Management_Delete",
+    );
+
     final state = ref.watch(qualityProvider);
 
     return Scaffold(
@@ -144,20 +151,35 @@ class QualityManagementScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: 10),
                 InkWell(
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => const QualityPopup(),
-                    );
-                  },
-                  child: Container(
-                    height: 44,
-                    width: 44,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.white),
-                      borderRadius: BorderRadius.circular(12),
+                  onTap:
+                      canAdd
+                          ? () {
+                            showDialog(
+                              context: context,
+                              builder: (_) => const QualityPopup(),
+                            );
+                          }
+                          : () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "You don't have permission to add quality.",
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          },
+                  child: Opacity(
+                    opacity: canAdd ? 1 : 0.4,
+                    child: Container(
+                      height: 44,
+                      width: 44,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.white),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.add, color: Colors.white),
                     ),
-                    child: const Icon(Icons.add, color: Colors.white),
                   ),
                 ),
               ],
@@ -178,7 +200,12 @@ class QualityManagementScreen extends ConsumerWidget {
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(16),
                       itemCount: list.length,
-                      itemBuilder: (_, i) => QualityCard(q: list[i]),
+                      itemBuilder:
+                          (_, i) => QualityCard(
+                            q: list[i],
+                            canEdit: canEdit,
+                            canDelete: canDelete,
+                          ),
                     ),
                   ),
             ),
@@ -192,7 +219,14 @@ class QualityManagementScreen extends ConsumerWidget {
 /// ================= CARD =================
 class QualityCard extends ConsumerWidget {
   final Quality q;
-  const QualityCard({super.key, required this.q});
+  final bool canEdit;
+  final bool canDelete;
+  const QualityCard({
+    super.key,
+    required this.q,
+    required this.canEdit,
+    required this.canDelete,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -261,29 +295,61 @@ class QualityCard extends ConsumerWidget {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.edit, size: 18),
-                  label: const Text("Edit"),
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => QualityPopup(edit: q),
-                    );
-                  },
+                child: Opacity(
+                  opacity: canEdit ? 1 : 0.4,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.edit, size: 18),
+                    label: const Text("Edit"),
+                    onPressed:
+                        canEdit
+                            ? () {
+                              showDialog(
+                                context: context,
+                                builder: (_) => QualityPopup(edit: q),
+                              );
+                            }
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to edit quality.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.delete, size: 18),
-                  label: const Text("Delete"),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
+                child: Opacity(
+                  opacity: canDelete ? 1 : 0.4,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.delete, size: 18),
+                    label: const Text("Delete"),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                    ),
+                    onPressed:
+                        canDelete
+                            ? () {
+                              ref
+                                  .read(qualityProvider.notifier)
+                                  .deleteQuality(q.id);
+                            }
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to delete quality.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
                   ),
-                  onPressed: () {
-                    ref.read(qualityProvider.notifier).deleteQuality(q.id);
-                  },
                 ),
               ),
             ],

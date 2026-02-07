@@ -252,10 +252,6 @@ class _ExpenseStockManagementScreenState
                         ),
                       ),
                       const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.refresh),
-                        onPressed: _refreshData,
-                      ),
                     ],
                   ),
                   const SizedBox(height: 20),

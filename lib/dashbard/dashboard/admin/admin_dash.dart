@@ -342,13 +342,6 @@ class _DashboardPageState extends State<DashboardPage> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _fetchAllData,
-        backgroundColor: const Color(0xffFFA34D),
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.refresh),
-        tooltip: 'Refresh Data',
-      ),
     );
   }
 

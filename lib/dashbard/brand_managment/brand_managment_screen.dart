@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
 /// ================= MODEL =================
 class Brand {
@@ -25,6 +26,11 @@ class BrandManagementScreen extends StatefulWidget {
 }
 
 class _BrandManagementScreenState extends State<BrandManagementScreen> {
+  late bool canViewBrand;
+  late bool canAddBrand;
+  late bool canEditBrand;
+  late bool canDeleteBrand;
+
   final Dio dio = Dio(
     BaseOptions(
       baseUrl: "https://dashboarduat.theceramicstudio.in/api/brands",
@@ -38,6 +44,13 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
   @override
   void initState() {
     super.initState();
+
+    canAddBrand = PermissionManager.hasPermission("Brand Management_Add");
+
+    canEditBrand = PermissionManager.hasPermission("Brand Management_Edit");
+
+    canDeleteBrand = PermissionManager.hasPermission("Brand Management_Delete");
+
     fetchBrands();
   }
 
@@ -254,15 +267,30 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
                   ),
                   const SizedBox(width: 12),
                   InkWell(
-                    onTap: () => openBrandSheet(),
-                    child: Container(
-                      height: 44,
-                      width: 44,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white),
-                        borderRadius: BorderRadius.circular(12),
+                    onTap:
+                        canAddBrand
+                            ? () => openBrandSheet()
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to add brand.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                    child: Opacity(
+                      opacity: canAddBrand ? 1 : 0.4,
+                      child: Container(
+                        height: 44,
+                        width: 44,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.add, color: Colors.white),
                       ),
-                      child: const Icon(Icons.add, color: Colors.white),
                     ),
                   ),
                 ],
@@ -283,6 +311,8 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
                             final brand = brands[index];
                             return BrandCard(
                               brand: brand,
+                              canEdit: canEditBrand,
+                              canDelete: canDeleteBrand,
                               onEdit: () => openBrandSheet(brand: brand),
                               onDelete: () => deleteBrand(brand.id),
                             );
@@ -300,12 +330,16 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
 /// ================= CARD =================
 class BrandCard extends StatelessWidget {
   final Brand brand;
+  final bool canEdit;
+  final bool canDelete;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const BrandCard({
     super.key,
     required this.brand,
+    required this.canEdit,
+    required this.canDelete,
     required this.onEdit,
     required this.onDelete,
   });
@@ -353,17 +387,48 @@ class BrandCard extends StatelessWidget {
 
           Row(
             children: [
-              OutlinedButton.icon(
-                onPressed: onEdit,
-                icon: const Icon(Icons.edit, size: 18),
-                label: const Text("Edit"),
+              Opacity(
+                opacity: canEdit ? 1 : 0.4,
+                child: OutlinedButton.icon(
+                  onPressed:
+                      canEdit
+                          ? onEdit
+                          : () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "You don't have permission to edit brand.",
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          },
+                  icon: const Icon(Icons.edit, size: 18),
+                  label: const Text("Edit"),
+                ),
               ),
+
               const Spacer(),
-              OutlinedButton(
-                onPressed: onDelete,
-                child: const Text(
-                  "Delete",
-                  style: TextStyle(color: Colors.red),
+              Opacity(
+                opacity: canDelete ? 1 : 0.4,
+                child: OutlinedButton(
+                  onPressed:
+                      canDelete
+                          ? onDelete
+                          : () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "You don't have permission to delete brand.",
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          },
+                  child: const Text(
+                    "Delete",
+                    style: TextStyle(color: Colors.red),
+                  ),
                 ),
               ),
             ],

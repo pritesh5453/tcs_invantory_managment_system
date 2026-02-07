@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
 import 'firebase_options.dart';
 import 'auth/prefs/app_preference.dart';
@@ -12,9 +13,7 @@ import 'auth/splash_screen.dart';
 
 /// Background Notification Handler
 Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 }
 
 /// Local Notification Plugin
@@ -31,11 +30,10 @@ const AndroidNotificationChannel channel = AndroidNotificationChannel(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await PermissionManager.init();
 
   /// Init Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   /// Register Background Handler
   FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundHandler);
@@ -44,15 +42,17 @@ Future<void> main() async {
   const AndroidInitializationSettings androidInit =
       AndroidInitializationSettings('@mipmap/ic_launcher');
 
-  const InitializationSettings initSettings =
-      InitializationSettings(android: androidInit);
+  const InitializationSettings initSettings = InitializationSettings(
+    android: androidInit,
+  );
 
   await flutterLocalNotificationsPlugin.initialize(initSettings);
 
   /// Create Notification Channel (Android)
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.createNotificationChannel(channel);
 
   /// Request Notification Permission
@@ -62,13 +62,12 @@ Future<void> main() async {
     sound: true,
   );
 
- 
   String? token = await FirebaseMessaging.instance.getToken();
   debugPrint("🔥 FCM TOKEN => $token");
 
   FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
     debugPrint("♻️ NEW FCM TOKEN => $newToken");
-  }); 
+  });
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
     final notification = message.notification;
     final android = message.notification?.android;

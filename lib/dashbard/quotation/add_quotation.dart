@@ -29,8 +29,6 @@ class _AddquotationscreenState extends State<Addquotationscreen> {
   final bankCtrl = TextEditingController();
   final qtyCtrl = TextEditingController(text: "1");
   final boxCtrl = TextEditingController(text: "1");
-
-  // New controllers for additional fields
   final altPhoneCtrl = TextEditingController();
   final emailCtrl = TextEditingController();
   final architectCtrl = TextEditingController();

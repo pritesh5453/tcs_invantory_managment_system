@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/architect_managment/architect_commision.dart';
 import 'add_architect.dart';
 import 'edit_architect.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
 /// ================= ARCHITECT MODEL =================
 class Architect {
@@ -74,6 +75,11 @@ class ArchitectManagementScreen extends StatefulWidget {
 }
 
 class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
+  late bool canAddArchitect;
+  late bool canEditArchitect;
+  late bool canDeleteArchitect;
+  late bool canViewCommission;
+
   final Dio dio = Dio(
     BaseOptions(
       baseUrl: "https://dashboarduat.theceramicstudio.in/api/architects",
@@ -87,6 +93,23 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
   @override
   void initState() {
     super.initState();
+
+    canAddArchitect = PermissionManager.hasPermission(
+      "Architect Registration_Add",
+    );
+
+    canEditArchitect = PermissionManager.hasPermission(
+      "Architect Registration_Edit",
+    );
+
+    canDeleteArchitect = PermissionManager.hasPermission(
+      "Architect Registration_Delete",
+    );
+
+    // 🔥 Commission (agar alag permission hai)
+    canViewCommission = PermissionManager.hasPermission(
+      "Architect Registration_Commission",
+    );
     fetchArchitects();
   }
 
@@ -296,22 +319,37 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
                   ),
                   const SizedBox(width: 12),
                   InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const AddArchitectScreen(),
+                    onTap:
+                        canAddArchitect
+                            ? () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const AddArchitectScreen(),
+                                ),
+                              ).then((_) => fetchArchitects());
+                            }
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to add architect.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                    child: Opacity(
+                      opacity: canAddArchitect ? 1 : 0.4,
+                      child: Container(
+                        height: 44,
+                        width: 44,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ).then((_) => fetchArchitects());
-                    },
-                    child: Container(
-                      height: 44,
-                      width: 44,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white),
-                        borderRadius: BorderRadius.circular(12),
+                        child: const Icon(Icons.add, color: Colors.white),
                       ),
-                      child: const Icon(Icons.add, color: Colors.white),
                     ),
                   ),
                 ],
@@ -337,6 +375,18 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
                           return InkWell(
                             borderRadius: BorderRadius.circular(8),
                             onTap: () {
+                              if (!canViewCommission) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "You don't have permission to view commission.",
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                                return;
+                              }
+
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -345,8 +395,11 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
                                 ),
                               );
                             },
+
                             child: ArchitectCard(
                               architect: a,
+                              canEdit: canEditArchitect,
+                              canDelete: canDeleteArchitect,
                               onDelete: () => confirmDelete(a.id),
                               onClients: () => showClientPopup(a.id),
                             ),
@@ -364,12 +417,16 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
 /// ================= CARD =================
 class ArchitectCard extends StatelessWidget {
   final Architect architect;
+  final bool canEdit;
+  final bool canDelete;
   final VoidCallback onDelete;
   final VoidCallback onClients;
 
   const ArchitectCard({
     super.key,
     required this.architect,
+    required this.canEdit,
+    required this.canDelete,
     required this.onDelete,
     required this.onClients,
   });
@@ -401,6 +458,18 @@ class ArchitectCard extends StatelessWidget {
                 icon: const Icon(Icons.more_vert, size: 18),
                 onSelected: (value) {
                   if (value == "edit") {
+                    if (!canEdit) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            "You don't have permission to edit architect.",
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -420,6 +489,17 @@ class ArchitectCard extends StatelessWidget {
                   } else if (value == "clients") {
                     onClients();
                   } else if (value == "delete") {
+                    if (!canDelete) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            "You don't have permission to delete architect.",
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
                     onDelete();
                   }
                 },

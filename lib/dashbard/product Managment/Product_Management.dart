@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/add%20product.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/edit_product.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/product_view_screen.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
 /// ================= PRODUCT MODEL =================
 class Product {
@@ -135,6 +136,11 @@ class ProductRegistrationScreen extends StatefulWidget {
 }
 
 class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
+  late bool canViewProduct;
+  late bool canAddProduct;
+  late bool canEditProduct;
+  late bool canDeleteProduct;
+
   late Dio _dio;
   final ScrollController _scrollController = ScrollController();
 
@@ -148,6 +154,17 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
   @override
   void initState() {
     super.initState();
+
+    canAddProduct = PermissionManager.hasPermission("Product Registration_Add");
+
+    canEditProduct = PermissionManager.hasPermission(
+      "Product Registration_Edit",
+    );
+
+    canDeleteProduct = PermissionManager.hasPermission(
+      "Product Registration_Delete",
+    );
+
     _dio = Dio(
       BaseOptions(
         baseUrl: "https://dashboarduat.theceramicstudio.in/api",
@@ -354,21 +371,36 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
                   ),
                   const SizedBox(width: 12),
                   InkWell(
-                    onTap: () {
-                      showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        builder: (_) => const AddProductSheet(),
-                      );
-                    },
-                    child: Container(
-                      height: 42,
-                      width: 42,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white),
-                        borderRadius: BorderRadius.circular(12),
+                    onTap:
+                        canAddProduct
+                            ? () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                builder: (_) => const AddProductSheet(),
+                              );
+                            }
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to add product.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                    child: Opacity(
+                      opacity: canAddProduct ? 1 : 0.4,
+                      child: Container(
+                        height: 42,
+                        width: 42,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.add, color: Colors.white),
                       ),
-                      child: const Icon(Icons.add, color: Colors.white),
                     ),
                   ),
                 ],
@@ -390,6 +422,8 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
                             if (i < products.length) {
                               return ProductCard(
                                 product: products[i],
+                                canEdit: canEditProduct,
+                                canDelete: canDeleteProduct,
                                 onDelete:
                                     (id) => _showDeleteDialog(context, id),
                                 onEdit: () {
@@ -442,6 +476,8 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
 /// ================= PRODUCT CARD =================
 class ProductCard extends StatelessWidget {
   final Product product;
+  final bool canEdit;
+  final bool canDelete;
   final Function(int) onDelete;
   final VoidCallback onEdit;
   final VoidCallback onView;
@@ -449,6 +485,8 @@ class ProductCard extends StatelessWidget {
   const ProductCard({
     super.key,
     required this.product,
+    required this.canEdit,
+    required this.canDelete,
     required this.onDelete,
     required this.onEdit,
     required this.onView,
@@ -500,11 +538,34 @@ class ProductCard extends StatelessWidget {
                   if (value == 'view') {
                     onView();
                   } else if (value == 'edit') {
+                    if (!canEdit) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            "You don't have permission to edit product.",
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
                     onEdit();
                   } else if (value == 'delete') {
+                    if (!canDelete) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            "You don't have permission to delete product.",
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
                     onDelete(product.id);
                   }
                 },
+
                 itemBuilder:
                     (_) => const [
                       PopupMenuItem(

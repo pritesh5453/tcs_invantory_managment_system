@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
 /// ================= MODEL =================
 class Category {
@@ -116,6 +117,12 @@ class CategoryManagementScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final canAdd = PermissionManager.hasPermission("Category Management_Add");
+    final canEdit = PermissionManager.hasPermission("Category Management_Edit");
+    final canDelete = PermissionManager.hasPermission(
+      "Category Management_Delete",
+    );
+
     final list = ref.watch(categoryProvider);
     final notifier = ref.read(categoryProvider.notifier);
 
@@ -154,20 +161,35 @@ class CategoryManagementScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: 10),
                 InkWell(
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => const CategoryPopup(),
-                    );
-                  },
-                  child: Container(
-                    height: 44,
-                    width: 44,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.white),
-                      borderRadius: BorderRadius.circular(12),
+                  onTap:
+                      canAdd
+                          ? () {
+                            showDialog(
+                              context: context,
+                              builder: (_) => const CategoryPopup(),
+                            );
+                          }
+                          : () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "You don't have permission to add category.",
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          },
+                  child: Opacity(
+                    opacity: canAdd ? 1 : 0.4,
+                    child: Container(
+                      height: 44,
+                      width: 44,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.white),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.add, color: Colors.white),
                     ),
-                    child: const Icon(Icons.add, color: Colors.white),
                   ),
                 ),
               ],
@@ -193,7 +215,12 @@ class CategoryManagementScreen extends ConsumerWidget {
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.all(16),
                         itemCount: list.length,
-                        itemBuilder: (_, i) => CategoryCard(cat: list[i]),
+                        itemBuilder:
+                            (_, i) => CategoryCard(
+                              cat: list[i],
+                              canEdit: canEdit,
+                              canDelete: canDelete,
+                            ),
                       ),
             ),
           ),
@@ -206,7 +233,14 @@ class CategoryManagementScreen extends ConsumerWidget {
 /// ================= CARD =================
 class CategoryCard extends ConsumerWidget {
   final Category cat;
-  const CategoryCard({super.key, required this.cat});
+  final bool canEdit;
+  final bool canDelete;
+  const CategoryCard({
+    super.key,
+    required this.cat,
+    required this.canEdit,
+    required this.canDelete,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -250,24 +284,58 @@ class CategoryCard extends ConsumerWidget {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => CategoryPopup(edit: cat),
-                    );
-                  },
-                  child: const Text("Edit"),
+                child: Opacity(
+                  opacity: canEdit ? 1 : 0.4,
+                  child: OutlinedButton(
+                    onPressed:
+                        canEdit
+                            ? () {
+                              showDialog(
+                                context: context,
+                                builder: (_) => CategoryPopup(edit: cat),
+                              );
+                            }
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to edit category.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                    child: const Text("Edit"),
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: OutlinedButton(
-                  onPressed: () {
-                    ref.read(categoryProvider.notifier).delete(cat.id);
-                  },
-                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                  child: const Text("Delete"),
+                child: Opacity(
+                  opacity: canDelete ? 1 : 0.4,
+                  child: OutlinedButton(
+                    onPressed:
+                        canDelete
+                            ? () {
+                              ref
+                                  .read(categoryProvider.notifier)
+                                  .delete(cat.id);
+                            }
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to delete category.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                    ),
+                    child: const Text("Delete"),
+                  ),
                 ),
               ),
             ],

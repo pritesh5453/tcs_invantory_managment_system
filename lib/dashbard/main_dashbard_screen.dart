@@ -92,7 +92,7 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
     ),
     MenuItem(
       title: "Architect Registration",
-      icon: Icons.inventory_2,
+      icon: Icons.architecture,
       moduleName: "Architect Registration",
     ),
     MenuItem(
@@ -176,7 +176,12 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
 
   // Dynamic menu items based on role and permissions
   List<MenuItem> getFilteredMenuItems() {
-    // Employee ke liye: Dashboard, Logout + jinke permissions hain
+    // Agar admin ya superadmin hai to sab kuch dikhao
+    if (userRole == "admin" || userRole == "superadmin") {
+      return allPossibleMenuItems;
+    }
+
+    // Employee ke liye permission-based filtering
     if (userRole == "employee") {
       return allPossibleMenuItems.where((item) {
         // Dashboard aur Logout to hamesha show honge
@@ -189,8 +194,8 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
           return false;
         }
 
-        // Architect Registration employee ke liye nahi
-        if (item.title == "Architect Registration") {
+        // Permissions employee ke liye nahi
+        if (item.title == "Permissions") {
           return false;
         }
 
@@ -200,20 +205,6 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
         // Check if user has any permission for this module
         return PermissionManager.hasAnyPermission(item.moduleName);
       }).toList();
-    }
-    // Admin ke liye: Sab kuch dikhao except Architect Registration
-    else if (userRole == "admin") {
-      return allPossibleMenuItems.where((item) {
-        // Architect Registration admin ke liye bhi nahi
-        if (item.title == "Architect Registration") {
-          return false;
-        }
-        return true;
-      }).toList();
-    }
-    // SuperAdmin ke liye: Full access (sab show karo)
-    else if (userRole == "superadmin") {
-      return allPossibleMenuItems;
     }
 
     // Default case
@@ -326,45 +317,43 @@ class MainScreenWidget extends StatelessWidget {
 
   // Check if user can access a screen
   bool _canAccessScreen(String screenName) {
-    // Architect Registration sirf SuperAdmin ke liye
-    if (screenName == "Architect Registration") {
-      return userRole == "superadmin";
+    // Admin aur SuperAdmin ko full access
+    if (userRole == "admin" || userRole == "superadmin") {
+      return true;
     }
 
-    // Employee ke liye check
+    // Dashboard aur Logout to hamesha access
+    if (screenName == "Dashboard" || screenName == "Logout") {
+      return true;
+    }
+
+    // Employee ke liye special checks
     if (userRole == "employee") {
-      // Dashboard to hamesha access
-      if (screenName == "Dashboard") {
-        return true;
-      }
-
-      // Logout ke liye special handling
-      if (screenName == "Logout") {
-        return true;
-      }
-
       // Reports aur Order Book employee ke liye nahi
       if (screenName == "Reports" || screenName == "Order Book") {
         return false;
       }
 
-      // Find the menu item for this screen
-      final menuItem = filteredMenuItems.firstWhere(
-        (item) => item.title == screenName,
-        orElse: () => MenuItem(title: "", icon: Icons.error, moduleName: ""),
-      );
-
-      // Agar menu item nahi mila to access nahi
-      if (menuItem.title.isEmpty) return false;
-
-      // Permission check
-      if (menuItem.moduleName.isEmpty) return true;
-
-      return PermissionManager.hasAnyPermission(menuItem.moduleName);
+      // Permissions employee ke liye nahi
+      if (screenName == "Permissions") {
+        return false;
+      }
     }
 
-    // Admin/SuperAdmin ke liye full access
-    return true;
+    // Find the menu item for this screen
+    final menuItem = filteredMenuItems.firstWhere(
+      (item) => item.title == screenName,
+      orElse: () => MenuItem(title: "", icon: Icons.error, moduleName: ""),
+    );
+
+    // Agar menu item nahi mila to access nahi
+    if (menuItem.title.isEmpty) return false;
+
+    // If the moduleName is empty (like for Dashboard, Logout), allow access
+    if (menuItem.moduleName.isEmpty) return true;
+
+    // Check if user has any permission for this module
+    return PermissionManager.hasAnyPermission(menuItem.moduleName);
   }
 
   @override
@@ -380,6 +369,7 @@ class MainScreenWidget extends StatelessWidget {
         ),
       );
     }
+
     // Agar employee hai to Employee Dashboard show karo
     if (userRole == "employee") {
       return Scaffold(
@@ -426,9 +416,6 @@ class MainScreenWidget extends StatelessWidget {
           onPressed: onMenuPressed,
         ),
         title: Text(selectedPage, style: const TextStyle(color: Colors.black)),
-        actions: const [
-          // Profile icon removed for simplicity
-        ],
       ),
       body: _pageContent(),
     );
@@ -441,19 +428,15 @@ class MainScreenWidget extends StatelessWidget {
     }
 
     // Agar employee hai to employee dashboard dikhao
-    if (userRole == "employee") {
-      if (selectedPage == "Dashboard") {
-        return EmployeeDashboardScreen(
-          userId: userId,
-          role: userRole,
-          userName: userName,
-        );
-      }
-      // Employee ke liye baki screens
-      return _getScreenForPage(selectedPage);
+    if (userRole == "employee" && selectedPage == "Dashboard") {
+      return EmployeeDashboardScreen(
+        userId: userId,
+        role: userRole,
+        userName: userName,
+      );
     }
 
-    // Agar admin/superadmin hai to purane wale screens dikhao
+    // Sabke liye common screens
     return _getScreenForPage(selectedPage);
   }
 
@@ -516,16 +499,17 @@ class MainScreenWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.block, size: 60, color: Colors.red),
-          SizedBox(height: 20),
-          Text(
+          const Icon(Icons.block, size: 60, color: Colors.red),
+          const SizedBox(height: 20),
+          const Text(
             "Access Denied",
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
-          SizedBox(height: 10),
+          const SizedBox(height: 10),
           Text(
-            "You don't have permission to access this page",
-            style: TextStyle(fontSize: 16, color: Colors.grey),
+            "You don't have permission to access $selectedPage",
+            style: const TextStyle(fontSize: 16, color: Colors.grey),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -634,7 +618,7 @@ class AnimatedDrawerWidget extends StatelessWidget {
           const SizedBox(height: 5),
           Text(
             userRole.toUpperCase(),
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.orange,
               fontSize: 12,
               fontWeight: FontWeight.w500,

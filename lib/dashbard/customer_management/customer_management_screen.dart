@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
+import 'package:tcs_invantory_managment_system/dashbard/customer_management/add_customer.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/add_followUp.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/edit_customer.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/history.dart';
@@ -73,6 +75,8 @@ class CustomerManagementScreen extends StatefulWidget {
 }
 
 class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
+  late bool canAddCustomer;
+  late bool canEditCustomer;
   late Future<List<Customer>> customerFuture;
   List<Customer> _allCustomers = []; // Store all customers
   List<Customer> _filteredCustomers = []; // Store filtered customers
@@ -83,6 +87,13 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint("ALL PERMISSIONS => ${PermissionManager.allPermissions}");
+
+    canAddCustomer = PermissionManager.hasPermission("Customer Management_Add");
+
+    canEditCustomer = PermissionManager.hasPermission(
+      "Customer Management_Edit",
+    );
     _allCustomers = [];
     _filteredCustomers = [];
     _loadCustomers();
@@ -187,6 +198,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                             color: Colors.grey,
                           ),
                           const SizedBox(width: 8),
+
                           Expanded(
                             child: TextField(
                               controller: _searchController, // Add controller
@@ -216,7 +228,40 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // ... rest of your code remains same
+                  InkWell(
+                    onTap:
+                        canAddCustomer
+                            ? () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const AddCustomerScreen(),
+                                ),
+                              );
+                            }
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to add employee. Please contact support.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                    child: Opacity(
+                      opacity: canAddCustomer ? 1 : 0.4,
+                      child: Container(
+                        height: 42,
+                        width: 42,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.add, color: Colors.white),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -273,6 +318,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                         return CustomerCard(
                           customer: displayCustomers[index],
                           onRefresh: _loadCustomers,
+                          canEditCustomer: canEditCustomer,
                         );
                       },
                     );
@@ -291,11 +337,13 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
 class CustomerCard extends StatelessWidget {
   final Customer customer;
   final VoidCallback onRefresh;
+  final bool canEditCustomer;
 
   const CustomerCard({
     super.key,
     required this.customer,
     required this.onRefresh,
+    required this.canEditCustomer,
   });
 
   @override
@@ -325,19 +373,56 @@ class CustomerCard extends StatelessWidget {
 
           Row(
             children: [
-              actionBtn(
-                icon: Icons.edit,
-                text: "Edit",
-                color: Colors.blue,
-                onTap: () async {
-                  await showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (_) => EditCustomerPopup(customerId: customer.id),
-                  );
-                  onRefresh(); // ✅ refresh after edit
-                },
+              Expanded(
+                child: Opacity(
+                  opacity: canEditCustomer ? 1 : 0.4,
+                  child: InkWell(
+                    onTap:
+                        canEditCustomer
+                            ? () async {
+                              await showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder:
+                                    (_) => EditCustomerPopup(
+                                      customerId: customer.id,
+                                    ),
+                              );
+                              onRefresh();
+                            }
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to edit customer.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                    borderRadius: BorderRadius.circular(18),
+                    child: Container(
+                      height: 36,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.blue),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.edit, size: 16, color: Colors.blue),
+                          SizedBox(width: 6),
+                          Text(
+                            "Edit",
+                            style: TextStyle(color: Colors.blue, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
+
               const SizedBox(width: 10),
               actionBtn(
                 icon: Icons.history,

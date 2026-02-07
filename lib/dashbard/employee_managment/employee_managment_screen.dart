@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/employee_managment/add_employee.dart';
 import 'package:tcs_invantory_managment_system/dashbard/employee_managment/edit_employee.dart';
+import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
 class EmployeeManagmentScreen extends StatefulWidget {
   const EmployeeManagmentScreen({super.key});
@@ -16,6 +17,9 @@ class EmployeeManagmentScreen extends StatefulWidget {
 class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
   File? aadharImage;
   final ImagePicker picker = ImagePicker();
+  late bool canAddEmployee;
+  late bool canEditEmployee;
+  late bool canDeleteEmployee;
 
   final Dio dio = Dio();
   bool isLoading = true;
@@ -24,6 +28,20 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
   @override
   void initState() {
     super.initState();
+
+    debugPrint("ALL PERMISSIONS => ${PermissionManager.allPermissions}");
+    canAddEmployee = PermissionManager.hasPermission(
+      "Employee Registration_Add",
+    );
+
+    canEditEmployee = PermissionManager.hasPermission(
+      "Employee Registration_Edit",
+    );
+
+    canDeleteEmployee = PermissionManager.hasPermission(
+      "Employee Registration_Delete",
+    );
+
     fetchEmployees();
   }
 
@@ -47,30 +65,17 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
   }
 
   Future<void> showDeleteDialog(BuildContext context, int employeeId) async {
-    return showDialog(
-      context: context,
-      builder:
-          (_) => AlertDialog(
-            title: const Text("Delete Employee"),
-            content: const Text(
-              "Are you sure you want to delete this employee?",
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Cancel"),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: () async {
-                  Navigator.pop(context);
-                  await deleteEmployee(employeeId);
-                },
-                child: const Text("Delete"),
-              ),
-            ],
-          ),
-    );
+    if (!canDeleteEmployee) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("You don't have permission to delete employee."),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    return showDialog(context: context, builder: (_) => AlertDialog());
   }
 
   Future<void> deleteEmployee(int employeeId) async {
@@ -157,27 +162,38 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
                       ),
                       const SizedBox(width: 12),
                       InkWell(
-                        onTap: () async {
-                          final result = await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const AddEmployeeScreen(),
+                        onTap:
+                            canAddEmployee
+                                ? () async {
+                                  final result = await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const AddEmployeeScreen(),
+                                    ),
+                                  );
+                                  if (result == true) fetchEmployees();
+                                }
+                                : () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        "You don't have permission to add employee. Please contact support.",
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                },
+                        child: Opacity(
+                          opacity: canAddEmployee ? 1 : 0.4,
+                          child: Container(
+                            height: 42,
+                            width: 42,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.white),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                          );
-
-                          // ✅ optional: employee add hone ke baad list refresh
-                          if (result == true) {
-                            fetchEmployees();
-                          }
-                        },
-                        child: Container(
-                          height: 42,
-                          width: 42,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white),
-                            borderRadius: BorderRadius.circular(12),
+                            child: const Icon(Icons.add, color: Colors.white),
                           ),
-                          child: const Icon(Icons.add, color: Colors.white),
                         ),
                       ),
                     ],
@@ -209,6 +225,8 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
                                     context,
                                     employees[index].id,
                                   ),
+                              canEditEmployee: canEditEmployee,
+                              canDeleteEmployee: canDeleteEmployee,
                             );
                           },
                         ),
@@ -265,8 +283,16 @@ class Employee {
 class EmployeeCard extends StatelessWidget {
   final Employee employee;
   final VoidCallback? onDelete;
+  final bool canEditEmployee;
+  final bool canDeleteEmployee;
 
-  const EmployeeCard({super.key, required this.employee, this.onDelete});
+  const EmployeeCard({
+    super.key,
+    required this.employee,
+    this.onDelete,
+    required this.canEditEmployee,
+    required this.canDeleteEmployee,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -379,50 +405,87 @@ class EmployeeCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    debugPrint("🆔 EDIT CLICKED ID => ${employee.id}");
+                child: Opacity(
+                  opacity: canEditEmployee ? 1 : 0.4,
+                  child: OutlinedButton.icon(
+                    onPressed:
+                        canEditEmployee
+                            ? () async {
+                              debugPrint(
+                                "🆔 EDIT CLICKED ID => ${employee.id}",
+                              );
 
-                    final employeeModel = EmployeeModel(
-                      id: employee.id, // ✅ DYNAMIC ID (FIXED)
-                      firstName:
-                          employee.name.split(' ').isNotEmpty
-                              ? employee.name.split(' ').first
-                              : '',
-                      lastName:
-                          employee.name.split(' ').length > 1
-                              ? employee.name.split(' ').sublist(1).join(' ')
-                              : '',
-                      mobile: employee.phone,
-                      email: employee.email,
-                      dob: '',
-                      password: '',
-                      expense: '0',
-                      salary: employee.salary,
-                      commission: '0',
-                      isActive: employee.isActive,
-                    );
+                              final employeeModel = EmployeeModel(
+                                id: employee.id, // ✅ DYNAMIC ID (FIXED)
+                                firstName:
+                                    employee.name.split(' ').isNotEmpty
+                                        ? employee.name.split(' ').first
+                                        : '',
+                                lastName:
+                                    employee.name.split(' ').length > 1
+                                        ? employee.name
+                                            .split(' ')
+                                            .sublist(1)
+                                            .join(' ')
+                                        : '',
+                                mobile: employee.phone,
+                                email: employee.email,
+                                dob: '',
+                                password: '',
+                                expense: '0',
+                                salary: employee.salary,
+                                commission: '0',
+                                isActive: employee.isActive,
+                              );
 
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder:
-                            (_) => EditEmployeePopup(employee: employeeModel),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.edit),
-                  label: const Text("Edit"),
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (_) => EditEmployeePopup(
+                                        employee: employeeModel,
+                                      ),
+                                ),
+                              );
+                            }
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to edit employee.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                    icon: const Icon(Icons.edit),
+                    label: const Text("Edit"),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                  label: const Text(
-                    "Delete",
-                    style: TextStyle(color: Colors.red),
+                child: Opacity(
+                  opacity: canDeleteEmployee ? 1 : 0.4,
+                  child: OutlinedButton.icon(
+                    onPressed:
+                        canDeleteEmployee
+                            ? onDelete
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to delete employee.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                    icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                    label: const Text(
+                      "Delete",
+                      style: TextStyle(color: Colors.red),
+                    ),
                   ),
                 ),
               ),
