@@ -95,7 +95,7 @@ class _WalletScreenState extends State<WalletScreen> {
   final TextEditingController _reasonController = TextEditingController();
 
   // Variables
-  String _selectedReason = 'Advance Salary';
+  String _selectedReason = 'Stock Expenses';
   File? _selectedReceipt;
   bool _isLoading = true;
   bool _isSubmitting = false;
@@ -104,7 +104,6 @@ class _WalletScreenState extends State<WalletScreen> {
   // API Data
   WalletResponse? _walletData;
   final List<String> _reasons = [
-    'Advance Salary',
     'Stock Expenses',
     'Travel Expenses',
     'Office Supplies',
@@ -190,40 +189,37 @@ class _WalletScreenState extends State<WalletScreen> {
     });
 
     try {
-      // Create FormData for multipart request
       FormData formData = FormData.fromMap({
-        'employee_id': '7',
+        'employeeId': '7', // dynamic rakhna ho to variable use kar lena
         'amount': _amountController.text,
         'note': _selectedReason,
-        'type': _selectedReason == 'Advance Salary' ? 'CREDIT' : 'DEBIT',
       });
 
-      // Add receipt file if selected
+      // Add receipt if selected
       if (_selectedReceipt != null) {
         formData.files.add(
           MapEntry(
-            'bill_attachment',
+            'bill_image',
             await MultipartFile.fromFile(_selectedReceipt!.path),
           ),
         );
       }
 
-      // Make API call
-      final response = await _dio.post('/wallet/transaction', data: formData);
+      // Expense API call
+      final response = await _dio.post('/wallet/spend', data: formData);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = response.data;
         if (data['success'] == true) {
-          _showSnackBar('Entry submitted successfully!', Colors.green);
+          _showSnackBar('Expense recorded successfully!', Colors.green);
 
-          // Clear form
+          // Clear form on success
           _amountController.clear();
           setState(() {
-            _selectedReason = 'Advance Salary';
             _selectedReceipt = null;
           });
 
-          // Refresh wallet data
+          // Refresh wallet
           await _fetchWalletData();
         } else {
           _showSnackBar(data['message'] ?? 'Submission failed', Colors.red);
@@ -232,7 +228,11 @@ class _WalletScreenState extends State<WalletScreen> {
         _showSnackBar('Server error: ${response.statusCode}', Colors.red);
       }
     } on DioException catch (e) {
-      _showSnackBar('Network error: ${e.message}', Colors.red);
+      String errorMessage = 'Network error';
+      if (e.response != null) {
+        errorMessage = e.response?.data['message'] ?? 'Server error';
+      }
+      _showSnackBar(errorMessage, Colors.red);
     } catch (e) {
       _showSnackBar('Error: $e', Colors.red);
     } finally {
@@ -275,7 +275,9 @@ class _WalletScreenState extends State<WalletScreen> {
 
   List<Transaction> get _expensesTransactions {
     if (_walletData == null) return [];
-    return _walletData!.transactions.where((t) => t.type == 'DEBIT').toList();
+    return _walletData!.transactions
+        .where((t) => !t.note.toLowerCase().contains('advance salary'))
+        .toList();
   }
 
   @override
@@ -513,9 +515,11 @@ class _WalletScreenState extends State<WalletScreen> {
                               color: Colors.white,
                             ),
                           )
-                          : const Text(
-                            'SUBMIT',
-                            style: TextStyle(
+                          : Text(
+                            _selectedReason == 'Advance Salary'
+                                ? 'REQUEST ADVANCE SALARY'
+                                : 'SUBMIT EXPENSE',
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
@@ -633,6 +637,21 @@ class _WalletScreenState extends State<WalletScreen> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${transactions.length}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -659,14 +678,13 @@ class _WalletScreenState extends State<WalletScreen> {
                   ),
                 ),
               )
-              : ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: transactions.length,
-                itemBuilder: (context, index) {
-                  final transaction = transactions[index];
-                  return _buildTransactionCard(transaction);
-                },
+              : Column(
+                children:
+                    transactions
+                        .map(
+                          (transaction) => _buildTransactionCard(transaction),
+                        )
+                        .toList(),
               ),
         ],
       ),
@@ -674,6 +692,10 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Widget _buildTransactionCard(Transaction transaction) {
+    final bool isAdvanceSalary = transaction.note.toLowerCase().contains(
+      'advance salary',
+    );
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
@@ -687,10 +709,13 @@ class _WalletScreenState extends State<WalletScreen> {
               children: [
                 Text(
                   '₱${transaction.amount}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Colors.green,
+                    color:
+                        transaction.type == 'CREDIT'
+                            ? Colors.green
+                            : Colors.red,
                   ),
                 ),
                 Container(
@@ -705,24 +730,77 @@ class _WalletScreenState extends State<WalletScreen> {
                             : Colors.red.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: Text(
-                    transaction.type,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color:
-                          transaction.type == 'CREDIT'
-                              ? Colors.green
-                              : Colors.red,
-                    ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        transaction.type == 'CREDIT'
+                            ? Icons.arrow_downward
+                            : Icons.arrow_upward,
+                        size: 12,
+                        color:
+                            transaction.type == 'CREDIT'
+                                ? Colors.green
+                                : Colors.red,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        transaction.type,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              transaction.type == 'CREDIT'
+                                  ? Colors.green
+                                  : Colors.red,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              transaction.note,
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            Row(
+              children: [
+                if (isAdvanceSalary)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.account_balance_wallet,
+                          size: 12,
+                          color: Colors.orange,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Advance',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (isAdvanceSalary) const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    transaction.note,
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(
@@ -756,5 +834,3 @@ class _WalletScreenState extends State<WalletScreen> {
     super.dispose();
   }
 }
-
-// Main App
