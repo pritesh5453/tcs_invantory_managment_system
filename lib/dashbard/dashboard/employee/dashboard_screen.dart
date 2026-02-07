@@ -2,9 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/admin_todo.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dashboard/employee/wallet.dart';
 
 class EmployeeDashboardScreen extends StatefulWidget {
-  const EmployeeDashboardScreen({super.key});
+  final int userId;
+  final String role;
+  final String userName;
+  const EmployeeDashboardScreen({
+    super.key,
+    required this.userId,
+    required this.role,
+    required this.userName,
+  });
 
   @override
   State<EmployeeDashboardScreen> createState() =>
@@ -14,11 +24,10 @@ class EmployeeDashboardScreen extends StatefulWidget {
 class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   bool showCompleteTask = false;
   bool isLoading = true;
-  bool isLoadingEmployeeData = true;
-  bool isLoadingPunchStatus = true;
+  bool isPunchLoading = false;
 
-  // Punch Status Variables - NULL initialize karo
-  String? punchStatus; // READY, IN, COMPLETED (API se aayega)
+  // Punch Status Variables
+  String? punchStatus;
 
   // Employee Data
   int employeeId = 0;
@@ -38,7 +47,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   // Selected task for completion
   Map<String, dynamic>? selectedTask;
   TextEditingController remarkController = TextEditingController();
-  String selectedStatus = "done"; // Default status
+  String selectedStatus = "done";
 
   // Dio instance
   final Dio _dio = Dio(
@@ -59,138 +68,76 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     // Set current date
     currentDate = DateFormat('EEEE, MMMM d').format(DateTime.now());
 
-    // Sabse pehle employee data load karo
-    print("🚀 INIT STATE STARTED");
+    // Initialize data
     _initializeData();
   }
 
-  // Proper initialization sequence
   Future<void> _initializeData() async {
-    print("🔄 STARTING DATA INITIALIZATION");
-
     try {
       // Step 1: Load employee data
       await _loadEmployeeData();
-      print("✅ Employee data loaded. Employee ID: $employeeId");
 
       if (employeeId == 0) {
-        print("❌ No employee ID found. Stopping.");
         setState(() {
           isLoading = false;
-          isLoadingEmployeeData = false;
-          isLoadingPunchStatus = false;
         });
         return;
       }
 
-      // Step 2: Fetch punch status
-      print("🔄 Fetching punch status...");
-      await _fetchPunchStatus();
-      print("✅ Punch status fetched: $punchStatus");
-
-      // Step 3: Load other data
-      print("🔄 Loading dashboard data...");
-      await _loadDashboardData();
-
-      print("🔄 Loading notifications...");
-      await _loadNotifications();
-
-      print("🎉 ALL DATA LOADED SUCCESSFULLY");
+      // Step 2: Load all data in parallel
+      await Future.wait([
+        _fetchPunchStatus(),
+        _fetchTasks(),
+        _fetchDashboardStats(),
+        _fetchAttendanceSummary(),
+        _loadNotifications(),
+      ]);
     } catch (e) {
       print("💥 ERROR in initialization: $e");
+    } finally {
       setState(() {
         isLoading = false;
       });
     }
   }
 
-  // Fetch punch status from API - SIMPLIFIED VERSION
   Future<void> _fetchPunchStatus() async {
     try {
-      print("🔄 Calling punch status API...");
-      print("📞 URL: /api/employees/status/$employeeId");
-
-      setState(() {
-        isLoadingPunchStatus = true;
-      });
-
       final response = await _dio.get('/api/employees/status/$employeeId');
-
-      print("✅ Punch Status API Response:");
-      print("   Status Code: ${response.statusCode}");
-      print("   Response Data: ${response.data}");
-      print("   Response Type: ${response.data.runtimeType}");
 
       if (response.statusCode == 200) {
         final data = response.data;
-
-        // Debug: Print all keys
-        if (data is Map) {
-          print("📊 Response Keys: ${data.keys}");
-        }
-
-        // Try to extract status from various possible formats
         String? extractedStatus;
 
-        // Format 1: Direct status field
         if (data is Map && data['status'] != null) {
           extractedStatus = data['status'].toString();
-          print("📥 Got status from 'status' field: $extractedStatus");
-        }
-        // Format 2: Nested in data field
-        else if (data is Map && data['data'] != null && data['data'] is Map) {
+        } else if (data is Map && data['data'] != null && data['data'] is Map) {
           final nestedData = data['data'] as Map;
           if (nestedData['status'] != null) {
             extractedStatus = nestedData['status'].toString();
-            print("📥 Got status from 'data.status' field: $extractedStatus");
           }
-        }
-        // Format 3: In message field
-        else if (data is Map && data['message'] != null) {
+        } else if (data is Map && data['message'] != null) {
           final message = data['message'].toString().toLowerCase();
           if (message.contains('punched in')) {
             extractedStatus = "IN";
-            print("📥 Deduced status from message: $extractedStatus");
           } else if (message.contains('punched out') ||
               message.contains('completed')) {
             extractedStatus = "COMPLETED";
-            print("📥 Deduced status from message: $extractedStatus");
           }
-        }
-        // Format 4: Direct string response
-        else if (data is String) {
+        } else if (data is String) {
           extractedStatus = data;
-          print("📥 Got direct string status: $extractedStatus");
         }
 
-        // Set the punch status
-        if (extractedStatus != null) {
-          setState(() {
-            punchStatus = extractedStatus?.toUpperCase().trim();
-          });
-          print("✅ Punch status set to: $punchStatus");
-        } else {
-          print("⚠️ Could not extract status. Defaulting to READY");
-          setState(() {
-            punchStatus = "READY";
-          });
-        }
+        setState(() {
+          punchStatus = extractedStatus?.toUpperCase().trim() ?? "READY";
+        });
       } else {
-        print("❌ Non-200 response: ${response.statusCode}");
         setState(() {
           punchStatus = "READY";
         });
       }
     } on DioException catch (e) {
-      print("🚨 DioException in _fetchPunchStatus:");
-      print("   Message: ${e.message}");
-      print("   Type: ${e.type}");
-      print("   Response: ${e.response?.data}");
-      print("   Status Code: ${e.response?.statusCode}");
-
-      // If endpoint not found, try alternatives
       if (e.response?.statusCode == 404) {
-        print("🔍 Endpoint not found. Trying alternatives...");
         await _tryAlternativeStatusEndpoints();
       } else {
         setState(() {
@@ -198,19 +145,12 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         });
       }
     } catch (e) {
-      print("💥 Unexpected error in _fetchPunchStatus: $e");
       setState(() {
         punchStatus = "READY";
       });
-    } finally {
-      setState(() {
-        isLoadingPunchStatus = false;
-      });
-      print("✅ Punch status loading completed");
     }
   }
 
-  // Try alternative endpoints
   Future<void> _tryAlternativeStatusEndpoints() async {
     final endpoints = [
       '/api/attendance/status/$employeeId',
@@ -220,27 +160,22 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
     for (var endpoint in endpoints) {
       try {
-        print("🔄 Trying alternative: $endpoint");
         final response = await _dio.get(endpoint);
 
         if (response.statusCode == 200) {
-          print("✅ Alternative endpoint success: ${response.data}");
-
           final data = response.data;
           if (data is Map && data['status'] != null) {
             setState(() {
               punchStatus = data['status'].toString().toUpperCase().trim();
             });
-            print("✅ Status from alternative: $punchStatus");
             return;
           }
         }
       } catch (e) {
-        print("❌ Failed: $endpoint - $e");
+        continue;
       }
     }
 
-    print("❌ All alternatives failed");
     setState(() {
       punchStatus = "READY";
     });
@@ -248,18 +183,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
   Future<void> _loadEmployeeData() async {
     try {
-      print("🔄 Loading employee data...");
-
       final prefs = await SharedPreferences.getInstance();
 
       final loadedId = prefs.getInt("userId") ?? 0;
       final loadedName = prefs.getString("userName") ?? "Employee Name";
-
-      print("📥 Employee Data from SharedPreferences:");
-      print("   User ID: $loadedId");
-      print("   User Name: $loadedName");
-      print("   User Email: ${prefs.getString("userEmail")}");
-      print("   User Phone: ${prefs.getString("userPhone")}");
 
       setState(() {
         employeeId = loadedId;
@@ -267,59 +194,19 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         employeeEmail = prefs.getString("userEmail") ?? "email@example.com";
         employeePhone = prefs.getString("userPhone") ?? "0000000000";
         empId = loadedId.toString();
-        isLoadingEmployeeData = false;
       });
-
-      if (employeeId == 0) {
-        print("⚠️ WARNING: employeeId is 0! Check SharedPreferences.");
-      } else {
-        print("✅ Employee data loaded successfully");
-      }
     } catch (e) {
       print("💥 Error loading employee data: $e");
-      setState(() {
-        isLoadingEmployeeData = false;
-      });
-    }
-  }
-
-  Future<void> _loadDashboardData() async {
-    if (employeeId == 0) {
-      print("❌ Cannot load dashboard: employeeId is 0");
-      setState(() {
-        isLoading = false;
-      });
-      return;
-    }
-
-    try {
-      print("🔄 Loading dashboard data...");
-
-      await Future.wait([
-        _fetchTasks(),
-        _fetchDashboardStats(),
-        _fetchAttendanceSummary(),
-      ]);
-
-      print("✅ Dashboard data loaded");
-    } catch (e) {
-      print("💥 Error loading dashboard: $e");
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
     }
   }
 
   Future<void> _fetchTasks() async {
     try {
-      print("🔄 Fetching tasks...");
       final response = await _dio.get('/api/tasks/employee/$employeeId');
       if (response.statusCode == 200) {
         setState(() {
           tasks = response.data['tasks'] ?? [];
         });
-        print("✅ Fetched ${tasks.length} tasks");
       }
     } catch (e) {
       print("💥 Error fetching tasks: $e");
@@ -336,9 +223,6 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
           customerCount = response.data['counts']['customers'] ?? 0;
           quotationCount = response.data['counts']['quotations'] ?? 0;
         });
-        print(
-          "✅ Dashboard stats: Customers=$customerCount, Quotations=$quotationCount",
-        );
       }
     } catch (e) {
       print("💥 Error fetching dashboard stats: $e");
@@ -355,7 +239,6 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
           daysPresent = response.data['daysPresent'] ?? 0;
           avgHours = response.data['avgHours']?.toString() ?? "0";
         });
-        print("✅ Attendance summary: Days=$daysPresent, AvgHours=$avgHours");
       }
     } catch (e) {
       print("💥 Error fetching attendance: $e");
@@ -364,10 +247,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
   Future<void> _punchIn() async {
     try {
-      print("🔄 Attempting Punch In for employeeId: $employeeId");
-
       setState(() {
-        isLoadingPunchStatus = true;
+        isPunchLoading = true;
       });
 
       final response = await _dio.post(
@@ -375,24 +256,14 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         data: {"employeeId": employeeId, "image": null},
       );
 
-      print("✅ Punch In Response Status: ${response.statusCode}");
-      print("✅ Punch In Response Data: ${response.data}");
-
       if (response.statusCode == 200) {
         _showSnackBar("✅ Punch In successful");
-        // Refresh punch status
         await _fetchPunchStatus();
-        // Refresh attendance
         await _fetchAttendanceSummary();
       } else {
         _showSnackBar("❌ Failed to Punch In");
       }
     } on DioException catch (e) {
-      print("🚨 DioError in Punch In:");
-      print("   Message: ${e.message}");
-      print("   Response: ${e.response?.data}");
-      print("   Status Code: ${e.response?.statusCode}");
-
       if (e.response?.statusCode == 400) {
         final errorData = e.response?.data;
         String errorMessage = "Failed to Punch In";
@@ -401,14 +272,11 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
           errorMessage = errorData['message'] ?? "Already punched in";
         }
 
-        // If already punched in
         if (errorMessage.toLowerCase().contains('already punched in')) {
           _showSnackBar("✅ You are already punched in for today");
-          // Manually set status to IN
           setState(() {
             punchStatus = "IN";
           });
-          // Also refresh attendance summary
           await _fetchAttendanceSummary();
         } else {
           _showSnackBar("❌ $errorMessage");
@@ -417,21 +285,18 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         _showSnackBar("❌ Failed to Punch In");
       }
     } catch (e) {
-      print("💥 Unexpected error in Punch In: $e");
       _showSnackBar("❌ Punch In failed");
     } finally {
       setState(() {
-        isLoadingPunchStatus = false;
+        isPunchLoading = false;
       });
     }
   }
 
   Future<void> _punchOut() async {
     try {
-      print("🔄 Attempting Punch Out for employeeId: $employeeId");
-
       setState(() {
-        isLoadingPunchStatus = true;
+        isPunchLoading = true;
       });
 
       final response = await _dio.post(
@@ -439,24 +304,14 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         data: {"employeeId": employeeId, "image": null},
       );
 
-      print("✅ Punch Out Response Status: ${response.statusCode}");
-      print("✅ Punch Out Response Data: ${response.data}");
-
       if (response.statusCode == 200) {
         _showSnackBar("✅ Punch Out successful");
-        // Refresh punch status
         await _fetchPunchStatus();
-        // Refresh attendance
         await _fetchAttendanceSummary();
       } else {
         _showSnackBar("❌ Failed to Punch Out");
       }
     } on DioException catch (e) {
-      print("🚨 DioError in Punch Out:");
-      print("   Message: ${e.message}");
-      print("   Response: ${e.response?.data}");
-      print("   Status Code: ${e.response?.statusCode}");
-
       if (e.response?.statusCode == 400) {
         final errorData = e.response?.data;
         String errorMessage = "Failed to Punch Out";
@@ -465,15 +320,12 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
           errorMessage = errorData['message'] ?? "Punch out error";
         }
 
-        // If already punched out
         if (errorMessage.toLowerCase().contains('already punched out') ||
             errorMessage.toLowerCase().contains('not punched in')) {
           _showSnackBar("✅ You are already punched out for today");
-          // Manually set status to COMPLETED
           setState(() {
             punchStatus = "COMPLETED";
           });
-          // Also refresh attendance summary
           await _fetchAttendanceSummary();
         } else {
           _showSnackBar("❌ $errorMessage");
@@ -484,11 +336,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         _showSnackBar("❌ Failed to Punch Out");
       }
     } catch (e) {
-      print("💥 Unexpected error in Punch Out: $e");
       _showSnackBar("❌ Punch Out failed");
     } finally {
       setState(() {
-        isLoadingPunchStatus = false;
+        isPunchLoading = false;
       });
     }
   }
@@ -507,7 +358,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         setState(() {
           showCompleteTask = false;
           selectedTask = null;
-          selectedStatus = "done"; // Reset to default
+          selectedStatus = "done";
         });
       }
     } on DioException catch (e) {
@@ -529,7 +380,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
             setState(() {
               showCompleteTask = false;
               selectedTask = null;
-              selectedStatus = "done"; // Reset to default
+              selectedStatus = "done";
             });
           }
         } catch (e2) {
@@ -559,7 +410,6 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         setState(() {
           notifications = response.data['data'] ?? [];
         });
-        print("✅ Loaded ${notifications.length} notifications");
       }
     } catch (e) {
       print("💥 Error fetching notifications: $e");
@@ -581,6 +431,27 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     }
   }
 
+  // Navigate to Todo Page
+  void _navigateToTodoPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => TodoPage(userId: widget.userId, role: widget.role),
+      ),
+    );
+  }
+
+  // Navigate to Wallet Page
+  void _navigateToWalletPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => WalletScreen(userName: widget.userName),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -598,7 +469,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       showCompleteTask = false;
                       selectedTask = null;
                       remarkController.clear();
-                      selectedStatus = "done"; // Reset to default
+                      selectedStatus = "done";
                     });
                   },
                   child: Container(color: Colors.black.withOpacity(0.4)),
@@ -607,7 +478,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
             if (showCompleteTask) Center(child: _completeTaskCard()),
 
-            if (isLoading || isLoadingEmployeeData || isLoadingPunchStatus)
+            // Only one loader for initial loading
+            if (isLoading)
               Positioned.fill(
                 child: Container(
                   color: Colors.black.withOpacity(0.3),
@@ -623,6 +495,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   Widget _dashboardBody() {
     return Column(
       children: [
+        // Header with Todo and Wallet buttons
         Container(
           padding: const EdgeInsets.all(16),
           decoration: const BoxDecoration(
@@ -634,24 +507,67 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
           ),
           child: Row(
             children: [
-              Expanded(
-                child: Container(
-                  height: 45,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
+              // Title on the left
+              const Expanded(
+                child: Text(
+                  "Employee Dashboard",
+                  style: TextStyle(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.search),
-                      SizedBox(width: 8),
-                      Text("Search.."),
-                    ],
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+
+              // Todo Button
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                child: ElevatedButton.icon(
+                  onPressed: _navigateToTodoPage,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xffFFA34D),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  icon: const Icon(Icons.task_alt, size: 16),
+                  label: const Text(
+                    "Todo",
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+
+              // Wallet Button
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                child: ElevatedButton.icon(
+                  onPressed: _navigateToWalletPage,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xff4CAF50),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  icon: const Icon(Icons.account_balance_wallet, size: 16),
+                  label: const Text(
+                    "Wallet",
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+
+              // Notifications Icon with Badge
               Stack(
                 children: [
                   IconButton(
@@ -704,7 +620,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
                 const SizedBox(height: 16),
 
-                // Daily Workspace - Yeh ab sahi kaam karega
+                // Daily Workspace
                 _dailyWorkspace(),
 
                 const SizedBox(height: 16),
@@ -713,32 +629,12 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
                 const SizedBox(height: 16),
 
-                (isLoading || isLoadingEmployeeData || isLoadingPunchStatus)
-                    ? _loadingTasks()
-                    : _taskCard(),
+                _taskCard(),
               ],
             ),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _loadingTasks() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: const Center(child: CircularProgressIndicator()),
     );
   }
 
@@ -803,11 +699,11 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
             ),
           ),
 
-          // Punch buttons logic - MODIFIED AS PER REQUIREMENT
+          // Punch buttons logic
           Builder(
             builder: (context) {
-              // Loading state
-              if (isLoadingPunchStatus) {
+              // Show loader on punch button if punch is loading
+              if (isPunchLoading) {
                 return const SizedBox(
                   width: 24,
                   height: 24,
@@ -815,11 +711,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                 );
               }
 
-              // If punch status is null (not fetched yet)
+              // If punch status is null (still loading or error)
               if (punchStatus == null) {
                 return ElevatedButton(
                   onPressed: () async {
-                    print("🔄 Manually refreshing punch status...");
                     await _fetchPunchStatus();
                   },
                   style: ElevatedButton.styleFrom(
@@ -837,7 +732,6 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
               // Process the punch status
               String status = punchStatus!.toUpperCase().trim();
-              print("🔄 Building UI for punch status: $status");
 
               // COMPLETED status
               if (status == "COMPLETED" ||
@@ -857,7 +751,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       text: "Punch In",
                       color: Colors.grey,
                       icon: Icons.check_circle,
-                      onTap: null, // Disabled
+                      onTap: null,
                       disabled: true,
                     ),
                     const SizedBox(width: 10),
@@ -871,10 +765,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                   ],
                 );
               }
-              // READY or any other status (not punched in) - YEH CHANGE KIYA HAI
+              // READY or any other status
               else {
-                // Jab punch in nahi hua hai, tab bhi dono buttons dikhao
-                // Punch In enabled, Punch Out disabled
                 return Row(
                   children: [
                     _punchButton(
@@ -889,7 +781,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                       text: "Punch Out",
                       color: Colors.grey,
                       icon: Icons.check_circle,
-                      onTap: null, // Disabled
+                      onTap: null,
                       disabled: true,
                     ),
                   ],
@@ -1226,7 +1118,6 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                           onTap: () {
                             setState(() {
                               selectedTask = task;
-                              // Set initial status based on current task status
                               selectedStatus = task['status'] ?? 'pending';
                               showCompleteTask = true;
                             });
@@ -1313,7 +1204,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                     showCompleteTask = false;
                     selectedTask = null;
                     remarkController.clear();
-                    selectedStatus = "done"; // Reset to default
+                    selectedStatus = "done";
                   });
                 },
                 child: const Icon(Icons.close, color: Colors.red),

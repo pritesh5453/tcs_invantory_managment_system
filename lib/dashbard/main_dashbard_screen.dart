@@ -14,7 +14,7 @@ import 'package:tcs_invantory_managment_system/dashbard/architect_managment/arch
 import 'package:tcs_invantory_managment_system/dashbard/brand_managment/brand_managment_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/category_managment/category_managment_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/customer_management_screen.dart';
-import 'package:tcs_invantory_managment_system/dashbard/dashboard/dashboard_screen.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dashboard/employee/dashboard_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/admin_dash.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/dilivery_chalan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/employee_managment/employee_managment_screen.dart';
@@ -49,6 +49,7 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
   String selectedPage = "Dashboard";
   String userRole = "";
   String userName = "";
+  int userId = 0;
   bool isLoading = true;
 
   // All possible menu items with their module names
@@ -164,6 +165,7 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
       final prefs = await SharedPreferences.getInstance();
 
       setState(() {
+        userId = prefs.getInt("userId") ?? 0;
         userRole = prefs.getString("role") ?? "employee";
         userName = prefs.getString("userName") ?? "";
       });
@@ -187,6 +189,11 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
           return false;
         }
 
+        // Architect Registration employee ke liye nahi
+        if (item.title == "Architect Registration") {
+          return false;
+        }
+
         // Permission check karo
         if (item.moduleName.isEmpty) return false;
 
@@ -194,8 +201,22 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
         return PermissionManager.hasAnyPermission(item.moduleName);
       }).toList();
     }
+    // Admin ke liye: Sab kuch dikhao except Architect Registration
+    else if (userRole == "admin") {
+      return allPossibleMenuItems.where((item) {
+        // Architect Registration admin ke liye bhi nahi
+        if (item.title == "Architect Registration") {
+          return false;
+        }
+        return true;
+      }).toList();
+    }
+    // SuperAdmin ke liye: Full access (sab show karo)
+    else if (userRole == "superadmin") {
+      return allPossibleMenuItems;
+    }
 
-    // Admin/SuperAdmin ke liye: Full access (sab show karo)
+    // Default case
     return allPossibleMenuItems;
   }
 
@@ -246,6 +267,7 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
               onMenuPressed: toggleDrawer,
               userRole: userRole,
               userName: userName,
+              userId: userId,
               filteredMenuItems: getFilteredMenuItems(),
             ),
 
@@ -289,6 +311,7 @@ class MainScreenWidget extends StatelessWidget {
   final VoidCallback onMenuPressed;
   final String userRole;
   final String userName;
+  final int userId;
   final List<MenuItem> filteredMenuItems;
 
   const MainScreenWidget({
@@ -297,11 +320,17 @@ class MainScreenWidget extends StatelessWidget {
     required this.onMenuPressed,
     required this.userRole,
     required this.userName,
+    required this.userId,
     required this.filteredMenuItems,
   });
 
   // Check if user can access a screen
   bool _canAccessScreen(String screenName) {
+    // Architect Registration sirf SuperAdmin ke liye
+    if (screenName == "Architect Registration") {
+      return userRole == "superadmin";
+    }
+
     // Employee ke liye check
     if (userRole == "employee") {
       // Dashboard to hamesha access
@@ -312,6 +341,11 @@ class MainScreenWidget extends StatelessWidget {
       // Logout ke liye special handling
       if (screenName == "Logout") {
         return true;
+      }
+
+      // Reports aur Order Book employee ke liye nahi
+      if (screenName == "Reports" || screenName == "Order Book") {
+        return false;
       }
 
       // Find the menu item for this screen
@@ -335,6 +369,17 @@ class MainScreenWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (userId == 0) {
+      return const Scaffold(
+        body: Center(
+          child: Text(
+            "Invalid user session.\nPlease login again.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16),
+          ),
+        ),
+      );
+    }
     // Agar employee hai to Employee Dashboard show karo
     if (userRole == "employee") {
       return Scaffold(
@@ -398,7 +443,11 @@ class MainScreenWidget extends StatelessWidget {
     // Agar employee hai to employee dashboard dikhao
     if (userRole == "employee") {
       if (selectedPage == "Dashboard") {
-        return EmployeeDashboardScreen();
+        return EmployeeDashboardScreen(
+          userId: userId,
+          role: userRole,
+          userName: userName,
+        );
       }
       // Employee ke liye baki screens
       return _getScreenForPage(selectedPage);
@@ -412,8 +461,12 @@ class MainScreenWidget extends StatelessWidget {
     switch (pageName) {
       case "Dashboard":
         return userRole == "employee"
-            ? EmployeeDashboardScreen()
-            : DashboardPage();
+            ? EmployeeDashboardScreen(
+              userId: userId,
+              role: userRole,
+              userName: userName,
+            )
+            : DashboardPage(userId: userId, role: userRole);
       case "Customer Management":
         return CustomerManagementScreen();
       case "Employee Registration":

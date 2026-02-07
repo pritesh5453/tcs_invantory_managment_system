@@ -1,11 +1,16 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/admin_todo.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/notification.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/request_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/work_panel_screen.dart';
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key});
+  final int userId;
+  final String role;
+
+  const DashboardPage({super.key, required this.userId, required this.role});
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -360,20 +365,46 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
       child: Column(
         children: [
-          Container(
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.search),
-                SizedBox(width: 8),
-                Text("Search..", style: TextStyle(color: Colors.grey)),
-              ],
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.search),
+                      SizedBox(width: 8),
+                      Text("Search..", style: TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                height: 44,
+                width: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.notifications_none),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const NotificationScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -418,10 +449,22 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           ),
           const SizedBox(width: 8),
-          _overviewChip(
-            label: "To-Do\nGeneral",
-            color: const Color(0xff2D9CDB),
-            icon: Icons.checklist,
+          InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (context) =>
+                          TodoPage(userId: widget.userId, role: widget.role),
+                ),
+              );
+            },
+            child: _overviewChip(
+              label: "To-Do\nGeneral",
+              color: const Color(0xff2D9CDB),
+              icon: Icons.checklist,
+            ),
           ),
           const SizedBox(width: 8),
           InkWell(
