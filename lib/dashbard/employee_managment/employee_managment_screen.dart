@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -25,6 +26,11 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
   bool isLoading = true;
   List<Employee> employees = [];
 
+  // Search functionality
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -45,10 +51,26 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
     fetchEmployees();
   }
 
-  Future<void> fetchEmployees() async {
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  Future<void> fetchEmployees({String? search}) async {
+    setState(() => isLoading = true);
+
     try {
+      final Map<String, dynamic> queryParams = {"page": 1, "limit": 10};
+
+      if (search != null && search.isNotEmpty) {
+        queryParams["search"] = search;
+      }
+
       final response = await dio.get(
-        "https://dashboarduat.theceramicstudio.in/api/employees/list",
+        "https://dashboard.theceramicstudio.in/api/employees/list",
+        queryParameters: queryParams,
       );
 
       if (response.statusCode == 200) {
@@ -57,11 +79,37 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
       }
     } catch (e) {
       debugPrint("Dio Error: $e");
+      employees = []; // Reset on error
     }
 
     setState(() {
       isLoading = false;
     });
+  }
+
+  // Debounced search function
+  void _onSearchChanged(String value) {
+    if (_searchDebounce?.isActive ?? false) {
+      _searchDebounce!.cancel();
+    }
+
+    _searchDebounce = Timer(const Duration(milliseconds: 500), () {
+      if (_searchQuery != value) {
+        setState(() {
+          _searchQuery = value;
+        });
+        fetchEmployees(search: value);
+      }
+    });
+  }
+
+  // Clear search
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+    });
+    fetchEmployees();
   }
 
   Future<void> showDeleteDialog(BuildContext context, int employeeId) async {
@@ -75,7 +123,30 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
       return;
     }
 
-    return showDialog(context: context, builder: (_) => AlertDialog());
+    return showDialog(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text("Delete Employee"),
+            content: const Text(
+              "Are you sure you want to delete this employee?",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await deleteEmployee(employeeId);
+                },
+                child: const Text("Delete"),
+              ),
+            ],
+          ),
+    );
   }
 
   Future<void> deleteEmployee(int employeeId) async {
@@ -90,7 +161,7 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
 
     try {
       final response = await dio.delete(
-        "https://dashboarduat.theceramicstudio.in/api/employees/delete/$employeeId",
+        "https://dashboard.theceramicstudio.in/api/employees/delete/$employeeId",
       );
 
       debugPrint("📥 DELETE RESPONSE => ${response.data}");
@@ -104,7 +175,9 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
 
         // ✅ list refresh after delete
         setState(() => isLoading = true);
-        await fetchEmployees();
+        await fetchEmployees(
+          search: _searchQuery.isNotEmpty ? _searchQuery : null,
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Failed to delete employee")),
@@ -125,7 +198,7 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            /// ---------------- APP BAR ----------------
+            /// ---------------- APP BAR WITH SEARCH ----------------
             Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
               decoration: const BoxDecoration(
@@ -148,13 +221,37 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(24),
                           ),
-                          child: const Row(
+                          child: Row(
                             children: [
-                              Icon(Icons.search, size: 20, color: Colors.grey),
-                              SizedBox(width: 8),
-                              Text(
-                                "Search..",
-                                style: TextStyle(color: Colors.grey),
+                              const Icon(
+                                Icons.search,
+                                size: 20,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: _searchController,
+                                  onChanged: _onSearchChanged,
+                                  decoration: InputDecoration(
+                                    hintText: "Search by name or phone...",
+                                    hintStyle: const TextStyle(
+                                      color: Colors.grey,
+                                    ),
+                                    border: InputBorder.none,
+                                    suffixIcon:
+                                        _searchQuery.isNotEmpty
+                                            ? IconButton(
+                                              icon: const Icon(
+                                                Icons.clear,
+                                                size: 16,
+                                              ),
+                                              onPressed: _clearSearch,
+                                            )
+                                            : null,
+                                  ),
+                                  style: const TextStyle(color: Colors.black),
+                                ),
                               ),
                             ],
                           ),
@@ -171,7 +268,14 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
                                       builder: (_) => const AddEmployeeScreen(),
                                     ),
                                   );
-                                  if (result == true) fetchEmployees();
+                                  if (result == true) {
+                                    await fetchEmployees(
+                                      search:
+                                          _searchQuery.isNotEmpty
+                                              ? _searchQuery
+                                              : null,
+                                    );
+                                  }
                                 }
                                 : () {
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -208,11 +312,15 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
                 onRefresh: () async {
                   debugPrint("🔄 PULL TO REFRESH TRIGGERED");
                   setState(() => isLoading = true);
-                  await fetchEmployees();
+                  await fetchEmployees(
+                    search: _searchQuery.isNotEmpty ? _searchQuery : null,
+                  );
                 },
                 child:
                     isLoading
                         ? const Center(child: CircularProgressIndicator())
+                        : employees.isEmpty
+                        ? _emptyState()
                         : ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: const EdgeInsets.all(16),
@@ -234,6 +342,33 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _emptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            _searchQuery.isNotEmpty ? Icons.search_off : Icons.people_outline,
+            size: 60,
+            color: Colors.grey.shade400,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _searchQuery.isNotEmpty
+                ? "No employees found for '$_searchQuery'"
+                : "No employees found",
+            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+          ),
+          if (_searchQuery.isNotEmpty)
+            TextButton(
+              onPressed: _clearSearch,
+              child: const Text("Clear Search"),
+            ),
+        ],
       ),
     );
   }
@@ -512,7 +647,7 @@ Future<void> toggleEmployeeStatus(
 
   try {
     final response = await dio.patch(
-      "https://dashboarduat.theceramicstudio.in/api/employees/status/$employeeId",
+      "https://dashboard.theceramicstudio.in/api/employees/status/$employeeId",
       data: {
         "status": newStatus, // ✅ SIMPLE MAP (JSON)
       },

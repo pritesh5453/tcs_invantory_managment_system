@@ -13,7 +13,7 @@ class ProductViewScreen extends StatefulWidget {
 class _ProductViewScreenState extends State<ProductViewScreen> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );

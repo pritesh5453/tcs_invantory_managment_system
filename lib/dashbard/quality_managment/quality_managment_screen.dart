@@ -30,17 +30,47 @@ class Quality {
 final dioProvider = Provider<Dio>((ref) {
   return Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api/qualities",
+      baseUrl: "https://dashboard.theceramicstudio.in/api/qualities",
       headers: {"Content-Type": "application/json"},
     ),
   );
 });
 
-/// ================= PROVIDER =================
+/// ================= PROVIDERS =================
 final qualityProvider =
     StateNotifierProvider<QualityNotifier, AsyncValue<List<Quality>>>(
       (ref) => QualityNotifier(ref),
     );
+
+// Search query provider
+final searchQueryProvider = StateProvider<String>((ref) => '');
+
+// Filtered qualities provider
+final filteredQualitiesProvider = Provider<AsyncValue<List<Quality>>>((ref) {
+  final searchQuery = ref.watch(searchQueryProvider);
+  final qualities = ref.watch(qualityProvider);
+
+  return qualities.when(
+    data: (qualitiesList) {
+      if (searchQuery.isEmpty) {
+        return AsyncData(qualitiesList);
+      }
+      final filteredList =
+          qualitiesList.where((quality) {
+            return quality.name.toLowerCase().contains(
+                  searchQuery.toLowerCase(),
+                ) ||
+                quality.id.toString().contains(searchQuery) ||
+                quality.status.toLowerCase().contains(
+                  searchQuery.toLowerCase(),
+                );
+          }).toList();
+      return AsyncData(filteredList);
+    },
+    loading: () => const AsyncLoading(),
+    error: (error, stackTrace) => AsyncError(error, stackTrace),
+  );
+});
 
 class QualityNotifier extends StateNotifier<AsyncValue<List<Quality>>> {
   final Ref ref;
@@ -102,6 +132,92 @@ class QualityNotifier extends StateNotifier<AsyncValue<List<Quality>>> {
   }
 }
 
+/// ================= SEARCH BAR WIDGET =================
+class SearchBarWidget extends ConsumerStatefulWidget {
+  const SearchBarWidget({super.key});
+
+  @override
+  ConsumerState<SearchBarWidget> createState() => _SearchBarWidgetState();
+}
+
+class _SearchBarWidgetState extends ConsumerState<SearchBarWidget> {
+  late TextEditingController _searchController;
+  FocusNode _searchFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+    // Initialize with current search query
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final currentQuery = ref.read(searchQueryProvider);
+      if (currentQuery.isNotEmpty) {
+        _searchController.text = currentQuery;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final searchQuery = ref.watch(searchQueryProvider);
+
+    // Sync controller with provider state
+    if (_searchController.text != searchQuery) {
+      _searchController.text = searchQuery;
+    }
+
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              onChanged: (value) {
+                ref.read(searchQueryProvider.notifier).state = value;
+              },
+              decoration: const InputDecoration(
+                hintText: "Search by name, ID or status...",
+                border: InputBorder.none,
+                hintStyle: TextStyle(color: Colors.grey),
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          if (searchQuery.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+              onPressed: () {
+                _searchController.clear();
+                ref.read(searchQueryProvider.notifier).state = '';
+                _searchFocusNode.requestFocus();
+              },
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// ================= MAIN SCREEN =================
 class QualityManagementScreen extends ConsumerWidget {
   const QualityManagementScreen({super.key});
@@ -114,13 +230,14 @@ class QualityManagementScreen extends ConsumerWidget {
       "Quality Management_Delete",
     );
 
-    final state = ref.watch(qualityProvider);
+    final searchQuery = ref.watch(searchQueryProvider);
+    final filteredState = ref.watch(filteredQualitiesProvider);
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       body: Column(
         children: [
-          /// TOP BAR (UI SAME)
+          /// TOP BAR WITH SEARCH
           Container(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
             decoration: const BoxDecoration(
@@ -132,23 +249,7 @@ class QualityManagementScreen extends ConsumerWidget {
             ),
             child: Row(
               children: [
-                Expanded(
-                  child: Container(
-                    height: 40,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.search, color: Colors.grey),
-                        SizedBox(width: 8),
-                        Text("Search..", style: TextStyle(color: Colors.grey)),
-                      ],
-                    ),
-                  ),
-                ),
+                Expanded(child: SearchBarWidget()),
                 const SizedBox(width: 10),
                 InkWell(
                   onTap:
@@ -186,28 +287,69 @@ class QualityManagementScreen extends ConsumerWidget {
             ),
           ),
 
-          /// LIST
+          /// LIST WITH SEARCH RESULTS
           Expanded(
-            child: state.when(
+            child: filteredState.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text(e.toString())),
-              data:
-                  (list) => RefreshIndicator(
-                    onRefresh: () async {
-                      await ref.read(qualityProvider.notifier).fetchQualities();
-                    },
-                    child: ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.all(16),
-                      itemCount: list.length,
-                      itemBuilder:
-                          (_, i) => QualityCard(
-                            q: list[i],
-                            canEdit: canEdit,
-                            canDelete: canDelete,
+              data: (list) {
+                if (searchQuery.isNotEmpty && list.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.search_off,
+                          size: 60,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          "No results found for '$searchQuery'",
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[600],
                           ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "Try searching with different keywords",
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
+                  );
+                }
+
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    await ref.read(qualityProvider.notifier).fetchQualities();
+                    ref.read(searchQueryProvider.notifier).state = '';
+                  },
+                  child:
+                      list.isEmpty
+                          ? const Center(
+                            child: Text(
+                              "No qualities found",
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          )
+                          : ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(16),
+                            itemCount: list.length,
+                            itemBuilder:
+                                (_, i) => QualityCard(
+                                  q: list[i],
+                                  canEdit: canEdit,
+                                  canDelete: canDelete,
+                                ),
+                          ),
+                );
+              },
             ),
           ),
         ],
@@ -390,6 +532,12 @@ class _QualityPopupState extends ConsumerState<QualityPopup> {
   }
 
   @override
+  void dispose() {
+    ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isEdit = widget.edit != null;
 
@@ -421,6 +569,16 @@ class _QualityPopupState extends ConsumerState<QualityPopup> {
                 ),
               ),
               onPressed: () async {
+                if (ctrl.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Please enter quality name"),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
                 if (isEdit) {
                   await ref
                       .read(qualityProvider.notifier)

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,115 @@ import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/add%
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/edit_product.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/product_view_screen.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
+
+/// ================= DEBOUNCER CLASS =================
+class Debouncer {
+  final int milliseconds;
+  VoidCallback? action;
+  Timer? _timer;
+
+  Debouncer({required this.milliseconds});
+
+  void run(VoidCallback action) {
+    if (_timer != null) {
+      _timer!.cancel();
+    }
+    _timer = Timer(Duration(milliseconds: milliseconds), action);
+  }
+}
+
+/// ================= SEARCH BAR WIDGET =================
+class ProductSearchBarWidget extends StatefulWidget {
+  final ValueChanged<String> onSearchChanged;
+  final String initialValue;
+
+  const ProductSearchBarWidget({
+    super.key,
+    required this.onSearchChanged,
+    this.initialValue = '',
+  });
+
+  @override
+  State<ProductSearchBarWidget> createState() => _ProductSearchBarWidgetState();
+}
+
+class _ProductSearchBarWidgetState extends State<ProductSearchBarWidget> {
+  late TextEditingController _searchController;
+  late FocusNode _searchFocusNode;
+  final Debouncer _debouncer = Debouncer(milliseconds: 500);
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController(text: widget.initialValue);
+    _searchFocusNode = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(ProductSearchBarWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialValue != _searchController.text) {
+      _searchController.text = widget.initialValue;
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _debouncer.run(() {
+      widget.onSearchChanged(value);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, size: 20, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              onChanged: _onSearchChanged,
+              decoration: const InputDecoration(
+                hintText: "Search products by name...",
+                border: InputBorder.none,
+                hintStyle: TextStyle(color: Colors.grey),
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          if (_searchController.text.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+              onPressed: () {
+                _searchController.clear();
+                widget.onSearchChanged('');
+                _searchFocusNode.requestFocus();
+              },
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 /// ================= PRODUCT MODEL =================
 class Product {
@@ -23,49 +133,28 @@ class Product {
   final int qty;
   final List<dynamic> batches;
 
-  // Calculate available quantity from batches
   int get availableQuantity {
-    print('=== DEBUG: Calculating available quantity for product ${id} ===');
-    print('Number of batches: ${batches.length}');
-
     if (batches.isEmpty) {
-      print('No batches found, returning 0');
       return 0;
     }
 
     int total = 0;
-    for (int i = 0; i < batches.length; i++) {
-      var batch = batches[i];
-      print('Batch ${i + 1}: $batch');
-
-      // Check if batch is Map
+    for (var batch in batches) {
       if (batch is Map<String, dynamic>) {
         final batchQty = batch['qty'];
-        print('  Batch quantity: $batchQty (type: ${batchQty.runtimeType})');
-
         if (batchQty != null) {
           if (batchQty is int) {
             total += batchQty;
-            print('  Added $batchQty (int)');
           } else if (batchQty is String) {
-            final parsedQty = int.tryParse(batchQty) ?? 0;
-            total += parsedQty;
-            print('  Added $parsedQty (parsed from string: $batchQty)');
+            total += int.tryParse(batchQty) ?? 0;
           } else if (batchQty is double) {
             total += batchQty.toInt();
-            print('  Added ${batchQty.toInt()} (converted from double)');
           } else if (batchQty is num) {
             total += batchQty.toInt();
-            print('  Added ${batchQty.toInt()} (converted from num)');
           }
         }
-      } else {
-        print('  Batch is not a Map, skipping. Type: ${batch.runtimeType}');
       }
     }
-
-    print('Total available quantity: $total');
-    print('=== DEBUG END ===\n');
     return total;
   }
 
@@ -86,27 +175,18 @@ class Product {
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
-    print('=== DEBUG: Parsing product ${json['id']} ===');
-    print('Raw batches data: ${json['batches']}');
-    print('Type of batches: ${json['batches']?.runtimeType}');
-
     final batches = json['batches'] ?? [];
 
-    // Ensure batches is a List
     List<dynamic> batchesList = [];
     if (batches is List) {
       batchesList = batches;
     } else if (batches is String) {
-      // Handle case where batches might be a string
       try {
         batchesList = jsonDecode(batches) ?? [];
       } catch (e) {
         print('Error parsing batches string: $e');
       }
     }
-
-    print('Parsed batches list length: ${batchesList.length}');
-    print('=== DEBUG END ===\n');
 
     return Product(
       id: json['id'] ?? 0,
@@ -149,6 +229,7 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
   bool hasMore = true;
 
   int page = 1;
+  String searchQuery = '';
   List<Product> products = [];
 
   @override
@@ -156,18 +237,16 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     super.initState();
 
     canAddProduct = PermissionManager.hasPermission("Product Registration_Add");
-
     canEditProduct = PermissionManager.hasPermission(
       "Product Registration_Edit",
     );
-
     canDeleteProduct = PermissionManager.hasPermission(
       "Product Registration_Delete",
     );
 
     _dio = Dio(
       BaseOptions(
-        baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+        baseUrl: "https://dashboard.theceramicstudio.in/api",
         headers: {"Accept": "application/json"},
         connectTimeout: const Duration(seconds: 30),
         receiveTimeout: const Duration(seconds: 30),
@@ -219,26 +298,26 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     setState(() => loadingMore = true);
 
     try {
-      print('=== DEBUG: Fetching page $page ===');
-      final res = await _dio.get(
-        "/product/list",
-        queryParameters: {"page": page},
-      );
+      final Map<String, dynamic> queryParams = {"page": page};
+      if (searchQuery.isNotEmpty) {
+        queryParams["search"] = searchQuery;
+      }
+
+      print('Fetching products with query: $queryParams');
+
+      final res = await _dio.get("/product/list", queryParameters: queryParams);
 
       if (res.data != null && res.data['products'] != null) {
         final List list = res.data['products'];
         final pagination = res.data['pagination'];
 
-        print('Fetched ${list.length} products');
+        print('Fetched ${list.length} products for search: $searchQuery');
 
         final newProducts = <Product>[];
         for (var i = 0; i < list.length; i++) {
           try {
             final product = Product.fromJson(list[i]);
             newProducts.add(product);
-            print(
-              'Added product ${product.id} with ${product.batches.length} batches',
-            );
           } catch (e) {
             print('Error parsing product at index $i: $e');
           }
@@ -268,6 +347,17 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     if (mounted) {
       setState(() => loadingMore = false);
     }
+  }
+
+  /// ================= SEARCH PRODUCTS =================
+  void onSearchChanged(String value) {
+    setState(() {
+      searchQuery = value;
+      page = 1;
+      hasMore = true;
+      products.clear();
+    });
+    fetchProducts();
   }
 
   /// ================= DELETE PRODUCT =================
@@ -337,7 +427,7 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            /// TOP BAR
+            /// TOP BAR WITH SEARCH
             Container(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
               decoration: const BoxDecoration(
@@ -350,23 +440,9 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Container(
-                      height: 42,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.search, size: 20, color: Colors.grey),
-                          SizedBox(width: 8),
-                          Text(
-                            "Search..",
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ],
-                      ),
+                    child: ProductSearchBarWidget(
+                      onSearchChanged: onSearchChanged,
+                      initialValue: searchQuery,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -413,62 +489,96 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
                   loading
                       ? const Center(child: CircularProgressIndicator())
                       : RefreshIndicator(
-                        onRefresh: fetchProducts,
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.all(16),
-                          itemCount: products.length + (hasMore ? 1 : 0),
-                          itemBuilder: (_, i) {
-                            if (i < products.length) {
-                              return ProductCard(
-                                product: products[i],
-                                canEdit: canEditProduct,
-                                canDelete: canDeleteProduct,
-                                onDelete:
-                                    (id) => _showDeleteDialog(context, id),
-                                onEdit: () {
-                                  showModalBottomSheet(
-                                    context: context,
-                                    isScrollControlled: true,
-                                    builder:
-                                        (_) => EditProductSheet(
-                                          productId: products[i].id,
-                                          product: products[i],
+                        onRefresh: () async {
+                          await fetchProducts();
+                        },
+                        child:
+                            products.isEmpty
+                                ? _buildEmptyState()
+                                : ListView.builder(
+                                  controller: _scrollController,
+                                  padding: const EdgeInsets.all(16),
+                                  itemCount:
+                                      products.length + (hasMore ? 1 : 0),
+                                  itemBuilder: (_, i) {
+                                    if (i < products.length) {
+                                      return ProductCard(
+                                        product: products[i],
+                                        canEdit: canEditProduct,
+                                        canDelete: canDeleteProduct,
+                                        onDelete:
+                                            (id) =>
+                                                _showDeleteDialog(context, id),
+                                        onEdit: () {
+                                          showModalBottomSheet(
+                                            context: context,
+                                            isScrollControlled: true,
+                                            builder:
+                                                (_) => EditProductSheet(
+                                                  productId: products[i].id,
+                                                  product: products[i],
+                                                ),
+                                          );
+                                        },
+                                        onView: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder:
+                                                  (_) => ProductViewScreen(
+                                                    productId: products[i].id,
+                                                  ),
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    } else {
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 16,
                                         ),
-                                  );
-                                },
-                                onView: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder:
-                                          (_) => ProductViewScreen(
-                                            productId: products[i].id,
-                                          ),
-                                    ),
-                                  );
-                                },
-                              );
-                            } else {
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
+                                        child: Center(
+                                          child:
+                                              loadingMore
+                                                  ? const CircularProgressIndicator()
+                                                  : const SizedBox(),
+                                        ),
+                                      );
+                                    }
+                                  },
                                 ),
-                                child: Center(
-                                  child:
-                                      loadingMore
-                                          ? const CircularProgressIndicator()
-                                          : const SizedBox(),
-                                ),
-                              );
-                            }
-                          },
-                        ),
                       ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    if (searchQuery.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              "No products found for '$searchQuery'",
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Try searching with different keywords",
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const Center(
+      child: Text("No products found", style: TextStyle(color: Colors.grey)),
     );
   }
 }
@@ -494,7 +604,6 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate available quantity from batches
     final availableQty = product.availableQuantity;
 
     return Container(
@@ -565,7 +674,6 @@ class ProductCard extends StatelessWidget {
                     onDelete(product.id);
                   }
                 },
-
                 itemBuilder:
                     (_) => const [
                       PopupMenuItem(
@@ -648,6 +756,10 @@ class ProductCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
+                    Text(
+                      "ID: ${product.id}",
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
                     Text(
                       "Category: ${product.category}",
                       style: const TextStyle(fontSize: 12),

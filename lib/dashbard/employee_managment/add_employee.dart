@@ -50,7 +50,7 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
   bool isLoading = false;
 
   final Dio dio = Dio(
-    BaseOptions(baseUrl: "https://dashboarduat.theceramicstudio.in"),
+    BaseOptions(baseUrl: "https://dashboard.theceramicstudio.in"),
   );
 
   final ImagePicker picker = ImagePicker();

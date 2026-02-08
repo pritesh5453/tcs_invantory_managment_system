@@ -1,10 +1,132 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/add_quotation.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/dispatch_challan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/edit_quotation.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/settlement.dart';
-import 'package:tcs_invantory_managment_system/dashbard/quotation/follow_up_screen.dart'; // Import the FollowUpScreen
+import 'package:tcs_invantory_managment_system/dashbard/quotation/follow_up_screen.dart';
+
+/// ================= DEBOUNCER FOR SEARCH =================
+class Debouncer {
+  final int milliseconds;
+  VoidCallback? action;
+  Timer? _timer;
+
+  Debouncer({required this.milliseconds});
+
+  void run(VoidCallback action) {
+    if (_timer != null) {
+      _timer!.cancel();
+    }
+    _timer = Timer(Duration(milliseconds: milliseconds), action);
+  }
+}
+
+/// ================= SEARCH BAR WIDGET =================
+class QuotationSearchBarWidget extends StatefulWidget {
+  final ValueChanged<String> onSearchChanged;
+  final String initialValue;
+
+  const QuotationSearchBarWidget({
+    super.key,
+    required this.onSearchChanged,
+    this.initialValue = '',
+  });
+
+  @override
+  State<QuotationSearchBarWidget> createState() =>
+      _QuotationSearchBarWidgetState();
+}
+
+class _QuotationSearchBarWidgetState extends State<QuotationSearchBarWidget> {
+  late TextEditingController _searchController;
+  late FocusNode _searchFocusNode;
+  final Debouncer _debouncer = Debouncer(milliseconds: 500);
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+    _searchFocusNode = FocusNode();
+
+    // Initialize with current search query
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.initialValue.isNotEmpty) {
+        _searchController.text = widget.initialValue;
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(QuotationSearchBarWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sync controller with parent state if needed
+    if (widget.initialValue != _searchController.text) {
+      _searchController.text = widget.initialValue;
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _debouncer.run(() {
+      widget.onSearchChanged(value);
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    widget.onSearchChanged('');
+    _searchFocusNode.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 50,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              onChanged: _onSearchChanged,
+              decoration: const InputDecoration(
+                hintText: "Search by client name, ID or contact...",
+                border: InputBorder.none,
+                hintStyle: TextStyle(color: Colors.grey),
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          if (_searchController.text.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+              onPressed: _clearSearch,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 class Quontation_home_screen extends StatefulWidget {
   const Quontation_home_screen({super.key});
@@ -16,7 +138,7 @@ class Quontation_home_screen extends StatefulWidget {
 class _Quontation_home_screenState extends State<Quontation_home_screen> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );
@@ -24,7 +146,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
   List<Map<String, dynamic>> quotations = [];
   bool loading = true;
   String searchQuery = '';
-  List<Map<String, dynamic>> filteredQuotations = [];
 
   @override
   void initState() {
@@ -32,10 +153,20 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     _fetchQuotations();
   }
 
-  /// ================= FETCH QUOTATIONS API =================
-  Future<void> _fetchQuotations() async {
+  /// ================= FETCH QUOTATIONS API WITH SEARCH =================
+  Future<void> _fetchQuotations({String? search}) async {
     try {
-      final response = await dio.get("/Quotation/list");
+      final Map<String, dynamic> queryParams = {};
+      if (search != null && search.isNotEmpty) {
+        queryParams['search'] = search;
+      }
+
+      print('Fetching quotations with query: $queryParams');
+
+      final response = await dio.get(
+        "/Quotation/list",
+        queryParameters: queryParams,
+      );
 
       if (response.data['success'] == true) {
         setState(() {
@@ -48,14 +179,11 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
           for (var quotation in quotations) {
             if (quotation['items'] != null && quotation['items'] is List) {
               for (var item in quotation['items']) {
-                // Store currentStock in the item map
-                // This will be passed to InvoiceCard
                 item['currentStock'] = item['currentStock'] ?? 0;
               }
             }
           }
 
-          filteredQuotations = quotations;
           loading = false;
         });
       } else {
@@ -69,28 +197,21 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
-  /// ================= SEARCH FUNCTIONALITY =================
+  /// ================= SEARCH FUNCTIONALITY WITH API =================
   void _searchQuotations(String query) {
     setState(() {
       searchQuery = query;
-      if (query.isEmpty) {
-        filteredQuotations = quotations;
-      } else {
-        filteredQuotations =
-            quotations.where((quotation) {
-              final clientName =
-                  quotation['clientName']?.toString().toLowerCase() ?? '';
-              final quotationId =
-                  quotation['id']?.toString().toLowerCase() ?? '';
-              final contactNo =
-                  quotation['contactNo']?.toString().toLowerCase() ?? '';
-
-              return clientName.contains(query.toLowerCase()) ||
-                  quotationId.contains(query.toLowerCase()) ||
-                  contactNo.contains(query.toLowerCase());
-            }).toList();
-      }
+      loading = true;
     });
+    _fetchQuotations(search: query);
+  }
+
+  void _clearSearch() {
+    setState(() {
+      searchQuery = '';
+      loading = true;
+    });
+    _fetchQuotations();
   }
 
   void _showErrorSnackbar(String message) {
@@ -101,7 +222,10 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
 
   /// ================= REFRESH FUNCTION =================
   Future<void> _refreshQuotations() async {
-    setState(() => loading = true);
+    setState(() {
+      loading = true;
+      searchQuery = '';
+    });
     await _fetchQuotations();
   }
 
@@ -127,7 +251,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                   child: const Center(child: CircularProgressIndicator()),
                 )
               /// EMPTY STATE
-              else if (filteredQuotations.isEmpty && !loading)
+              else if (quotations.isEmpty && !loading)
                 Container(
                   height: MediaQuery.of(context).size.height * 0.6,
                   child: Center(
@@ -174,7 +298,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            "Quotations (${filteredQuotations.length})",
+                            "Quotations (${quotations.length})",
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               color: Colors.grey.shade700,
@@ -193,20 +317,18 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                     ),
 
                     /// QUOTATION CARDS
-                    ...filteredQuotations
+                    ...quotations
                         .map(
                           (quotation) => InvoiceCard(
                             quotation: quotation,
                             onEdit: () {
-                              // Navigate to edit screen with quotation data
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder:
                                       (context) => EditQuotationScreen(
                                         quotationId: quotation['id'],
-
-                                        // Pass the entire quotation with currentStock
+                                        quotationData: {},
                                       ),
                                 ),
                               );
@@ -225,8 +347,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                                                   '0',
                                             ) ??
                                             0,
-
-                                        // Pass currentStock data
+                                        quotationData: {},
                                       ),
                                 ),
                               );
@@ -244,15 +365,13 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                               );
                             },
                             onFollowUp: () {
-                              // Open FollowUpScreen as a dialog
                               showDialog(
                                 context: context,
                                 builder:
                                     (context) => FollowUpScreen(
                                       quotationId: quotation['id'],
                                       onFollowUpSaved: () {
-                                        // Callback when follow-up is saved
-                                        _refreshQuotations(); // Refresh the quotations list
+                                        _refreshQuotations();
                                         _showSnackbar(
                                           "Follow-up saved successfully!",
                                           isError: false,
@@ -285,7 +404,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     );
   }
 
-  /// ================= HEADER WIDGET =================
+  /// ================= HEADER WIDGET WITH SEARCH BAR =================
   Widget _buildHeader() {
     return SafeArea(
       child: Container(
@@ -302,20 +421,11 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
           children: [
             Row(
               children: [
-                /// SEARCH FIELD
+                /// SEARCH FIELD USING SEPARATE WIDGET
                 Expanded(
-                  child: TextField(
-                    onChanged: _searchQuotations,
-                    decoration: InputDecoration(
-                      hintText: "Search by client name, ID or contact...",
-                      prefixIcon: const Icon(Icons.search),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
+                  child: QuotationSearchBarWidget(
+                    onSearchChanged: _searchQuotations,
+                    initialValue: searchQuery,
                   ),
                 ),
 
@@ -333,8 +443,8 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                     );
                   },
                   child: Container(
-                    height: 45,
-                    width: 45,
+                    height: 50,
+                    width: 50,
                     decoration: BoxDecoration(
                       color: const Color(0xFFFA9C42),
                       borderRadius: BorderRadius.circular(12),
@@ -422,22 +532,6 @@ class InvoiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Store currentStock values (not displayed but stored)
-    final List<int> currentStockList = [];
-    if (quotation['items'] != null && quotation['items'] is List) {
-      for (var item in quotation['items']) {
-        final currentStock = item['currentStock'] ?? 0;
-        currentStockList.add(
-          currentStock is int
-              ? currentStock
-              : int.tryParse(currentStock.toString()) ?? 0,
-        );
-      }
-    }
-
-    // currentStockList is now stored but not displayed
-    // You can pass this to other widgets if needed
-
     return Container(
       margin: const EdgeInsets.all(12),
       padding: const EdgeInsets.all(14),
@@ -579,10 +673,8 @@ class InvoiceCard extends StatelessWidget {
                   if (value == "delivery_chalan") {
                     onDispatch();
                   } else if (value == "view_details") {
-                    // Implement view details action
                     _showSnackbar(context, "View Details feature coming soon!");
                   } else if (value == "follow_up") {
-                    // Call follow up action
                     if (onFollowUp != null) {
                       onFollowUp!();
                     }

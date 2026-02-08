@@ -50,7 +50,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
   List<Map<String, dynamic>> architects = [];
 
   final Dio dio = Dio(
-    BaseOptions(baseUrl: "https://dashboarduat.theceramicstudio.in"),
+    BaseOptions(baseUrl: "https://dashboard.theceramicstudio.in"),
   );
 
   @override

@@ -17,7 +17,7 @@ class _ExpenseStockManagementScreenState
     extends State<ExpenseStockManagementScreen> {
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );

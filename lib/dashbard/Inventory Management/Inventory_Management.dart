@@ -42,7 +42,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
 
     try {
       final response = await _dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/purchase/list',
+        'https://dashboard.theceramicstudio.in/api/purchase/list',
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
@@ -361,7 +361,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                 onPressed: () async {
                   try {
                     final response = await _dio.delete(
-                      'https://dashboarduat.theceramicstudio.in/api/purchase/${purchase['id']}',
+                      'https://dashboard.theceramicstudio.in/api/purchase/${purchase['id']}',
                     );
 
                     if (response.statusCode == 200) {

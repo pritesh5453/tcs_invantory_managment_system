@@ -98,7 +98,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
 
     try {
       final res = await Dio().get(
-        "https://dashboarduat.theceramicstudio.in/api/employees/list",
+        "https://dashboard.theceramicstudio.in/api/employees/list",
         queryParameters: {"search": query},
       );
 
@@ -244,28 +244,28 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
                       keyName: "customer",
                       title: "Customer Register",
                       url:
-                          "https://dashboarduat.theceramicstudio.in/api/dashboard/customers/export",
+                          "https://dashboard.theceramicstudio.in/api/dashboard/customers/export",
                       fileName: "Customer_Register",
                     ),
                     _analyticsCard(
                       keyName: "quotation",
                       title: "Quotation Data",
                       url:
-                          "https://dashboarduat.theceramicstudio.in/api/dashboard/quotations/export",
+                          "https://dashboard.theceramicstudio.in/api/dashboard/quotations/export",
                       fileName: "Quotation_Data",
                     ),
                     _analyticsCard(
                       keyName: "purchase",
                       title: "Purchase Records",
                       url:
-                          "https://dashboarduat.theceramicstudio.in/api/dashboard/purchases/export",
+                          "https://dashboard.theceramicstudio.in/api/dashboard/purchases/export",
                       fileName: "Purchase_Records",
                     ),
                     _analyticsCard(
                       keyName: "payment",
                       title: "Payment Report",
                       url:
-                          "https://dashboarduat.theceramicstudio.in/api/dashboard/api/payments/export",
+                          "https://dashboard.theceramicstudio.in/api/dashboard/api/payments/export",
                       fileName: "Payment_Report",
                     ),
                   ],
@@ -455,21 +455,6 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
       borderRadius: BorderRadius.only(
         bottomLeft: Radius.circular(26),
         bottomRight: Radius.circular(26),
-      ),
-    ),
-    child: Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.search, color: Colors.grey),
-          SizedBox(width: 8),
-          Text("Search..", style: TextStyle(color: Colors.grey)),
-        ],
       ),
     ),
   );

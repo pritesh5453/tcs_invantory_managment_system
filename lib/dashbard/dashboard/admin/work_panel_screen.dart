@@ -41,7 +41,7 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
 
     try {
       final response = await dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/employees/list',
+        'https://dashboard.theceramicstudio.in/api/employees/list',
       );
 
       if (response.data['success'] == true) {
@@ -69,7 +69,7 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
 
     try {
       final response = await dio.post(
-        'https://dashboarduat.theceramicstudio.in/api/tasks/assign',
+        'https://dashboard.theceramicstudio.in/api/tasks/assign',
         data: {
           "employeeId": selectedEmployeeId.toString(),
           "title": taskTitleController.text,
@@ -99,7 +99,7 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
 
     try {
       final response = await dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/tasks/all',
+        'https://dashboard.theceramicstudio.in/api/tasks/all',
       );
 
       if (response.data['success'] == true) {

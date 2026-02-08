@@ -11,7 +11,7 @@ class Addquotationscreen extends StatefulWidget {
 class _AddquotationscreenState extends State<Addquotationscreen> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );
@@ -29,6 +29,8 @@ class _AddquotationscreenState extends State<Addquotationscreen> {
   final bankCtrl = TextEditingController();
   final qtyCtrl = TextEditingController(text: "1");
   final boxCtrl = TextEditingController(text: "1");
+
+  // New controllers for additional fields
   final altPhoneCtrl = TextEditingController();
   final emailCtrl = TextEditingController();
   final architectCtrl = TextEditingController();
@@ -156,7 +158,7 @@ class _AddquotationscreenState extends State<Addquotationscreen> {
     return grandTotal;
   }
 
-  /// ================= SAVE QUOTATION API =======
+  /// ================= SAVE QUOTATION API =================
   Future<void> _saveQuotation() async {
     if (!_formKey.currentState!.validate()) {
       return;

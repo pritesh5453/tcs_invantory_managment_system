@@ -3,6 +3,93 @@ import 'package:dio/dio.dart';
 import 'add_new_supplier.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
+/// ================= SEARCH BAR WIDGET =================
+class SupplierSearchBarWidget extends StatefulWidget {
+  final ValueChanged<String> onSearchChanged;
+  final String initialValue;
+
+  const SupplierSearchBarWidget({
+    super.key,
+    required this.onSearchChanged,
+    this.initialValue = '',
+  });
+
+  @override
+  State<SupplierSearchBarWidget> createState() =>
+      _SupplierSearchBarWidgetState();
+}
+
+class _SupplierSearchBarWidgetState extends State<SupplierSearchBarWidget> {
+  late TextEditingController _searchController;
+  late FocusNode _searchFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController(text: widget.initialValue);
+    _searchFocusNode = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(SupplierSearchBarWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialValue != _searchController.text) {
+      _searchController.text = widget.initialValue;
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              onChanged: widget.onSearchChanged,
+              decoration: const InputDecoration(
+                hintText: "Search by name or mobile...",
+                border: InputBorder.none,
+                hintStyle: TextStyle(color: Colors.grey),
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          if (_searchController.text.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+              onPressed: () {
+                _searchController.clear();
+                widget.onSearchChanged('');
+                _searchFocusNode.requestFocus();
+              },
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// ================= MODEL =================
 class Supplier {
   final int id;
@@ -35,24 +122,24 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
 
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api/suppliers",
+      baseUrl: "https://dashboard.theceramicstudio.in/api/suppliers",
       headers: {"Content-Type": "application/json"},
     ),
   );
 
   bool loading = false;
   List<Supplier> suppliers = [];
+  List<Supplier> filteredSuppliers = [];
+  String searchQuery = '';
 
   @override
   void initState() {
     super.initState();
 
     canAddSupplier = PermissionManager.hasPermission("Supplier Management_Add");
-
     canEditSupplier = PermissionManager.hasPermission(
       "Supplier Management_Edit",
     );
-
     canDeleteSupplier = PermissionManager.hasPermission(
       "Supplier Management_Delete",
     );
@@ -71,10 +158,33 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
 
       final List list = res.data['suppliers'];
       suppliers = list.map((e) => Supplier.fromJson(e)).toList();
+      _filterSuppliers();
     } catch (e) {
       debugPrint(e.toString());
     }
     setState(() => loading = false);
+  }
+
+  /// ================= FILTER SUPPLIERS =================
+  void _filterSuppliers() {
+    if (searchQuery.isEmpty) {
+      filteredSuppliers = List.from(suppliers);
+    } else {
+      filteredSuppliers =
+          suppliers.where((supplier) {
+            return supplier.name.toLowerCase().contains(
+                  searchQuery.toLowerCase(),
+                ) ||
+                supplier.mobile.contains(searchQuery);
+          }).toList();
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() {
+      searchQuery = value;
+      _filterSuppliers();
+    });
   }
 
   /// ================= DELETE API =================
@@ -121,7 +231,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            /// 🔶 HEADER (UNCHANGED)
+            /// 🔶 HEADER WITH SEARCH
             Container(
               height: 120,
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
@@ -137,25 +247,11 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      /// 🔍 SEARCH BAR (UI ONLY)
+                      /// 🔍 SEARCH BAR (ENABLED)
                       Expanded(
-                        child: Container(
-                          height: 46,
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.search, color: Colors.grey),
-                              SizedBox(width: 8),
-                              Text(
-                                "Search..",
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            ],
-                          ),
+                        child: SupplierSearchBarWidget(
+                          onSearchChanged: _onSearchChanged,
+                          initialValue: searchQuery,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -212,55 +308,95 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
 
             const SizedBox(height: 12),
 
-            /// 📋 SUPPLIER LIST
+            /// 📋 SUPPLIER LIST WITH SEARCH
             Expanded(
               child:
                   loading
                       ? const Center(child: CircularProgressIndicator())
                       : RefreshIndicator(
-                        onRefresh: fetchSuppliers,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: suppliers.length,
-                          itemBuilder: (context, index) {
-                            final supplier = suppliers[index];
-                            return SupplierCard(
-                              index: index + 1,
-                              name: supplier.name,
-                              mobile: supplier.mobile,
-                              canEdit: canEditSupplier,
-                              canDelete: canDeleteSupplier,
-                              onEdit: () async {
-                                final updatedSupplier =
-                                    await Navigator.push<Map<String, String>>(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder:
-                                            (_) => EditSupplierScreen(
-                                              id: supplier.id,
-                                              name: supplier.name,
-                                              mobile: supplier.mobile,
-                                            ),
-                                      ),
-                                    );
+                        onRefresh: () async {
+                          await fetchSuppliers();
+                          setState(() {
+                            searchQuery = '';
+                          });
+                        },
+                        child:
+                            filteredSuppliers.isEmpty
+                                ? _buildEmptyState()
+                                : ListView.builder(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  itemCount: filteredSuppliers.length,
+                                  itemBuilder: (context, index) {
+                                    final supplier = filteredSuppliers[index];
+                                    return SupplierCard(
+                                      index: index + 1,
+                                      name: supplier.name,
+                                      mobile: supplier.mobile,
+                                      canEdit: canEditSupplier,
+                                      canDelete: canDeleteSupplier,
+                                      onEdit: () async {
+                                        final updatedSupplier =
+                                            await Navigator.push<
+                                              Map<String, String>
+                                            >(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) => EditSupplierScreen(
+                                                      id: supplier.id,
+                                                      name: supplier.name,
+                                                      mobile: supplier.mobile,
+                                                    ),
+                                              ),
+                                            );
 
-                                if (updatedSupplier != null) {
-                                  await updateSupplier(
-                                    supplier.id,
-                                    updatedSupplier["name"]!,
-                                    updatedSupplier["mobile"]!,
-                                  );
-                                }
-                              },
-                              onDelete: () => deleteSupplier(supplier.id),
-                            );
-                          },
-                        ),
+                                        if (updatedSupplier != null) {
+                                          await updateSupplier(
+                                            supplier.id,
+                                            updatedSupplier["name"]!,
+                                            updatedSupplier["mobile"]!,
+                                          );
+                                        }
+                                      },
+                                      onDelete:
+                                          () => deleteSupplier(supplier.id),
+                                    );
+                                  },
+                                ),
                       ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    if (searchQuery.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              "No results found for '$searchQuery'",
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Try searching with different keywords",
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const Center(
+      child: Text("No suppliers found", style: TextStyle(color: Colors.grey)),
     );
   }
 }
@@ -462,9 +598,29 @@ class EditSupplierScreen extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: ElevatedButton(
                   onPressed: () {
+                    if (nameController.text.trim().isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text("Please enter supplier name"),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
+                    if (mobileController.text.trim().isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text("Please enter mobile number"),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
                     Navigator.pop(context, {
-                      "name": nameController.text,
-                      "mobile": mobileController.text,
+                      "name": nameController.text.trim(),
+                      "mobile": mobileController.text.trim(),
                     });
                   },
                   style: ElevatedButton.styleFrom(

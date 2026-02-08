@@ -24,7 +24,7 @@ class AddProductSheet extends StatefulWidget {
 class _AddProductSheetState extends State<AddProductSheet> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
       headers: {
         "Accept": "application/json",
         "Content-Type": "application/json",

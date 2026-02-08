@@ -95,7 +95,7 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
   Future<void> _fetchSuppliers() async {
     try {
       final response = await _dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/suppliers/list',
+        'https://dashboard.theceramicstudio.in/api/suppliers/list',
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
@@ -112,7 +112,7 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
   Future<void> _fetchProducts() async {
     try {
       final response = await _dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/product/list?limit=100',
+        'https://dashboard.theceramicstudio.in/api/product/list?limit=100',
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
@@ -278,7 +278,7 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
       }
 
       final response = await _dio.post(
-        'https://dashboarduat.theceramicstudio.in/api/purchase/add',
+        'https://dashboard.theceramicstudio.in/api/purchase/add',
         data: {
           "purchaseDate": formattedDate,
           "clientName": _selectedSupplierName,

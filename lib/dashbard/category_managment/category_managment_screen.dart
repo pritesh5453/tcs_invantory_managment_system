@@ -5,7 +5,7 @@ import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dar
 
 /// ================= MODEL =================
 class Category {
-  final String id; // ✅ STRING
+  final String id;
   final String name;
   final bool isAvailable;
 
@@ -13,7 +13,7 @@ class Category {
 
   factory Category.fromJson(Map<String, dynamic> json) {
     return Category(
-      id: json['id'].toString(), // ✅ SAFE
+      id: json['id'].toString(),
       name: json['name'] ?? "",
       isAvailable: json['status'] == "Available",
     );
@@ -32,7 +32,7 @@ class Category {
 class CategoryApi {
   static final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api/categories",
+      baseUrl: "https://dashboard.theceramicstudio.in/api/categories",
       headers: {"Content-Type": "application/json"},
     ),
   );
@@ -74,11 +74,32 @@ class CategoryApi {
   }
 }
 
-/// ================= PROVIDER =================
+/// ================= PROVIDERS =================
 final categoryProvider =
     StateNotifierProvider<CategoryNotifier, List<Category>>(
       (ref) => CategoryNotifier(),
     );
+
+// Search query provider
+final searchQueryProvider = StateProvider<String>((ref) => '');
+
+// Filtered categories provider
+final filteredCategoriesProvider = Provider<List<Category>>((ref) {
+  final searchQuery = ref.watch(searchQueryProvider);
+  final categories = ref.watch(categoryProvider);
+
+  if (searchQuery.isEmpty) {
+    return categories;
+  }
+
+  return categories.where((category) {
+    return category.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
+        category.id.toLowerCase().contains(searchQuery.toLowerCase()) ||
+        (category.isAvailable ? 'Available' : 'Unavailable')
+            .toLowerCase()
+            .contains(searchQuery.toLowerCase());
+  }).toList();
+});
 
 class CategoryNotifier extends StateNotifier<List<Category>> {
   CategoryNotifier() : super([]) {
@@ -110,7 +131,92 @@ class CategoryNotifier extends StateNotifier<List<Category>> {
   }
 }
 
-/// ================= MAIN SCREEN =================
+/// ================= SEARCH BAR WIDGET =================
+class SearchBarWidget extends ConsumerStatefulWidget {
+  const SearchBarWidget({super.key});
+
+  @override
+  ConsumerState<SearchBarWidget> createState() => _SearchBarWidgetState();
+}
+
+class _SearchBarWidgetState extends ConsumerState<SearchBarWidget> {
+  late TextEditingController _searchController;
+  FocusNode _searchFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+    // Initialize with current search query
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final currentQuery = ref.read(searchQueryProvider);
+      if (currentQuery.isNotEmpty) {
+        _searchController.text = currentQuery;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final searchQuery = ref.watch(searchQueryProvider);
+
+    // Sync controller with provider state
+    if (_searchController.text != searchQuery) {
+      _searchController.text = searchQuery;
+    }
+
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              onChanged: (value) {
+                ref.read(searchQueryProvider.notifier).state = value;
+              },
+              decoration: const InputDecoration(
+                hintText: "Search by name, ID or status...",
+                border: InputBorder.none,
+                hintStyle: TextStyle(color: Colors.grey),
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          if (searchQuery.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+              onPressed: () {
+                _searchController.clear();
+                ref.read(searchQueryProvider.notifier).state = '';
+                _searchFocusNode.requestFocus();
+              },
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// ================= MAIN SCREEN =================
 class CategoryManagementScreen extends ConsumerWidget {
   const CategoryManagementScreen({super.key});
@@ -123,14 +229,15 @@ class CategoryManagementScreen extends ConsumerWidget {
       "Category Management_Delete",
     );
 
-    final list = ref.watch(categoryProvider);
+    final searchQuery = ref.watch(searchQueryProvider);
+    final filteredList = ref.watch(filteredCategoriesProvider);
     final notifier = ref.read(categoryProvider.notifier);
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       body: Column(
         children: [
-          /// TOP BAR
+          /// TOP BAR WITH ENABLED SEARCH
           Container(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
             decoration: const BoxDecoration(
@@ -142,23 +249,7 @@ class CategoryManagementScreen extends ConsumerWidget {
             ),
             child: Row(
               children: [
-                Expanded(
-                  child: Container(
-                    height: 40,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.search, color: Colors.grey),
-                        SizedBox(width: 8),
-                        Text("Search..", style: TextStyle(color: Colors.grey)),
-                      ],
-                    ),
-                  ),
-                ),
+                Expanded(child: SearchBarWidget()),
                 const SizedBox(width: 10),
                 InkWell(
                   onTap:
@@ -196,28 +287,23 @@ class CategoryManagementScreen extends ConsumerWidget {
             ),
           ),
 
-          /// 🔥 LIST WITH PULL TO REFRESH
+          /// LIST WITH SEARCH RESULTS
           Expanded(
             child: RefreshIndicator(
               onRefresh: () async {
-                await notifier.load(); // 🔄 API RECALL
+                await notifier.load();
+                ref.read(searchQueryProvider.notifier).state = '';
               },
               child:
-                  list.isEmpty
-                      ? ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        children: const [
-                          SizedBox(height: 250),
-                          Center(child: CircularProgressIndicator()),
-                        ],
-                      )
+                  filteredList.isEmpty
+                      ? _buildEmptyState(searchQuery)
                       : ListView.builder(
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.all(16),
-                        itemCount: list.length,
+                        itemCount: filteredList.length,
                         itemBuilder:
                             (_, i) => CategoryCard(
-                              cat: list[i],
+                              cat: filteredList[i],
                               canEdit: canEdit,
                               canDelete: canDelete,
                             ),
@@ -226,6 +312,37 @@ class CategoryManagementScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildEmptyState(String searchQuery) {
+    if (searchQuery.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              "No results found for '$searchQuery'",
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Try searching with different keywords",
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: const [
+        SizedBox(height: 250),
+        Center(child: CircularProgressIndicator()),
+      ],
     );
   }
 }
@@ -264,6 +381,10 @@ class CategoryCard extends ConsumerWidget {
                     cat.isAvailable
                         ? const Color(0xFFE6F7E6)
                         : const Color(0xFFFDECEA),
+                labelStyle: TextStyle(
+                  color: cat.isAvailable ? Colors.green : Colors.red,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               PopupMenuButton<String>(
                 onSelected: (v) {
@@ -367,6 +488,12 @@ class _CategoryPopupState extends ConsumerState<CategoryPopup> {
   }
 
   @override
+  void dispose() {
+    nameCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isEdit = widget.edit != null;
 
@@ -377,7 +504,10 @@ class _CategoryPopupState extends ConsumerState<CategoryPopup> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(isEdit ? "Edit Category" : "Add Category"),
+            Text(
+              isEdit ? "Edit Category" : "Add Category",
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: nameCtrl,
@@ -389,6 +519,10 @@ class _CategoryPopupState extends ConsumerState<CategoryPopup> {
             const SizedBox(height: 12),
             DropdownButtonFormField<bool>(
               value: isAvailable,
+              decoration: const InputDecoration(
+                labelText: "Status",
+                border: OutlineInputBorder(),
+              ),
               items: const [
                 DropdownMenuItem(value: true, child: Text("Available")),
                 DropdownMenuItem(value: false, child: Text("Unavailable")),
@@ -397,24 +531,40 @@ class _CategoryPopupState extends ConsumerState<CategoryPopup> {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFA54A),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+              ),
               onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Please enter category name"),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
                 if (isEdit) {
                   ref
                       .read(categoryProvider.notifier)
                       .update(
                         widget.edit!.copyWith(
-                          name: nameCtrl.text,
+                          name: nameCtrl.text.trim(),
                           isAvailable: isAvailable,
                         ),
                       );
                 } else {
                   ref
                       .read(categoryProvider.notifier)
-                      .add(nameCtrl.text, isAvailable);
+                      .add(nameCtrl.text.trim(), isAvailable);
                 }
                 Navigator.pop(context);
               },
-              child: const Text("Save"),
+              child: const Text("Save", style: TextStyle(color: Colors.white)),
             ),
           ],
         ),

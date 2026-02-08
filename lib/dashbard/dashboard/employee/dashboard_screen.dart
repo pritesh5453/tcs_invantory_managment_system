@@ -52,7 +52,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   // Dio instance
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: 'https://dashboarduat.theceramicstudio.in',
+      baseUrl: 'https://dashboard.theceramicstudio.in',
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
     ),

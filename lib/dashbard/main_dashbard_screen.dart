@@ -29,8 +29,14 @@ class MenuItem {
   final String title;
   final IconData icon;
   final String moduleName;
+  final bool isSpecial; // Special flag for top 3 items
 
-  MenuItem({required this.title, required this.icon, required this.moduleName});
+  MenuItem({
+    required this.title,
+    required this.icon,
+    required this.moduleName,
+    this.isSpecial = false,
+  });
 }
 
 class HomeWithAnimatedDrawer extends StatefulWidget {
@@ -52,8 +58,30 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
   int userId = 0;
   bool isLoading = true;
 
-  // All possible menu items with their module names
-  final List<MenuItem> allPossibleMenuItems = [
+  // Special top items (will appear at the top of drawer)
+  final List<MenuItem> specialMenuItems = [
+    MenuItem(
+      title: "Permissions",
+      icon: Icons.access_time,
+      moduleName: "",
+      isSpecial: true,
+    ),
+    MenuItem(
+      title: "Employee Attendance",
+      icon: Icons.calendar_today,
+      moduleName: "Employee Attendance",
+      isSpecial: true,
+    ),
+    MenuItem(
+      title: "Expense Stock Management",
+      icon: Icons.calendar_today,
+      moduleName: "Expense Stock Management",
+      isSpecial: true,
+    ),
+  ];
+
+  // Regular menu items (will appear after divider)
+  final List<MenuItem> regularMenuItems = [
     MenuItem(title: "Dashboard", icon: Icons.dashboard, moduleName: ""),
     MenuItem(
       title: "Customer Management",
@@ -117,17 +145,6 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
       icon: Icons.payment,
       moduleName: "Payment History",
     ),
-    MenuItem(title: "Permissions", icon: Icons.access_time, moduleName: ""),
-    MenuItem(
-      title: "Employee Attendance",
-      icon: Icons.calendar_today,
-      moduleName: "Employee Attendance",
-    ),
-    MenuItem(
-      title: "Expense Stock Management",
-      icon: Icons.calendar_today,
-      moduleName: "Expense Stock Management",
-    ),
     MenuItem(title: "Logout", icon: Icons.logout, moduleName: ""),
   ];
 
@@ -174,27 +191,17 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
     }
   }
 
-  // Dynamic menu items based on role and permissions
-  List<MenuItem> getFilteredMenuItems() {
+  // Get filtered special items (top 3 items)
+  List<MenuItem> getFilteredSpecialItems() {
     // Agar admin ya superadmin hai to sab kuch dikhao
     if (userRole == "admin" || userRole == "superadmin") {
-      return allPossibleMenuItems;
+      return specialMenuItems;
     }
 
     // Employee ke liye permission-based filtering
     if (userRole == "employee") {
-      return allPossibleMenuItems.where((item) {
-        // Dashboard aur Logout to hamesha show honge
-        if (item.title == "Dashboard" || item.title == "Logout") {
-          return true;
-        }
-
-        // Reports aur Order Book employee ke liye nahi honge
-        if (item.title == "Reports" || item.title == "Order Book") {
-          return false;
-        }
-
-        // Permissions employee ke liye nahi
+      return specialMenuItems.where((item) {
+        // Permissions employee ke liye nahi honge
         if (item.title == "Permissions") {
           return false;
         }
@@ -207,8 +214,50 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
       }).toList();
     }
 
-    // Default case
-    return allPossibleMenuItems;
+    return specialMenuItems;
+  }
+
+  // Get filtered regular items
+  List<MenuItem> getFilteredRegularItems() {
+    // Agar admin ya superadmin hai to sab kuch dikhao
+    if (userRole == "admin" || userRole == "superadmin") {
+      return regularMenuItems;
+    }
+
+    // Employee ke liye permission-based filtering
+    if (userRole == "employee") {
+      return regularMenuItems.where((item) {
+        // Dashboard aur Logout to hamesha show honge
+        if (item.title == "Dashboard" || item.title == "Logout") {
+          return true;
+        }
+
+        // Reports aur Order Book employee ke liye nahi honge
+        if (item.title == "Reports" || item.title == "Order Book") {
+          return false;
+        }
+
+        // Permissions employee ke liye nahi (ye to special mein hai hi)
+        if (item.title == "Permissions") {
+          return false;
+        }
+
+        // Permission check karo
+        if (item.moduleName.isEmpty) return false;
+
+        // Check if user has any permission for this module
+        return PermissionManager.hasAnyPermission(item.moduleName);
+      }).toList();
+    }
+
+    return regularMenuItems;
+  }
+
+  // Combined menu items (special first, then regular)
+  List<MenuItem> getCombinedMenuItems() {
+    final filteredSpecial = getFilteredSpecialItems();
+    final filteredRegular = getFilteredRegularItems();
+    return [...filteredSpecial, ...filteredRegular];
   }
 
   void toggleDrawer() {
@@ -259,7 +308,9 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
               userRole: userRole,
               userName: userName,
               userId: userId,
-              filteredMenuItems: getFilteredMenuItems(),
+              filteredMenuItems: getCombinedMenuItems(),
+              specialMenuItems: getFilteredSpecialItems(),
+              regularMenuItems: getFilteredRegularItems(),
             ),
 
             /// ================= DARK OVERLAY =================
@@ -281,7 +332,9 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
                     onClose: toggleDrawer,
                     userRole: userRole,
                     userName: userName,
-                    filteredMenuItems: getFilteredMenuItems(),
+                    filteredMenuItems: getCombinedMenuItems(),
+                    specialMenuItems: getFilteredSpecialItems(),
+                    regularMenuItems: getFilteredRegularItems(),
                   ),
                 );
               },
@@ -304,6 +357,8 @@ class MainScreenWidget extends StatelessWidget {
   final String userName;
   final int userId;
   final List<MenuItem> filteredMenuItems;
+  final List<MenuItem> specialMenuItems;
+  final List<MenuItem> regularMenuItems;
 
   const MainScreenWidget({
     super.key,
@@ -313,6 +368,8 @@ class MainScreenWidget extends StatelessWidget {
     required this.userName,
     required this.userId,
     required this.filteredMenuItems,
+    required this.specialMenuItems,
+    required this.regularMenuItems,
   });
 
   // Check if user can access a screen
@@ -528,6 +585,8 @@ class AnimatedDrawerWidget extends StatelessWidget {
   final String userRole;
   final String userName;
   final List<MenuItem> filteredMenuItems;
+  final List<MenuItem> specialMenuItems;
+  final List<MenuItem> regularMenuItems;
 
   const AnimatedDrawerWidget({
     super.key,
@@ -537,6 +596,8 @@ class AnimatedDrawerWidget extends StatelessWidget {
     required this.userRole,
     required this.userName,
     required this.filteredMenuItems,
+    required this.specialMenuItems,
+    required this.regularMenuItems,
   });
 
   @override
@@ -558,13 +619,54 @@ class AnimatedDrawerWidget extends StatelessWidget {
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
                 child: Column(
-                  children:
-                      filteredMenuItems
-                          .map(
-                            (menuItem) =>
-                                _item(context, menuItem.icon, menuItem.title),
-                          )
-                          .toList(),
+                  children: [
+                    /// SPECIAL ITEMS (Top 3 items - Bold)
+                    if (specialMenuItems.isNotEmpty)
+                      Column(
+                        children:
+                            specialMenuItems
+                                .map(
+                                  (menuItem) => _item(
+                                    context,
+                                    menuItem.icon,
+                                    menuItem.title,
+                                    isSpecial: true,
+                                  ),
+                                )
+                                .toList(),
+                      ),
+
+                    /// DIVIDER
+                    if (specialMenuItems.isNotEmpty &&
+                        regularMenuItems.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Divider(
+                          color: Colors.grey.shade700,
+                          thickness: 1,
+                          height: 1,
+                        ),
+                      ),
+
+                    /// REGULAR ITEMS
+                    if (regularMenuItems.isNotEmpty)
+                      Column(
+                        children:
+                            regularMenuItems
+                                .map(
+                                  (menuItem) => _item(
+                                    context,
+                                    menuItem.icon,
+                                    menuItem.title,
+                                    isSpecial: false,
+                                  ),
+                                )
+                                .toList(),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -629,7 +731,12 @@ class AnimatedDrawerWidget extends StatelessWidget {
     );
   }
 
-  Widget _item(BuildContext context, IconData icon, String title) {
+  Widget _item(
+    BuildContext context,
+    IconData icon,
+    String title, {
+    bool isSpecial = false,
+  }) {
     final bool selected = selectedPage == title;
 
     return InkWell(
@@ -655,17 +762,38 @@ class AnimatedDrawerWidget extends StatelessWidget {
             Icon(
               icon,
               size: 20,
-              color: selected ? Colors.orange : Colors.white70,
+              color:
+                  selected
+                      ? Colors.orange
+                      : (isSpecial ? Colors.white : Colors.white70),
             ),
             const SizedBox(width: 14),
-            Text(
-              title,
-              style: TextStyle(
-                color: selected ? Colors.orange : Colors.white70,
-                fontSize: 14,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  color:
+                      selected
+                          ? Colors.orange
+                          : (isSpecial ? Colors.white : Colors.white70),
+                  fontSize: 14,
+                  fontWeight:
+                      isSpecial
+                          ? FontWeight.bold
+                          : (selected ? FontWeight.w600 : FontWeight.normal),
+                ),
               ),
             ),
+            // Special items ke liye ek indicator (optional)
+            if (isSpecial && !selected)
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
           ],
         ),
       ),

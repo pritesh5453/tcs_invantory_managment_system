@@ -1,7 +1,99 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/orderbook/add_order_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/orderbook/edit_order.dart';
+
+/// ================= SEARCH BAR WIDGET =================
+class OrderBookSearchBarWidget extends StatefulWidget {
+  final ValueChanged<String> onSearchChanged;
+  final String initialValue;
+
+  const OrderBookSearchBarWidget({
+    super.key,
+    required this.onSearchChanged,
+    this.initialValue = '',
+  });
+
+  @override
+  State<OrderBookSearchBarWidget> createState() =>
+      _OrderBookSearchBarWidgetState();
+}
+
+class _OrderBookSearchBarWidgetState extends State<OrderBookSearchBarWidget> {
+  late TextEditingController _searchController;
+  late FocusNode _searchFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController(text: widget.initialValue);
+    _searchFocusNode = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(OrderBookSearchBarWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sync controller with parent state
+    if (widget.initialValue != _searchController.text) {
+      _searchController.text = widget.initialValue;
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    widget.onSearchChanged('');
+    _searchFocusNode.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              onChanged: widget.onSearchChanged,
+              decoration: const InputDecoration(
+                hintText: "Search by product name, size, quality...",
+                border: InputBorder.none,
+                hintStyle: TextStyle(color: Colors.grey),
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          if (_searchController.text.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+              onPressed: _clearSearch,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 class OrderBookManagementScreen extends StatefulWidget {
   const OrderBookManagementScreen({super.key});
@@ -13,7 +105,9 @@ class OrderBookManagementScreen extends StatefulWidget {
 
 class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
   bool isLoading = true;
-  List orders = [];
+  List allOrders = []; // Store all orders
+  List filteredOrders = []; // Store filtered orders
+  String searchQuery = '';
 
   @override
   void initState() {
@@ -27,11 +121,12 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
       setState(() => isLoading = true);
 
       final response = await Dio().get(
-        "https://dashboarduat.theceramicstudio.in/api/orderBook/list",
+        "https://dashboard.theceramicstudio.in/api/orderBook/list",
       );
 
       setState(() {
-        orders = response.data["orders"] ?? [];
+        allOrders = response.data["orders"] ?? [];
+        _filterOrders(); // Apply search filter
         isLoading = false;
       });
     } catch (e) {
@@ -40,11 +135,60 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
     }
   }
 
+  /// ================= LOCAL SEARCH FILTER =================
+  void _filterOrders() {
+    if (searchQuery.isEmpty) {
+      setState(() {
+        filteredOrders = List.from(allOrders);
+      });
+    } else {
+      final filtered =
+          allOrders.where((order) {
+            final name = order["name"]?.toString().toLowerCase() ?? '';
+            final size = order["size"]?.toString().toLowerCase() ?? '';
+            final quality = order["quality"]?.toString().toLowerCase() ?? '';
+            final brand = order["brand"]?.toString().toLowerCase() ?? '';
+            final quantity = order["quantity"]?.toString().toLowerCase() ?? '';
+            final date = order["date"]?.toString().toLowerCase() ?? '';
+            final id = order["id"]?.toString().toLowerCase() ?? '';
+
+            final query = searchQuery.toLowerCase();
+
+            return name.contains(query) ||
+                size.contains(query) ||
+                quality.contains(query) ||
+                brand.contains(query) ||
+                quantity.contains(query) ||
+                date.contains(query) ||
+                id.contains(query);
+          }).toList();
+
+      setState(() {
+        filteredOrders = filtered;
+      });
+    }
+  }
+
+  /// ================= SEARCH FUNCTIONALITY =================
+  void _searchOrders(String query) {
+    setState(() {
+      searchQuery = query;
+    });
+    _filterOrders();
+  }
+
+  void _clearSearch() {
+    setState(() {
+      searchQuery = '';
+    });
+    _filterOrders();
+  }
+
   /// ================= DELETE ORDER =================
   Future<void> _deleteOrder(int id) async {
     try {
       await Dio().delete(
-        "https://dashboarduat.theceramicstudio.in/api/orderBook/delete/$id",
+        "https://dashboard.theceramicstudio.in/api/orderBook/delete/$id",
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -93,6 +237,15 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
     );
   }
 
+  /// ================= REFRESH FUNCTION =================
+  Future<void> _refreshOrders() async {
+    setState(() {
+      isLoading = true;
+      searchQuery = '';
+    });
+    await _fetchOrders();
+  }
+
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
@@ -101,7 +254,7 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            /// ================= TOP BAR =================
+            /// ================= TOP BAR WITH SEARCH =================
             Container(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
               decoration: const BoxDecoration(
@@ -114,23 +267,9 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Container(
-                      height: 42,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.search, color: Colors.grey),
-                          SizedBox(width: 8),
-                          Text(
-                            "Search..",
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ],
-                      ),
+                    child: OrderBookSearchBarWidget(
+                      onSearchChanged: _searchOrders,
+                      initialValue: searchQuery,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -141,7 +280,9 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
                         MaterialPageRoute(
                           builder: (_) => const AddOrderScreen(),
                         ),
-                      );
+                      ).then((_) {
+                        _refreshOrders();
+                      });
                     },
                     child: Container(
                       height: 42,
@@ -164,25 +305,16 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
               child:
                   isLoading
                       ? const Center(child: CircularProgressIndicator())
-                      : orders.isEmpty
-                      ? RefreshIndicator(
-                        onRefresh: _fetchOrders,
-                        child: ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          children: const [
-                            SizedBox(height: 200),
-                            Center(child: Text("No Orders Found")),
-                          ],
-                        ),
-                      )
+                      : filteredOrders.isEmpty
+                      ? _buildEmptyState()
                       : RefreshIndicator(
-                        onRefresh: _fetchOrders,
+                        onRefresh: _refreshOrders,
                         child: ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: orders.length,
+                          itemCount: filteredOrders.length,
                           itemBuilder: (context, index) {
-                            final order = orders[index];
+                            final order = filteredOrders[index];
                             return OrderCard(
                               order: order,
                               onEdit: () async {
@@ -209,6 +341,65 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
       ),
     );
   }
+
+  /// ================= EMPTY STATE =================
+  Widget _buildEmptyState() {
+    if (searchQuery.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              "No results found for '$searchQuery'",
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Try searching with different keywords",
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _clearSearch,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFA54A),
+              ),
+              child: const Text("Clear Search"),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refreshOrders,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+          const Center(
+            child: Column(
+              children: [
+                Icon(Icons.inventory_outlined, size: 60, color: Colors.grey),
+                SizedBox(height: 16),
+                Text(
+                  "No Orders Found",
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  "Add your first order to get started",
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// ===================================================================
@@ -227,6 +418,16 @@ class OrderCard extends StatelessWidget {
     required this.onDelete,
   });
 
+  /// ================= FORMAT DATE =================
+  String _formatDate(String dateString) {
+    try {
+      final date = DateTime.parse(dateString);
+      return "${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}";
+    } catch (e) {
+      return dateString.split("T").first;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -236,10 +437,28 @@ class OrderCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade300),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          /// ORDER ID
+          Text(
+            "Order #${order["id"]}",
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+
           _row("Product Name", order["name"]),
           const SizedBox(height: 6),
           Row(
@@ -252,9 +471,7 @@ class OrderCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  "Date : ${order["date"].toString().split("T").first}",
-                ),
+                child: Text("Date : ${_formatDate(order["date"].toString())}"),
               ),
               Text("Quantity : ${order["quantity"]}"),
             ],
@@ -299,9 +516,9 @@ class OrderCard extends StatelessWidget {
       text: TextSpan(
         text: "$label : ",
         style: const TextStyle(
-          fontSize: 13,
+          fontSize: 14,
           color: Colors.black,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w600,
         ),
         children: [
           TextSpan(

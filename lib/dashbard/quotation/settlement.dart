@@ -8,7 +8,7 @@ class SettlementScreen extends StatefulWidget {
   const SettlementScreen({
     super.key,
     required this.quotationId,
-    required this.dueAmount,
+    required this.dueAmount, required Map<String, dynamic> quotationData,
   });
 
   @override
@@ -18,7 +18,7 @@ class SettlementScreen extends StatefulWidget {
 class _SettlementScreenState extends State<SettlementScreen> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );

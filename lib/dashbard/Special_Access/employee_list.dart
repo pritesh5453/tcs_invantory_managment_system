@@ -12,7 +12,7 @@ class EmployeesListScreen extends StatefulWidget {
 class _EmployeesListScreenState extends State<EmployeesListScreen> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
       headers: {
         "Accept": "application/json",
         // "Authorization": "Bearer YOUR_TOKEN",

@@ -1,11 +1,124 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/update_timeline.dart';
+
+/// ================= DEBOUNCER FOR SEARCH =================
+class Debouncer {
+  final int milliseconds;
+  VoidCallback? action;
+  Timer? _timer;
+
+  Debouncer({required this.milliseconds});
+
+  void run(VoidCallback action) {
+    if (_timer != null) {
+      _timer!.cancel();
+    }
+    _timer = Timer(Duration(milliseconds: milliseconds), action);
+  }
+}
+
+/// ================= SEARCH BAR WIDGET =================
+class DeliveryChallanSearchBarWidget extends StatefulWidget {
+  final ValueChanged<String> onSearchChanged;
+  final String initialValue;
+
+  const DeliveryChallanSearchBarWidget({
+    super.key,
+    required this.onSearchChanged,
+    this.initialValue = '',
+  });
+
+  @override
+  State<DeliveryChallanSearchBarWidget> createState() =>
+      _DeliveryChallanSearchBarWidgetState();
+}
+
+class _DeliveryChallanSearchBarWidgetState
+    extends State<DeliveryChallanSearchBarWidget> {
+  late TextEditingController _searchController;
+  late FocusNode _searchFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+    _searchFocusNode = FocusNode();
+
+    // Initialize with current search query
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.initialValue.isNotEmpty) {
+        _searchController.text = widget.initialValue;
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(DeliveryChallanSearchBarWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sync controller with parent state
+    if (widget.initialValue != _searchController.text) {
+      _searchController.text = widget.initialValue;
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              onChanged: widget.onSearchChanged,
+              decoration: const InputDecoration(
+                hintText: "Search by client name, ID or delivery boy...",
+                border: InputBorder.none,
+                hintStyle: TextStyle(color: Colors.grey),
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          if (_searchController.text.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+              onPressed: () {
+                _searchController.clear();
+                widget.onSearchChanged('');
+                _searchFocusNode.requestFocus();
+              },
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 /// ================= MODEL =================
 class DeliveryChallan {
@@ -55,13 +168,15 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
   final Dio dio = Dio(
     BaseOptions(
       baseUrl:
-          "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan",
+          "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan",
       responseType: ResponseType.bytes, // 🔥 IMPORTANT for PDF
     ),
   );
 
   bool loading = false;
+  String searchQuery = '';
   List<DeliveryChallan> challans = [];
+  final Debouncer _debouncer = Debouncer(milliseconds: 500);
 
   @override
   void initState() {
@@ -80,13 +195,20 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
     fetchChallans();
   }
 
-  /// ================= FETCH API =================
-  Future<void> fetchChallans() async {
+  /// ================= FETCH API WITH SEARCH =================
+  Future<void> fetchChallans({String? search}) async {
     setState(() => loading = true);
     try {
+      final Map<String, dynamic> queryParams = {"page": 1, "limit": 10};
+      if (search != null && search.isNotEmpty) {
+        queryParams['search'] = search;
+      }
+
+      print('Fetching delivery challans with query: $queryParams');
+
       final res = await Dio().get(
-        "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan/list",
-        queryParameters: {"page": 1, "limit": 10},
+        "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan/list",
+        queryParameters: queryParams,
       );
 
       final List data = res.data['challans'];
@@ -97,11 +219,31 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
     setState(() => loading = false);
   }
 
+  /// ================= SEARCH FUNCTIONALITY =================
+  void _searchChallans(String query) {
+    setState(() {
+      searchQuery = query;
+      loading = true;
+    });
+
+    _debouncer.run(() {
+      fetchChallans(search: query);
+    });
+  }
+
+  void _clearSearch() {
+    setState(() {
+      searchQuery = '';
+      loading = true;
+    });
+    fetchChallans();
+  }
+
   /// ================= DELETE API =================
   Future<void> deleteChallan(int id) async {
     try {
       final res = await Dio().delete(
-        "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan/delete/$id",
+        "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan/delete/$id",
       );
 
       if (res.data['success'] == true) {
@@ -111,7 +253,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        fetchChallans();
+        fetchChallans(search: searchQuery);
       }
     } catch (e) {
       _showError("Delete failed");
@@ -131,7 +273,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
       final Dio pdfDio = Dio(
         BaseOptions(
           baseUrl:
-              "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan",
+              "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan",
           responseType: ResponseType.bytes,
           headers: {"Accept": "application/pdf"},
         ),
@@ -228,6 +370,15 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
     ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
   }
 
+  /// ================= REFRESH FUNCTION =================
+  Future<void> _refreshChallans() async {
+    setState(() {
+      loading = true;
+      searchQuery = '';
+    });
+    await fetchChallans();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!canView) {
@@ -259,19 +410,9 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Container(
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: const TextField(
-                        decoration: InputDecoration(
-                          hintText: "Search..",
-                          prefixIcon: Icon(Icons.search),
-                          border: InputBorder.none,
-                        ),
-                      ),
+                    child: DeliveryChallanSearchBarWidget(
+                      onSearchChanged: _searchChallans,
+                      initialValue: searchQuery,
                     ),
                   ),
                 ],
@@ -284,14 +425,59 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
             child:
                 loading
                     ? const Center(child: CircularProgressIndicator())
-                    : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: challans.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 16),
-                      itemBuilder: (context, index) {
-                        return _chalanCard(context, challans[index]);
-                      },
+                    : RefreshIndicator(
+                      onRefresh: _refreshChallans,
+                      child:
+                          challans.isEmpty
+                              ? _buildEmptyState()
+                              : ListView.separated(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: challans.length,
+                                separatorBuilder:
+                                    (_, __) => const SizedBox(height: 16),
+                                itemBuilder: (context, index) {
+                                  return _chalanCard(context, challans[index]);
+                                },
+                              ),
                     ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ================= EMPTY STATE =================
+  Widget _buildEmptyState() {
+    if (searchQuery.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              "No results found for '$searchQuery'",
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Try searching with different keywords",
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.local_shipping_outlined, size: 60, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            "No delivery challans found",
+            style: TextStyle(color: Colors.grey, fontSize: 16),
           ),
         ],
       ),
@@ -403,6 +589,14 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
           Text(
             "Delivery Boy : ${chalan.deliveryBoy.isEmpty ? "-" : chalan.deliveryBoy}",
           ),
+
+          const SizedBox(height: 4),
+
+          Text("Tempo No. : ${chalan.tempo.isEmpty ? "-" : chalan.tempo}"),
+
+          const SizedBox(height: 4),
+
+          Text("Total Items : ${chalan.totalItems}"),
 
           const SizedBox(height: 18),
 

@@ -22,7 +22,7 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
 
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api/architects",
+      baseUrl: "https://dashboard.theceramicstudio.in/api/architects",
       headers: {"Content-Type": "application/json"},
     ),
   );

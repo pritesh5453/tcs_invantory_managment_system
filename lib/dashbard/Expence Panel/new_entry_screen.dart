@@ -22,7 +22,7 @@ class NewEntrySection extends StatefulWidget {
 class _NewEntrySectionState extends State<NewEntrySection> {
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );
@@ -181,7 +181,7 @@ class _NewEntrySectionState extends State<NewEntrySection> {
     if (widget.onSavePressed != null) {
       // Call parent's save function
       widget.onSavePressed!();
-      
+
       // Clear form after successful save
       // Note: We should actually clear form only after successful API call
       // We'll use a delayed clear to ensure parent has time to process
@@ -266,18 +266,19 @@ class _NewEntrySectionState extends State<NewEntrySection> {
                           borderRadius: BorderRadius.circular(8),
                           borderSide: BorderSide(color: Colors.grey.shade300),
                         ),
-                        suffixIcon: _isLoadingEmployees
-                            ? const Padding(
-                                padding: EdgeInsets.all(12.0),
-                                child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
+                        suffixIcon:
+                            _isLoadingEmployees
+                                ? const Padding(
+                                  padding: EdgeInsets.all(12.0),
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
                                   ),
-                                ),
-                              )
-                            : null,
+                                )
+                                : null,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
                           vertical: 14,
@@ -313,15 +314,16 @@ class _NewEntrySectionState extends State<NewEntrySection> {
                                 employee['name'],
                                 style: const TextStyle(fontSize: 14),
                               ),
-                              subtitle: employee['phone'] != null
-                                  ? Text(
-                                      'Phone: ${employee['phone']}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                    )
-                                  : null,
+                              subtitle:
+                                  employee['phone'] != null
+                                      ? Text(
+                                        'Phone: ${employee['phone']}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      )
+                                      : null,
                               onTap: () => _onEmployeeSelected(employee),
                             );
                           },

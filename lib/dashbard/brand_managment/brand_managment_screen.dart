@@ -17,6 +17,92 @@ class Brand {
   }
 }
 
+/// ================= SEARCH BAR WIDGET =================
+class SearchBarWidget extends StatefulWidget {
+  final ValueChanged<String> onSearchChanged;
+  final String initialValue;
+
+  const SearchBarWidget({
+    super.key,
+    required this.onSearchChanged,
+    this.initialValue = '',
+  });
+
+  @override
+  State<SearchBarWidget> createState() => _SearchBarWidgetState();
+}
+
+class _SearchBarWidgetState extends State<SearchBarWidget> {
+  late TextEditingController _searchController;
+  late FocusNode _searchFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController(text: widget.initialValue);
+    _searchFocusNode = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(SearchBarWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialValue != _searchController.text) {
+      _searchController.text = widget.initialValue;
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              onChanged: widget.onSearchChanged,
+              decoration: const InputDecoration(
+                hintText: "Search by name, ID or status...",
+                border: InputBorder.none,
+                hintStyle: TextStyle(color: Colors.grey),
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          if (_searchController.text.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+              onPressed: () {
+                _searchController.clear();
+                widget.onSearchChanged('');
+                _searchFocusNode.requestFocus();
+              },
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// ================= SCREEN =================
 class BrandManagementScreen extends StatefulWidget {
   const BrandManagementScreen({super.key});
@@ -26,29 +112,28 @@ class BrandManagementScreen extends StatefulWidget {
 }
 
 class _BrandManagementScreenState extends State<BrandManagementScreen> {
-  late bool canViewBrand;
   late bool canAddBrand;
   late bool canEditBrand;
   late bool canDeleteBrand;
 
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api/brands",
+      baseUrl: "https://dashboard.theceramicstudio.in/api/brands",
       headers: {"Content-Type": "application/json"},
     ),
   );
 
   bool loading = false;
   List<Brand> brands = [];
+  List<Brand> filteredBrands = [];
+  String searchQuery = '';
 
   @override
   void initState() {
     super.initState();
 
     canAddBrand = PermissionManager.hasPermission("Brand Management_Add");
-
     canEditBrand = PermissionManager.hasPermission("Brand Management_Edit");
-
     canDeleteBrand = PermissionManager.hasPermission("Brand Management_Delete");
 
     fetchBrands();
@@ -65,10 +150,34 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
 
       final List list = res.data['brands'];
       brands = list.map((e) => Brand.fromJson(e)).toList();
+      _filterBrands();
     } catch (e) {
       debugPrint(e.toString());
     }
     setState(() => loading = false);
+  }
+
+  /// ================= FILTER BRANDS =================
+  void _filterBrands() {
+    if (searchQuery.isEmpty) {
+      filteredBrands = List.from(brands);
+    } else {
+      filteredBrands =
+          brands.where((brand) {
+            return brand.name.toLowerCase().contains(
+                  searchQuery.toLowerCase(),
+                ) ||
+                brand.id.toString().contains(searchQuery) ||
+                brand.status.toLowerCase().contains(searchQuery.toLowerCase());
+          }).toList();
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() {
+      searchQuery = value;
+      _filterBrands();
+    });
   }
 
   /// ================= ADD / EDIT SHEET =================
@@ -156,12 +265,25 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
                         ),
                       ),
                       onPressed: () async {
+                        if (nameController.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Please enter brand name"),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+
                         if (brand == null) {
-                          await createBrand(nameController.text, isAvailable);
+                          await createBrand(
+                            nameController.text.trim(),
+                            isAvailable,
+                          );
                         } else {
                           await updateBrand(
                             brand.id,
-                            nameController.text,
+                            nameController.text.trim(),
                             isAvailable,
                           );
                         }
@@ -184,7 +306,11 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
   Future<void> createBrand(String name, bool isAvailable) async {
     await dio.post(
       "/create",
-      data: {"name": name, "status": isAvailable ? "Available" : "Unavailable"},
+      data: {
+        "name": name,
+        "status": isAvailable ? "Available" : "Unavailable",
+        "createdAt": DateTime.now().toIso8601String(),
+      },
     );
   }
 
@@ -246,23 +372,9 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Container(
-                      height: 46,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.search, color: Colors.grey),
-                          SizedBox(width: 8),
-                          Text(
-                            "Search..",
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ],
-                      ),
+                    child: SearchBarWidget(
+                      onSearchChanged: _onSearchChanged,
+                      initialValue: searchQuery,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -303,26 +415,62 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
                   loading
                       ? const Center(child: CircularProgressIndicator())
                       : RefreshIndicator(
-                        onRefresh: fetchBrands,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: brands.length,
-                          itemBuilder: (context, index) {
-                            final brand = brands[index];
-                            return BrandCard(
-                              brand: brand,
-                              canEdit: canEditBrand,
-                              canDelete: canDeleteBrand,
-                              onEdit: () => openBrandSheet(brand: brand),
-                              onDelete: () => deleteBrand(brand.id),
-                            );
-                          },
-                        ),
+                        onRefresh: () async {
+                          await fetchBrands();
+                          setState(() {
+                            searchQuery = '';
+                          });
+                        },
+                        child:
+                            filteredBrands.isEmpty
+                                ? _buildEmptyState()
+                                : ListView.builder(
+                                  padding: const EdgeInsets.all(16),
+                                  itemCount: filteredBrands.length,
+                                  itemBuilder: (context, index) {
+                                    final brand = filteredBrands[index];
+                                    return BrandCard(
+                                      brand: brand,
+                                      canEdit: canEditBrand,
+                                      canDelete: canDeleteBrand,
+                                      onEdit:
+                                          () => openBrandSheet(brand: brand),
+                                      onDelete: () => deleteBrand(brand.id),
+                                    );
+                                  },
+                                ),
                       ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    if (searchQuery.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              "No results found for '$searchQuery'",
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Try searching with different keywords",
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const Center(
+      child: Text("No brands found", style: TextStyle(color: Colors.grey)),
     );
   }
 }
@@ -378,9 +526,15 @@ class BrandCard extends StatelessWidget {
 
           const SizedBox(height: 12),
 
+          /// BRAND ID
           Text(
-            "Brand Identity: ${brand.name}",
-            style: const TextStyle(fontWeight: FontWeight.w600),
+            "ID: ${brand.id}",
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+
+          Text(
+            "Brand Name: ${brand.name}",
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
           ),
 
           const SizedBox(height: 14),

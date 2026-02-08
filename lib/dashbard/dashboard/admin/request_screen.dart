@@ -28,7 +28,7 @@ class _PaymentRequestsPageState extends State<PaymentRequestsPage> {
 
     try {
       final response = await dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/payment/pending',
+        'https://dashboard.theceramicstudio.in/api/payment/pending',
       );
 
       if (response.data['success'] == true) {
@@ -50,7 +50,7 @@ class _PaymentRequestsPageState extends State<PaymentRequestsPage> {
   }) async {
     try {
       final response = await dio.put(
-        'https://dashboarduat.theceramicstudio.in/api/payment/update-status',
+        'https://dashboard.theceramicstudio.in/api/payment/update-status',
         data: {
           "requestId": requestId,
           "status": status.trim().toLowerCase(), // approved / rejected

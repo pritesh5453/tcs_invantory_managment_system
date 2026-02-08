@@ -37,7 +37,7 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
   List<Map<String, dynamic>> filteredArchitects = [];
 
   final Dio dio = Dio(
-    BaseOptions(baseUrl: "https://dashboarduat.theceramicstudio.in"),
+    BaseOptions(baseUrl: "https://dashboard.theceramicstudio.in"),
   );
 
   @override
