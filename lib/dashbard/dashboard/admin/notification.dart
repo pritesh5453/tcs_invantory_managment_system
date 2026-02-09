@@ -10,7 +10,7 @@ class NotificationScreen extends StatefulWidget {
 
 class _NotificationScreenState extends State<NotificationScreen> {
   final Dio _dio = Dio(
-    BaseOptions(baseUrl: 'https://dashboard.theceramicstudio.in/api'),
+    BaseOptions(baseUrl: 'https://dashboarduat.theceramicstudio.in/api'),
   );
 
   bool _isLoading = true;

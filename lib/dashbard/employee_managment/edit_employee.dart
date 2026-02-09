@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
 /// =======================================================
-/// EMPLOYEE MODEL (AS IS – NO CHANGE)
+/// EMPLOYEE MODEL (NO CHANGE)
 /// =======================================================
 class EmployeeModel {
   final int id;
@@ -56,7 +56,7 @@ class EmployeeModel {
 }
 
 /// =======================================================
-/// EDIT EMPLOYEE SCREEN (FINAL STABLE)
+/// EDIT EMPLOYEE SCREEN (WITH LABELS)
 /// =======================================================
 class EditEmployeePopup extends StatefulWidget {
   final EmployeeModel employee;
@@ -93,9 +93,6 @@ class _EditEmployeePopupState extends State<EditEmployeePopup> {
   void initState() {
     super.initState();
 
-    debugPrint("🚀 EDIT SCREEN OPENED");
-    debugPrint("🆔 EMPLOYEE ID => ${widget.employee.id}");
-
     firstNameCtrl = TextEditingController(text: widget.employee.firstName);
     lastNameCtrl = TextEditingController(text: widget.employee.lastName);
     mobileCtrl = TextEditingController(text: widget.employee.mobile);
@@ -107,33 +104,28 @@ class _EditEmployeePopupState extends State<EditEmployeePopup> {
     commissionCtrl = TextEditingController(text: widget.employee.commission);
   }
 
-  InputDecoration _dec(String hint) => InputDecoration(
-    hintText: hint,
+  /// 🔹 COMMON DECORATION WITH LABEL
+  InputDecoration _dec(String label) => InputDecoration(
+    labelText: label,
+    floatingLabelBehavior: FloatingLabelBehavior.auto,
     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
   );
 
   /// =======================================================
-  /// UPDATE EMPLOYEE API (DATE SAFE)
+  /// UPDATE EMPLOYEE API
   /// =======================================================
   Future<void> updateEmployee() async {
-    debugPrint("=======================================");
-    debugPrint("🟠 UPDATE BUTTON CLICKED");
-    debugPrint("🆔 EMPLOYEE ID => ${widget.employee.id}");
-
     setState(() => isUpdating = true);
 
     final url =
-        "https://dashboard.theceramicstudio.in/api/employees/update/${widget.employee.id}";
+        "https://dashboarduat.theceramicstudio.in/api/employees/update/${widget.employee.id}";
 
-    /// ---------- SAFE DOB HANDLING ----------
     String? formattedDob;
     if (dobCtrl.text.trim().isNotEmpty) {
       try {
         formattedDob = DateTime.parse(dobCtrl.text).toUtc().toIso8601String();
-      } catch (e) {
-        debugPrint("❌ INVALID DOB => ${dobCtrl.text}");
-      }
+      } catch (_) {}
     }
 
     final Map<String, dynamic> body = {
@@ -152,34 +144,24 @@ class _EditEmployeePopupState extends State<EditEmployeePopup> {
       body["birthdate"] = formattedDob;
     }
 
-    debugPrint("🌐 REQUEST URL => $url");
-    debugPrint("📦 REQUEST BODY =>");
-    body.forEach((k, v) => debugPrint("   $k : $v"));
-
     try {
       final response = await dio.put(url, data: body);
-
-      debugPrint("✅ STATUS CODE => ${response.statusCode}");
-      debugPrint("📥 RESPONSE => ${response.data}");
 
       if (response.statusCode == 200 &&
           response.data is Map &&
           response.data["success"] == true) {
-        debugPrint("🎉 UPDATE SUCCESS");
         Navigator.pop(context, true);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(response.data["message"])));
       }
     } catch (e) {
-      debugPrint("🔥 UPDATE ERROR => $e");
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("Update failed: $e")));
     }
 
     setState(() => isUpdating = false);
-    debugPrint("=======================================");
   }
 
   @override
@@ -201,9 +183,12 @@ class _EditEmployeePopupState extends State<EditEmployeePopup> {
             const SizedBox(height: 10),
             TextField(controller: lastNameCtrl, decoration: _dec("Last Name")),
             const SizedBox(height: 10),
-            TextField(controller: mobileCtrl, decoration: _dec("Mobile")),
+            TextField(
+              controller: mobileCtrl,
+              decoration: _dec("Mobile Number"),
+            ),
             const SizedBox(height: 10),
-            TextField(controller: emailCtrl, decoration: _dec("Email")),
+            TextField(controller: emailCtrl, decoration: _dec("Email Address")),
             const SizedBox(height: 10),
             TextField(
               controller: dobCtrl,
@@ -212,7 +197,10 @@ class _EditEmployeePopupState extends State<EditEmployeePopup> {
             const SizedBox(height: 10),
             TextField(controller: passwordCtrl, decoration: _dec("Password")),
             const SizedBox(height: 10),
-            TextField(controller: expenseCtrl, decoration: _dec("Expense")),
+            TextField(
+              controller: expenseCtrl,
+              decoration: _dec("Allowed Expense"),
+            ),
             const SizedBox(height: 10),
             TextField(controller: salaryCtrl, decoration: _dec("Salary")),
             const SizedBox(height: 10),

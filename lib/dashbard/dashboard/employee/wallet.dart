@@ -82,8 +82,10 @@ class Transaction {
 
 // Main Widget
 class WalletScreen extends StatefulWidget {
-  const WalletScreen({Key? key, required this.userName}) : super(key: key);
+  const WalletScreen({Key? key, required this.userName, required this.userId})
+    : super(key: key);
   final String userName;
+  final String userId;
 
   @override
   State<WalletScreen> createState() => _WalletScreenState();
@@ -113,7 +115,7 @@ class _WalletScreenState extends State<WalletScreen> {
   // Dio Instance
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: 'https://dashboard.theceramicstudio.in/api',
+      baseUrl: 'https://dashboarduat.theceramicstudio.in/api',
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
     ),
@@ -144,7 +146,7 @@ class _WalletScreenState extends State<WalletScreen> {
     });
 
     try {
-      final response = await _dio.get('/wallet/stock/7');
+      final response = await _dio.get('/wallet/stock/${widget.userId}');
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -370,7 +372,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'STAFF ID: #${_walletData?.employeeId ?? '006'}',
+                  'STAFF ID: #${widget.userId}',
                   style: const TextStyle(
                     fontSize: 16,
                     color: Colors.white70,
@@ -390,7 +392,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   child: _buildBalanceCard(
                     title: 'AVAILABLE STOCK\nFOR EXPENSES',
                     amount:
-                        '₱${_walletData?.currentBalance.toStringAsFixed(2) ?? '0'}',
+                        '₹${_walletData?.currentBalance.toStringAsFixed(2) ?? '0'}',
                     icon: Icons.inventory,
                     color: Colors.blue,
                   ),
@@ -400,7 +402,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   child: _buildBalanceCard(
                     title: 'TOTAL ADVANCE\nSALARY',
                     amount:
-                        '₱${_walletData?.advanceBalance.toStringAsFixed(2) ?? '0'}',
+                        '₹${_walletData?.advanceBalance.toStringAsFixed(2) ?? '0'}',
                     icon: Icons.account_balance_wallet,
                     color: Colors.green,
                   ),
@@ -436,7 +438,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   controller: _amountController,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
-                    labelText: 'Amount (₱)',
+                    labelText: 'Amount (₹)',
                     prefixIcon: const Icon(Icons.currency_rupee),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -708,7 +710,7 @@ class _WalletScreenState extends State<WalletScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '₱${transaction.amount}',
+                  '₹${transaction.amount}',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,

@@ -38,7 +38,7 @@ class _TodoPageState extends State<TodoPage> {
       setState(() => isLoading = true);
 
       final response = await _dio.post(
-        'https://dashboard.theceramicstudio.in/api/todo/CreateTodo',
+        'https://dashboarduat.theceramicstudio.in/api/todo/CreateTodo',
         data: {
           "title": _titleController.text.trim(),
           "section": widget.section,
@@ -68,7 +68,7 @@ class _TodoPageState extends State<TodoPage> {
       setState(() => isLoading = true);
 
       final response = await _dio.get(
-        'https://dashboard.theceramicstudio.in/api/todo/getTodo',
+        'https://dashboarduat.theceramicstudio.in/api/todo/getTodo',
         queryParameters: {"role": widget.role, "section": widget.section},
       );
 
@@ -88,7 +88,7 @@ class _TodoPageState extends State<TodoPage> {
   Future<void> deleteTodo(int id) async {
     try {
       await _dio.delete(
-        'https://dashboard.theceramicstudio.in/api/todo/Delete/$id',
+        'https://dashboarduat.theceramicstudio.in/api/todo/Delete/$id',
       );
 
       fetchTodos();

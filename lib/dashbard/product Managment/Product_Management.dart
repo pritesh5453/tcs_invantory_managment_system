@@ -246,7 +246,7 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
 
     _dio = Dio(
       BaseOptions(
-        baseUrl: "https://dashboard.theceramicstudio.in/api",
+        baseUrl: "https://dashboarduat.theceramicstudio.in/api",
         headers: {"Accept": "application/json"},
         connectTimeout: const Duration(seconds: 30),
         receiveTimeout: const Duration(seconds: 30),

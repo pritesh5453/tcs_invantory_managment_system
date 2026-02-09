@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/add_delivery_challan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/update_timeline.dart';
 
 /// ================= DEBOUNCER FOR SEARCH =================
@@ -28,11 +29,15 @@ class Debouncer {
 class DeliveryChallanSearchBarWidget extends StatefulWidget {
   final ValueChanged<String> onSearchChanged;
   final String initialValue;
+  final VoidCallback? onAddPressed;
+  final bool canAdd;
 
   const DeliveryChallanSearchBarWidget({
     super.key,
     required this.onSearchChanged,
     this.initialValue = '',
+    this.onAddPressed,
+    this.canAdd = true,
   });
 
   @override
@@ -77,45 +82,81 @@ class _DeliveryChallanSearchBarWidgetState
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 46,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.search, color: Colors.grey),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              onChanged: widget.onSearchChanged,
-              decoration: const InputDecoration(
-                hintText: "Search by client name, ID or delivery boy...",
-                border: InputBorder.none,
-                hintStyle: TextStyle(color: Colors.grey),
-                contentPadding: EdgeInsets.zero,
-                isDense: true,
-              ),
-              style: const TextStyle(fontSize: 14),
+    return Row(
+      children: [
+        /// 🔍 SEARCH BAR - Employee Management ki tarah
+        Expanded(
+          child: Container(
+            height: 42,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search, size: 20, color: Colors.grey),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: widget.onSearchChanged,
+                    decoration: InputDecoration(
+                      hintText: "Search..",
+                      hintStyle: const TextStyle(color: Colors.grey),
+                      border: InputBorder.none,
+                      suffixIcon:
+                          _searchController.text.isNotEmpty
+                              ? IconButton(
+                                icon: const Icon(Icons.clear, size: 16),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  widget.onSearchChanged('');
+                                },
+                              )
+                              : null,
+                    ),
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+              ],
             ),
           ),
-          if (_searchController.text.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
-              onPressed: () {
-                _searchController.clear();
-                widget.onSearchChanged('');
-                _searchFocusNode.requestFocus();
-              },
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
+        ),
+
+        const SizedBox(width: 12),
+
+        /// ➕ ADD BUTTON - Employee Management ki tarah exact
+        InkWell(
+          onTap:
+              widget.canAdd && widget.onAddPressed != null
+                  ? widget.onAddPressed
+                  : () {
+                    if (!widget.canAdd) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            "You don't have permission to add delivery challan. Please contact support.",
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  },
+          child: Opacity(
+            opacity: widget.canAdd ? 1 : 0.4,
+            child: Container(
+              height: 42,
+              width: 42,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white, width: 1.5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.add, color: Colors.white),
             ),
-        ],
-      ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -160,6 +201,7 @@ class DeliveryChalanScreen extends StatefulWidget {
 
 class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
   late bool canView;
+  late bool canAddChallan;
   late bool canUpdateTimeline;
   late bool canDelete;
   late bool canPrint;
@@ -168,8 +210,8 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
   final Dio dio = Dio(
     BaseOptions(
       baseUrl:
-          "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan",
-      responseType: ResponseType.bytes, // 🔥 IMPORTANT for PDF
+          "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan",
+      responseType: ResponseType.bytes,
     ),
   );
 
@@ -183,6 +225,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
     super.initState();
 
     canView = PermissionManager.hasPermission("Delivery Challans_View");
+    canAddChallan = PermissionManager.hasPermission("Delivery Challans_Add");
     canUpdateTimeline = PermissionManager.hasPermission(
       "Delivery Challans_Update",
     );
@@ -207,7 +250,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
       print('Fetching delivery challans with query: $queryParams');
 
       final res = await Dio().get(
-        "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan/list",
+        "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan/list",
         queryParameters: queryParams,
       );
 
@@ -239,11 +282,31 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
     fetchChallans();
   }
 
+  /// ================= ADD CHALLAN FUNCTION =================
+  void _onAddPressed() {
+    if (!canAddChallan) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "You don't have permission to add delivery challan. Please contact support.",
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AddDeliveryChallanScreen()),
+    );
+  }
+
   /// ================= DELETE API =================
   Future<void> deleteChallan(int id) async {
     try {
       final res = await Dio().delete(
-        "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan/delete/$id",
+        "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan/delete/$id",
       );
 
       if (res.data['success'] == true) {
@@ -266,60 +329,59 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
     required bool isReturn,
   }) async {
     try {
-      debugPrint("========== PDF PRINT START ==========");
-      debugPrint("ChallanId: $challanId");
-      debugPrint("Is Return: $isReturn");
+      debugPrint("========== PRINT PDF START ==========");
 
       final Dio pdfDio = Dio(
         BaseOptions(
           baseUrl:
-              "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan",
+              "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan",
           responseType: ResponseType.bytes,
-          headers: {"Accept": "application/pdf"},
         ),
       );
 
       final url = isReturn ? "/printreturn/$challanId" : "/print/$challanId";
-
-      debugPrint("PDF URL: ${pdfDio.options.baseUrl}$url");
+      debugPrint("Request URL: ${pdfDio.options.baseUrl}$url");
 
       final response = await pdfDio.get(url);
 
-      debugPrint("Response Status: ${response.statusCode}");
+      if (response.statusCode != 200) {
+        _showError("Invalid response from server");
+        return;
+      }
 
-      List<int> bytes = response.data;
+      final bytes = response.data as List<int>;
+      debugPrint("PDF Bytes Length: ${bytes.length}");
 
-      // ✅ DOWNLOADS FOLDER
-      final directory = Directory("/storage/emulated/0/Download");
-      if (!directory.existsSync()) {
-        directory.createSync(recursive: true);
+      // ✅ SAFE DIRECTORY (no permission needed)
+      final directory = await getExternalStorageDirectory();
+      if (directory == null) {
+        _showError("Storage not available");
+        return;
       }
 
       final filePath =
           "${directory.path}/DC_${challanId}_${isReturn ? "RETURN" : "NORMAL"}.pdf";
 
       final file = File(filePath);
-
       await file.writeAsBytes(bytes, flush: true);
 
-      debugPrint("PDF WRITE SUCCESS ✅");
-      debugPrint("File Path: $filePath");
+      debugPrint("✅ PDF SAVED AT: $filePath");
 
-      // 🔥 AUTO OPEN PDF
-      final result = await OpenFilex.open(filePath);
-      debugPrint("OpenFile result: ${result.message}");
+      await OpenFilex.open(filePath);
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("PDF downloaded & opened"),
+          content: Text("PDF downloaded successfully"),
           backgroundColor: Colors.green,
         ),
       );
 
-      debugPrint("========== PDF PRINT END ==========");
-    } catch (e) {
-      debugPrint("PDF ERROR: $e");
-      _showError("PDF download failed");
+      debugPrint("========== PRINT PDF END ==========");
+    } catch (e, stack) {
+      debugPrint("❌ PDF DOWNLOAD EXCEPTION");
+      debugPrint("Error: $e");
+      debugPrint("StackTrace: $stack");
+      _showError("Unable to download PDF");
     }
   }
 
@@ -407,13 +469,20 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
             ),
             child: SafeArea(
               bottom: false,
-              child: Row(
+              child: Column(
                 children: [
-                  Expanded(
-                    child: DeliveryChallanSearchBarWidget(
-                      onSearchChanged: _searchChallans,
-                      initialValue: searchQuery,
-                    ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DeliveryChallanSearchBarWidget(
+                          onSearchChanged: _searchChallans,
+                          initialValue: searchQuery,
+                          onAddPressed: _onAddPressed,
+                          canAdd: canAddChallan,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -513,7 +582,10 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
 
               /// 🔥 3 DOT MENU
               PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
                 onSelected: (value) {
+                  debugPrint("MENU SELECTED: $value for ID ${chalan.id}");
+
                   if (value == "dc") {
                     if (!canPrint) {
                       _showError("You don't have permission to print DC");
@@ -533,22 +605,14 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
                   }
                 },
                 itemBuilder:
-                    (_) => [
+                    (context) => const [
                       PopupMenuItem(
                         value: "dc",
                         child: Row(
                           children: [
-                            Icon(
-                              Icons.print,
-                              color: canPrint ? Colors.black : Colors.grey,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              "DC Print",
-                              style: TextStyle(
-                                color: canPrint ? Colors.black : Colors.grey,
-                              ),
-                            ),
+                            Icon(Icons.print),
+                            SizedBox(width: 8),
+                            Text("DC Print"),
                           ],
                         ),
                       ),
@@ -556,19 +620,9 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
                         value: "return",
                         child: Row(
                           children: [
-                            Icon(
-                              Icons.print,
-                              color:
-                                  canReturnPrint ? Colors.black : Colors.grey,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              "Return DC Print",
-                              style: TextStyle(
-                                color:
-                                    canReturnPrint ? Colors.black : Colors.grey,
-                              ),
-                            ),
+                            Icon(Icons.print),
+                            SizedBox(width: 8),
+                            Text("Return DC Print"),
                           ],
                         ),
                       ),

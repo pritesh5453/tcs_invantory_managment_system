@@ -118,7 +118,7 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
 
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in/api/brands",
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api/brands",
       headers: {"Content-Type": "application/json"},
     ),
   );

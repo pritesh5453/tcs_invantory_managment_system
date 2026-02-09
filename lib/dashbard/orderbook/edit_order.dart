@@ -59,7 +59,7 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
 
     try {
       await Dio().put(
-        "https://dashboard.theceramicstudio.in/api/orderBook/update/${widget.order["id"]}",
+        "https://dashboarduat.theceramicstudio.in/api/orderBook/update/${widget.order["id"]}",
         data: {
           "name": productController.text.trim(),
           "size": sizeController.text.trim(),

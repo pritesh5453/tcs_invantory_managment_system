@@ -22,7 +22,7 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
 
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in/api/architects",
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api/architects",
       headers: {"Content-Type": "application/json"},
     ),
   );
@@ -113,7 +113,7 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
 
                       const SizedBox(height: 20),
 
-                      _label("Employee Name"),
+                      _label("Architect Name"),
                       Row(
                         children: [
                           Expanded(

@@ -20,7 +20,7 @@ class _EmployeeRolePermissionScreenState
     extends State<EmployeeRolePermissionScreen> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in/api",
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
       headers: {
         "Accept": "application/json",
         "Content-Type": "application/json",

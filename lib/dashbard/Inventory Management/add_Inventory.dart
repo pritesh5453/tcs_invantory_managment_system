@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
@@ -17,6 +19,7 @@ class AddInventorySheet extends StatefulWidget {
 }
 
 class _AddInventorySheetState extends State<AddInventorySheet> {
+  Timer? _productSearchDebounce;
   final Dio _dio = Dio();
 
   // Suppliers data
@@ -86,7 +89,7 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
 
   Future<void> _initializeData() async {
     await _fetchSuppliers();
-    await _fetchProducts();
+
     setState(() {
       _isLoading = false;
     });
@@ -95,7 +98,7 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
   Future<void> _fetchSuppliers() async {
     try {
       final response = await _dio.get(
-        'https://dashboard.theceramicstudio.in/api/suppliers/list',
+        'https://dashboarduat.theceramicstudio.in/api/suppliers/list',
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
@@ -109,20 +112,27 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
     }
   }
 
-  Future<void> _fetchProducts() async {
+  Future<void> _fetchProducts({required String search}) async {
+    if (search.trim().isEmpty) {
+      setState(() {
+        _filteredProducts = [];
+      });
+      return;
+    }
+
     try {
       final response = await _dio.get(
-        'https://dashboard.theceramicstudio.in/api/product/list?limit=100',
+        'https://dashboarduat.theceramicstudio.in/api/product/list',
+        queryParameters: {'search': search},
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         setState(() {
-          _products = response.data['products'];
-          _filteredProducts = _products;
+          _filteredProducts = response.data['products'];
         });
       }
     } catch (e) {
-      print('Error fetching products: $e');
+      debugPrint('Product search error: $e');
     }
   }
 
@@ -278,7 +288,7 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
       }
 
       final response = await _dio.post(
-        'https://dashboard.theceramicstudio.in/api/purchase/add',
+        'https://dashboarduat.theceramicstudio.in/api/purchase/add',
         data: {
           "purchaseDate": formattedDate,
           "clientName": _selectedSupplierName,
@@ -767,15 +777,37 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                         child: TextField(
                           controller: row.productSearchController,
                           onChanged: (value) {
-                            setState(() {
-                              row.productName = value;
-                              row.showProductDropdown = value.isNotEmpty;
-                              row.size = '';
-                              row.quality = '';
-                              row.selectedBatch = null;
-                              row.covController.clear();
-                              row.rateController.clear();
-                            });
+                            row.productName = value;
+                            row.showProductDropdown = value.isNotEmpty;
+
+                            // Reset dependent fields
+                            row.size = '';
+                            row.quality = '';
+                            row.selectedBatch = null;
+                            row.covController.clear();
+                            row.rateController.clear();
+                            row.stockController.clear();
+                            row.amountController.clear();
+
+                            // Debounce API call
+                            if (_productSearchDebounce?.isActive ?? false) {
+                              _productSearchDebounce!.cancel();
+                            }
+
+                            _productSearchDebounce = Timer(
+                              const Duration(milliseconds: 400),
+                              () {
+                                if (value.trim().isNotEmpty) {
+                                  _fetchProducts(search: value.trim());
+                                } else {
+                                  setState(() {
+                                    _filteredProducts = [];
+                                  });
+                                }
+                              },
+                            );
+
+                            setState(() {});
                           },
                           onTap: () {
                             setState(() {

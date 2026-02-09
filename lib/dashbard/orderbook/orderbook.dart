@@ -121,7 +121,7 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
       setState(() => isLoading = true);
 
       final response = await Dio().get(
-        "https://dashboard.theceramicstudio.in/api/orderBook/list",
+        "https://dashboarduat.theceramicstudio.in/api/orderBook/list",
       );
 
       setState(() {
@@ -188,7 +188,7 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
   Future<void> _deleteOrder(int id) async {
     try {
       await Dio().delete(
-        "https://dashboard.theceramicstudio.in/api/orderBook/delete/$id",
+        "https://dashboarduat.theceramicstudio.in/api/orderBook/delete/$id",
       );
 
       ScaffoldMessenger.of(context).showSnackBar(

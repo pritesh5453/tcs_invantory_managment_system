@@ -69,7 +69,7 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
       }
 
       final response = await dio.get(
-        "https://dashboard.theceramicstudio.in/api/employees/list",
+        "https://dashboarduat.theceramicstudio.in/api/employees/list",
         queryParameters: queryParams,
       );
 
@@ -161,7 +161,7 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
 
     try {
       final response = await dio.delete(
-        "https://dashboard.theceramicstudio.in/api/employees/delete/$employeeId",
+        "https://dashboarduat.theceramicstudio.in/api/employees/delete/$employeeId",
       );
 
       debugPrint("📥 DELETE RESPONSE => ${response.data}");
@@ -647,7 +647,7 @@ Future<void> toggleEmployeeStatus(
 
   try {
     final response = await dio.patch(
-      "https://dashboard.theceramicstudio.in/api/employees/status/$employeeId",
+      "https://dashboarduat.theceramicstudio.in/api/employees/status/$employeeId",
       data: {
         "status": newStatus, // ✅ SIMPLE MAP (JSON)
       },

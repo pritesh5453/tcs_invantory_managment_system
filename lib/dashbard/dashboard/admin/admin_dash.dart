@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/admin_todo.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/chart_model.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/notification.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/request_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/work_panel_screen.dart';
@@ -20,12 +21,15 @@ class _DashboardPageState extends State<DashboardPage> {
   // Dio instance
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: 'https://dashboard.theceramicstudio.in/api',
+      baseUrl: 'https://dashboarduat.theceramicstudio.in/api',
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
       headers: {'Accept': 'application/json'},
     ),
   );
+
+  List<SalesVsPurchaseData> salesVsPurchaseData = [];
+  List<CashFlowData> cashFlowData = [];
 
   // Dashboard stats data
   Map<String, dynamic> dashboardStats = {};
@@ -63,60 +67,20 @@ class _DashboardPageState extends State<DashboardPage> {
   // Add this method to fetch chart data
   Future<void> _fetchChartData() async {
     try {
-      final response = await _dio.get('/dashboard/chart-data');
+      final response = await _dio.get('/dashboard/charts');
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final data = response.data['data'];
+      if (response.statusCode == 200) {
+        final chartResponse = ChartDataResponse.fromJson(response.data);
 
-        // Parse sales vs purchase data
-        final salesPurchaseList = List<Map<String, dynamic>>.from(
-          data['salesVsPurchase'] ?? [],
-        );
-        setState(() {
-          salesVsPurchaseData =
-              salesPurchaseList.map((item) {
-                return SalesVsPurchaseData(
-                  month: item['month'] ?? '',
-                  purchase:
-                      double.tryParse(item['purchase']?.toString() ?? '0') ?? 0,
-                );
-              }).toList();
-        });
-
-        // Parse cash flow data
-        final cashFlowList = List<Map<String, dynamic>>.from(
-          data['cashFlow'] ?? [],
-        );
-        setState(() {
-          cashFlowData =
-              cashFlowList.map((item) {
-                return CashFlowData(
-                  day: item['day'] ?? '',
-                  inAmount:
-                      double.tryParse(item['inAmount']?.toString() ?? '0') ?? 0,
-                  outAmount:
-                      double.tryParse(item['outAmount']?.toString() ?? '0') ??
-                      0,
-                );
-              }).toList();
-        });
+        if (chartResponse.success) {
+          setState(() {
+            salesVsPurchaseData = chartResponse.data.salesVsPurchase;
+            cashFlowData = chartResponse.data.cashFlow;
+          });
+        }
       }
     } catch (e) {
-      print('Error fetching chart data: $e');
-      // For testing, use the sample data you provided
-      setState(() {
-        salesVsPurchaseData = [
-          SalesVsPurchaseData(month: 'Jan', purchase: 537500.00),
-          SalesVsPurchaseData(month: 'Feb', purchase: 156410.00),
-        ];
-        cashFlowData = [
-          CashFlowData(day: 'Fri', inAmount: 50000.00, outAmount: 537500.00),
-          CashFlowData(day: 'Tue', inAmount: 81646.00, outAmount: 500000.00),
-          CashFlowData(day: 'Wed', inAmount: 42000.00, outAmount: 150000.00),
-          CashFlowData(day: 'Thu', inAmount: 0.00, outAmount: 950.00),
-          CashFlowData(day: 'Fri', inAmount: 0.00, outAmount: 5460.00),
-        ];
-      });
+      print('Chart API Error: $e');
     }
   }
 
@@ -154,8 +118,8 @@ class _DashboardPageState extends State<DashboardPage> {
       final response = await _dio.get(
         '/dashboard/user-wise-orders',
         queryParameters: {
-          'start': _formatDateForApi(fromDate),
-          'end': _formatDateForApi(toDate),
+          'start': _formatDateForApi(startDate),
+          'end': _formatDateForApi(endDate),
         },
       );
 
@@ -266,6 +230,10 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isMobile = screenWidth < 600;
+    final bool isTablet = screenWidth >= 600 && screenWidth < 900;
+
     if (isLoading) {
       return Scaffold(
         backgroundColor: const Color(0xffF6F6F6),
@@ -273,11 +241,14 @@ class _DashboardPageState extends State<DashboardPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircularProgressIndicator(color: const Color(0xffFFA34D)),
+              const CircularProgressIndicator(color: Color(0xffFFA34D)),
               const SizedBox(height: 20),
               Text(
                 'Loading Dashboard Data...',
-                style: TextStyle(color: Colors.grey[600]),
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: isMobile ? 14 : 16,
+                ),
               ),
             ],
           ),
@@ -292,13 +263,16 @@ class _DashboardPageState extends State<DashboardPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.error, color: Colors.red, size: 50),
+              const Icon(Icons.error, color: Colors.red, size: 50),
               const SizedBox(height: 20),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Text(
                   errorMessage,
-                  style: TextStyle(color: Colors.red, fontSize: 14),
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontSize: isMobile ? 14 : 16,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -309,7 +283,10 @@ class _DashboardPageState extends State<DashboardPage> {
                   backgroundColor: const Color(0xffFFA34D),
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('Retry'),
+                child: Text(
+                  'Retry',
+                  style: TextStyle(fontSize: isMobile ? 14 : 16),
+                ),
               ),
             ],
           ),
@@ -322,19 +299,19 @@ class _DashboardPageState extends State<DashboardPage> {
       body: SafeArea(
         child: Column(
           children: [
-            _topHeader(),
+            _topHeader(isMobile),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(isMobile ? 12 : 16),
                 child: Column(
                   children: [
-                    _dashboardOverviewCard(),
-                    const SizedBox(height: 16),
-                    _assignedTaskCard(context),
-                    const SizedBox(height: 16),
-                    _statsGrid(),
-                    const SizedBox(height: 16),
-                    _bottomCharts(context),
+                    _dashboardOverviewCard(isMobile),
+                    SizedBox(height: isMobile ? 12 : 16),
+                    _assignedTaskCard(context, isMobile),
+                    SizedBox(height: isMobile ? 12 : 16),
+                    _statsGrid(isMobile, isTablet),
+                    SizedBox(height: isMobile ? 12 : 16),
+                    _bottomCharts(context, isMobile, isTablet),
                   ],
                 ),
               ),
@@ -342,18 +319,25 @@ class _DashboardPageState extends State<DashboardPage> {
           ],
         ),
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _fetchAllData,
+        backgroundColor: const Color(0xffFFA34D),
+        foregroundColor: Colors.white,
+        child: const Icon(Icons.refresh),
+        tooltip: 'Refresh Data',
+      ),
     );
   }
 
   // 🔶 TOP HEADER
-  Widget _topHeader() {
+  Widget _topHeader(bool isMobile) {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: Color(0xffFFA34D),
+      padding: EdgeInsets.all(isMobile ? 12 : 16),
+      decoration: BoxDecoration(
+        color: const Color(0xffFFA34D),
         borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(28),
-          bottomRight: Radius.circular(28),
+          bottomLeft: Radius.circular(isMobile ? 20 : 28),
+          bottomRight: Radius.circular(isMobile ? 20 : 28),
         ),
       ),
       child: Column(
@@ -362,31 +346,40 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               Expanded(
                 child: Container(
-                  height: 44,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  height: isMobile ? 44 : 48,
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(isMobile ? 20 : 24),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.search),
-                      SizedBox(width: 8),
-                      Text("Search..", style: TextStyle(color: Colors.grey)),
+                      Icon(Icons.search, size: isMobile ? 20 : 24),
+                      SizedBox(width: isMobile ? 8 : 12),
+                      Text(
+                        "Search..",
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: isMobile ? 14 : 16,
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: isMobile ? 8 : 12),
               Container(
-                height: 44,
-                width: 44,
+                height: isMobile ? 44 : 48,
+                width: isMobile ? 44 : 48,
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(22),
+                  borderRadius: BorderRadius.circular(isMobile ? 20 : 24),
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.notifications_none),
+                  icon: Icon(
+                    Icons.notifications_none,
+                    size: isMobile ? 20 : 24,
+                  ),
                   onPressed: () {
                     Navigator.push(
                       context,
@@ -405,74 +398,85 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   // 🔶 DASHBOARD OVERVIEW CARD
-  Widget _dashboardOverviewCard() {
+  Widget _dashboardOverviewCard(bool isMobile) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(isMobile ? 12 : 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(isMobile ? 14 : 18),
         border: Border.all(color: const Color(0xffFFA34D), width: 1.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Expanded(
+          Expanded(
             child: Text(
               "Dashboard\nOverview",
               style: TextStyle(
-                fontSize: 16,
+                fontSize: isMobile ? 16 : 18,
                 fontWeight: FontWeight.w600,
                 height: 1.2,
               ),
             ),
           ),
-          InkWell(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const PaymentRequestsPage(),
+          Wrap(
+            spacing: isMobile ? 6 : 8,
+            runSpacing: isMobile ? 6 : 8,
+            children: [
+              InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const PaymentRequestsPage(),
+                    ),
+                  );
+                },
+                child: _overviewChip(
+                  label: "Requests",
+                  color: const Color(0xffFFA34D),
+                  icon: Icons.notifications,
+                  isMobile: isMobile,
                 ),
-              );
-            },
-            child: _overviewChip(
-              label: "Requests",
-              color: const Color(0xffFFA34D),
-              icon: Icons.notifications,
-            ),
-          ),
-          const SizedBox(width: 8),
-          InkWell(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder:
-                      (context) =>
-                          TodoPage(userId: widget.userId, role: widget.role),
+              ),
+              InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder:
+                          (context) => TodoPage(
+                            userId: widget.userId,
+                            role: widget.role,
+                          ),
+                    ),
+                  );
+                },
+                child: _overviewChip(
+                  label: isMobile ? "To-Do" : "To-Do\nGeneral",
+                  color: const Color(0xff2D9CDB),
+                  icon: Icons.checklist,
+                  isMobile: isMobile,
                 ),
-              );
-            },
-            child: _overviewChip(
-              label: "To-Do\nGeneral",
-              color: const Color(0xff2D9CDB),
-              icon: Icons.checklist,
-            ),
-          ),
-          const SizedBox(width: 8),
-          InkWell(
-            borderRadius: BorderRadius.circular(20),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AssignTaskPage()),
-              );
-            },
-            child: _overviewChip(
-              label: "Work Panel",
-              color: const Color(0xff27AE60),
-              icon: Icons.work,
-            ),
+              ),
+              InkWell(
+                borderRadius: BorderRadius.circular(isMobile ? 16 : 20),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AssignTaskPage(),
+                    ),
+                  );
+                },
+                child: _overviewChip(
+                  label: "Work Panel",
+                  color: const Color(0xff27AE60),
+                  icon: Icons.work,
+                  isMobile: isMobile,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -483,12 +487,16 @@ class _DashboardPageState extends State<DashboardPage> {
     required String label,
     required Color color,
     required IconData icon,
+    required bool isMobile,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 10 : 12,
+        vertical: isMobile ? 8 : 10,
+      ),
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(isMobile ? 16 : 20),
         boxShadow: [
           BoxShadow(
             color: color.withOpacity(0.35),
@@ -501,23 +509,23 @@ class _DashboardPageState extends State<DashboardPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 16,
-            height: 16,
+            width: isMobile ? 16 : 18,
+            height: isMobile ? 16 : 18,
             decoration: const BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 12, color: Colors.black),
+            child: Icon(icon, size: isMobile ? 12 : 14, color: Colors.black),
           ),
-          const SizedBox(width: 6),
+          SizedBox(width: isMobile ? 4 : 6),
           Text(
             label,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 10,
+            style: TextStyle(
+              fontSize: isMobile ? 11 : 12,
               fontWeight: FontWeight.w600,
               color: Colors.white,
-              height: 1.1,
+              height: isMobile ? 1.0 : 1.1,
             ),
           ),
         ],
@@ -526,15 +534,12 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   // 🔶 ASSIGNED TASK CARD - Now using dynamic API data
-  Widget _assignedTaskCard(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final height = MediaQuery.of(context).size.height;
-
+  Widget _assignedTaskCard(BuildContext context, bool isMobile) {
     return Container(
-      padding: EdgeInsets.all(width * 0.035),
+      padding: EdgeInsets.all(isMobile ? 12 : 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(isMobile ? 14 : 18),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.08),
@@ -547,93 +552,113 @@ class _DashboardPageState extends State<DashboardPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: isMobile ? 8 : 12,
+            runSpacing: isMobile ? 8 : 12,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              const Text(
+              Text(
                 "User Wise Order",
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: isMobile ? 15 : 16,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              _dateChip(_formatDateForDisplay(fromDate), width, true),
-              _dateChip(_formatDateForDisplay(toDate), width, false),
+              _dateChip(_formatDateForDisplay(fromDate), isMobile, true),
+              _dateChip(_formatDateForDisplay(toDate), isMobile, false),
               GestureDetector(
                 onTap: _submitTask,
                 child: Container(
                   padding: EdgeInsets.symmetric(
-                    horizontal: width * 0.04,
-                    vertical: 6,
+                    horizontal: isMobile ? 16 : 20,
+                    vertical: 8,
                   ),
                   decoration: BoxDecoration(
                     color: Colors.orange,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(isMobile ? 16 : 20),
                   ),
-                  child: const Text(
+                  child: Text(
                     "Submit",
-                    style: TextStyle(fontSize: 10, color: Colors.white),
+                    style: TextStyle(
+                      fontSize: isMobile ? 13 : 14,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Container(
             padding: EdgeInsets.symmetric(
-              horizontal: width * 0.03,
-              vertical: 10,
+              horizontal: isMobile ? 12 : 16,
+              vertical: isMobile ? 12 : 14,
             ),
             decoration: BoxDecoration(
               color: const Color(0xffFFF6EC),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(isMobile ? 10 : 12),
             ),
-            child: const Row(
+            child: Row(
               children: [
                 Expanded(
                   child: Text(
                     "Name",
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: isMobile ? 13 : 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 Expanded(
                   child: Text(
                     "Total Attended",
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: isMobile ? 13 : 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 Expanded(
                   child: Text(
                     "Quotation Count",
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: isMobile ? 13 : 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
           // Dynamic rows from API with Scrollbar
           if (userWiseOrders.isNotEmpty)
             Container(
-              height: height * 0.15, // Adjust height as needed
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
+              height: isMobile ? 180 : 200,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(isMobile ? 8 : 10),
+              ),
               child: Scrollbar(
-                thumbVisibility: true, // Always show scrollbar
-                trackVisibility: true, // Show track
-                thickness: 6.0, // Scrollbar thickness
-                radius: const Radius.circular(10), // Rounded corners
+                thumbVisibility: true,
+                trackVisibility: true,
+                thickness: 6.0,
+                radius: const Radius.circular(10),
                 child: ListView.builder(
                   padding: EdgeInsets.symmetric(
-                    horizontal: width * 0.03,
+                    horizontal: isMobile ? 12 : 16,
                     vertical: 4,
                   ),
                   itemCount: userWiseOrders.length,
                   itemBuilder: (context, index) {
                     final employee = userWiseOrders[index];
                     return Container(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      padding: EdgeInsets.symmetric(
+                        vertical: isMobile ? 12 : 14,
+                      ),
                       decoration: BoxDecoration(
                         border:
                             index < userWiseOrders.length - 1
@@ -651,8 +676,8 @@ class _DashboardPageState extends State<DashboardPage> {
                             child: Text(
                               employee['employeeName'] ?? 'N/A',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 14,
+                              style: TextStyle(
+                                fontSize: isMobile ? 14 : 15,
                                 fontWeight: FontWeight.w500,
                               ),
                               maxLines: 1,
@@ -663,8 +688,8 @@ class _DashboardPageState extends State<DashboardPage> {
                             child: Text(
                               (employee['customerCount'] ?? 0).toString(),
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 14,
+                              style: TextStyle(
+                                fontSize: isMobile ? 14 : 15,
                                 fontWeight: FontWeight.w500,
                                 color: Colors.blue,
                               ),
@@ -674,8 +699,8 @@ class _DashboardPageState extends State<DashboardPage> {
                             child: Text(
                               (employee['quotationCount'] ?? 0).toString(),
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 14,
+                              style: TextStyle(
+                                fontSize: isMobile ? 14 : 15,
                                 fontWeight: FontWeight.w500,
                                 color: Colors.green,
                               ),
@@ -690,12 +715,15 @@ class _DashboardPageState extends State<DashboardPage> {
             )
           else
             Container(
-              height: height * 0.15,
-              padding: EdgeInsets.symmetric(horizontal: width * 0.03),
+              height: isMobile ? 180 : 200,
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16),
               alignment: Alignment.center,
-              child: const Text(
+              child: Text(
                 'No data available',
-                style: TextStyle(color: Colors.grey, fontSize: 14),
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontSize: isMobile ? 15 : 16,
+                ),
               ),
             ),
         ],
@@ -703,21 +731,24 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _dateChip(String text, double width, [bool isFromDate = false]) {
+  Widget _dateChip(String text, bool isMobile, [bool isFromDate = false]) {
     return GestureDetector(
       onTap: () => _selectDate(context, isFromDate),
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: width * 0.025, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: isMobile ? 14 : 16,
+          vertical: 8,
+        ),
         decoration: BoxDecoration(
           border: Border.all(color: Colors.orange),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(isMobile ? 16 : 20),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(text, style: const TextStyle(fontSize: 10)),
-            const SizedBox(width: 4),
-            const Icon(Icons.calendar_today, size: 12),
+            Text(text, style: TextStyle(fontSize: isMobile ? 13 : 14)),
+            SizedBox(width: isMobile ? 6 : 8),
+            Icon(Icons.calendar_today, size: isMobile ? 16 : 18),
           ],
         ),
       ),
@@ -725,53 +756,76 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   // 🔶 STATS GRID - Now using dynamic API data
-  Widget _statsGrid() {
+  Widget _statsGrid(bool isMobile, bool isTablet) {
+    int crossAxisCount;
+    if (isMobile) {
+      crossAxisCount = 2;
+    } else if (isTablet) {
+      crossAxisCount = 3;
+    } else {
+      crossAxisCount = 3;
+    }
+
     return GridView.count(
       shrinkWrap: true,
-      crossAxisCount: 3,
+      crossAxisCount: crossAxisCount,
       physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
+      crossAxisSpacing: isMobile ? 12 : 16,
+      mainAxisSpacing: isMobile ? 12 : 16,
+      childAspectRatio: isMobile ? 1.2 : 1.0,
       children: [
         _StatCard(
           "Monthly Customers",
           (dashboardStats['customerCurrentMonthCount'] ?? 0).toString(),
+          isMobile: isMobile,
         ),
         _StatCard(
           "Monthly Purchases",
           '₹${dashboardStats['monthlyPurchasesTotal'] ?? 0}',
+          isMobile: isMobile,
         ),
         _StatCard(
           "Quotations",
           (dashboardStats['monthlyQuestionCount'] ?? 0).toString(),
+          isMobile: isMobile,
         ),
         _StatCard(
           "Delivery Challans",
           (dashboardStats['deliveryChallanCount'] ?? 0).toString(),
+          isMobile: isMobile,
         ),
         _StatCard(
           "New Architects",
           (dashboardStats['architectsCount'] ?? 0).toString(),
+          isMobile: isMobile,
         ),
         _StatCard(
           "New Products",
           (dashboardStats['productsCount'] ?? 0).toString(),
+          isMobile: isMobile,
         ),
       ],
     );
   }
 
   // 🔶 BOTTOM CHART PLACEHOLDERS
-  Widget _bottomCharts(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final isMobile = width < 700;
-
+  Widget _bottomCharts(BuildContext context, bool isMobile, bool isTablet) {
     if (isMobile) {
       return Column(
         children: [
-          _chartCard(context, title: "Purchase Record", isPurchase: true),
-          const SizedBox(height: 16),
-          _chartCard(context, title: "Cash Flow Trend", isPurchase: false),
+          _chartCard(
+            context,
+            title: "Purchase Record",
+            isPurchase: true,
+            isMobile: isMobile,
+          ),
+          SizedBox(height: isMobile ? 16 : 20),
+          _chartCard(
+            context,
+            title: "Cash Flow Trend",
+            isPurchase: false,
+            isMobile: isMobile,
+          ),
         ],
       );
     }
@@ -783,14 +837,16 @@ class _DashboardPageState extends State<DashboardPage> {
             context,
             title: "Purchase Record",
             isPurchase: true,
+            isMobile: isMobile,
           ),
         ),
-        const SizedBox(width: 16),
+        SizedBox(width: isMobile ? 12 : 16),
         Expanded(
           child: _chartCard(
             context,
             title: "Cash Flow Trend",
             isPurchase: false,
+            isMobile: isMobile,
           ),
         ),
       ],
@@ -801,15 +857,16 @@ class _DashboardPageState extends State<DashboardPage> {
     BuildContext context, {
     required String title,
     required bool isPurchase,
+    required bool isMobile,
   }) {
     final chartData = isPurchase ? salesVsPurchaseData : cashFlowData;
     final hasData = chartData.isNotEmpty;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(isMobile ? 14 : 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(isMobile ? 18 : 22),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.08),
@@ -824,52 +881,57 @@ class _DashboardPageState extends State<DashboardPage> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: EdgeInsets.all(isMobile ? 8 : 10),
                 decoration: BoxDecoration(
                   color:
                       isPurchase ? Colors.blue.shade50 : Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(isMobile ? 10 : 12),
                 ),
                 child: Icon(
                   isPurchase ? Icons.bar_chart : Icons.currency_rupee,
                   color: isPurchase ? Colors.blue : Colors.green,
-                  size: 20,
+                  size: isMobile ? 20 : 22,
                 ),
               ),
-              const SizedBox(width: 10),
-              Text(
-                title.toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
+              SizedBox(width: isMobile ? 10 : 12),
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: isMobile ? 15 : 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
               if (isPurchase)
-                _filterChip("LAST ${salesVsPurchaseData.length} MONTHS")
+                _filterChip(
+                  "LAST ${salesVsPurchaseData.length} MONTHS",
+                  isMobile: isMobile,
+                )
               else
                 Row(
                   children: [
-                    _legendDot(Colors.green, "IN"),
-                    const SizedBox(width: 10),
-                    _legendDot(Colors.red, "OUT"),
+                    _legendDot(Colors.green, "IN", isMobile),
+                    SizedBox(width: isMobile ? 8 : 12),
+                    _legendDot(Colors.red, "OUT", isMobile),
                   ],
                 ),
             ],
           ),
-          const SizedBox(height: 20),
+          SizedBox(height: isMobile ? 16 : 20),
           Container(
-            height: 180,
+            height: isMobile ? 200 : 220,
             width: double.infinity,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(isMobile ? 12 : 14),
             ),
             child:
                 hasData
                     ? isPurchase
-                        ? _buildPurchaseChart()
-                        : _buildCashFlowChart()
+                        ? _buildPurchaseChart(isMobile)
+                        : _buildCashFlowChart(isMobile)
                     : Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -879,12 +941,15 @@ class _DashboardPageState extends State<DashboardPage> {
                                 ? Icons.shopping_cart
                                 : Icons.trending_up,
                             color: Colors.grey,
-                            size: 40,
+                            size: isMobile ? 40 : 50,
                           ),
-                          const SizedBox(height: 10),
-                          const Text(
+                          SizedBox(height: isMobile ? 12 : 16),
+                          Text(
                             "No Chart Data",
-                            style: TextStyle(color: Colors.grey),
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: isMobile ? 15 : 16,
+                            ),
                           ),
                         ],
                       ),
@@ -895,7 +960,7 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildPurchaseChart() {
+  Widget _buildPurchaseChart(bool isMobile) {
     // Find max value for scaling
     final maxValue =
         salesVsPurchaseData.isNotEmpty
@@ -905,7 +970,7 @@ class _DashboardPageState extends State<DashboardPage> {
             : 0;
 
     return Padding(
-      padding: const EdgeInsets.all(8.0),
+      padding: EdgeInsets.all(isMobile ? 8.0 : 10.0),
       child: BarChart(
         BarChartData(
           alignment: BarChartAlignment.spaceAround,
@@ -917,7 +982,11 @@ class _DashboardPageState extends State<DashboardPage> {
               getTooltipItem: (group, groupIndex, rod, rodIndex) {
                 return BarTooltipItem(
                   '${salesVsPurchaseData[groupIndex].month}\n₹${rod.toY.toInt()}',
-                  TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+                  TextStyle(
+                    color: Colors.blue,
+                    fontWeight: FontWeight.bold,
+                    fontSize: isMobile ? 12 : 14,
+                  ),
                 );
               },
             ),
@@ -927,37 +996,49 @@ class _DashboardPageState extends State<DashboardPage> {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                // In _buildPurchaseChart and _buildCashFlowChart, update the getTitlesWidget for left axis:
+                interval: 1,
                 getTitlesWidget: (value, meta) {
-                  if (value >= 1000000) {
-                    return Text(
-                      '₹${(value / 1000000).toStringAsFixed(1)}M',
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
-                    );
-                  } else if (value >= 1000) {
-                    return Text(
-                      '₹${(value / 1000).toStringAsFixed(0)}K',
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
-                    );
-                  } else {
-                    return Text(
-                      '₹${value.toInt()}',
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  int index = value.toInt();
+
+                  if (index >= 0 && index < salesVsPurchaseData.length) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        salesVsPurchaseData[index].month,
+                        style: TextStyle(
+                          fontSize: isMobile ? 12 : 13,
+                          color: Colors.grey,
+                        ),
+                      ),
                     );
                   }
+                  return const Text('');
                 },
               ),
             ),
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
+                reservedSize: isMobile ? 45 : 50,
+                interval: maxValue / 4,
                 getTitlesWidget: (value, meta) {
-                  return Text(
-                    '₹${value.toInt() ~/ 1000}K',
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
-                  );
+                  if (value >= 1000000) {
+                    return Text(
+                      '₹${(value / 1000000).toStringAsFixed(1)}M',
+                      style: TextStyle(fontSize: isMobile ? 10 : 12),
+                    );
+                  } else if (value >= 1000) {
+                    return Text(
+                      '₹${(value / 1000).toStringAsFixed(0)}K',
+                      style: TextStyle(fontSize: isMobile ? 10 : 12),
+                    );
+                  } else {
+                    return Text(
+                      '₹${value.toInt()}',
+                      style: TextStyle(fontSize: isMobile ? 10 : 12),
+                    );
+                  }
                 },
-                reservedSize: 40,
               ),
             ),
             rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -966,7 +1047,7 @@ class _DashboardPageState extends State<DashboardPage> {
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            horizontalInterval: maxValue > 0 ? maxValue / 4 : 100000,
+            horizontalInterval: maxValue > 0 ? maxValue / 4 : 1000,
             getDrawingHorizontalLine:
                 (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
           ),
@@ -980,7 +1061,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   barRods: [
                     BarChartRodData(
                       toY: data.purchase,
-                      width: 20,
+                      width: isMobile ? 16 : 20,
                       color: Colors.blue,
                       borderRadius: BorderRadius.circular(4),
                     ),
@@ -992,9 +1073,9 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildCashFlowChart() {
+  Widget _buildCashFlowChart(bool isMobile) {
     return Padding(
-      padding: const EdgeInsets.all(8.0),
+      padding: EdgeInsets.all(isMobile ? 8.0 : 10.0),
       child: LineChart(
         LineChartData(
           lineTouchData: LineTouchData(
@@ -1009,9 +1090,10 @@ class _DashboardPageState extends State<DashboardPage> {
                         final data = cashFlowData[index];
                         return LineTooltipItem(
                           '${data.day}\nIN: ₹${data.inAmount.toInt()}\nOUT: ₹${data.outAmount.toInt()}',
-                          const TextStyle(
+                          TextStyle(
                             color: Colors.black,
                             fontWeight: FontWeight.bold,
+                            fontSize: isMobile ? 12 : 14,
                           ),
                         );
                       }
@@ -1035,15 +1117,17 @@ class _DashboardPageState extends State<DashboardPage> {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
+                interval: 1,
                 getTitlesWidget: (value, meta) {
-                  final index = value.toInt();
+                  int index = value.toInt();
+
                   if (index >= 0 && index < cashFlowData.length) {
                     return Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
+                      padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         cashFlowData[index].day,
-                        style: const TextStyle(
-                          fontSize: 12,
+                        style: TextStyle(
+                          fontSize: isMobile ? 12 : 13,
                           color: Colors.grey,
                         ),
                       ),
@@ -1056,13 +1140,26 @@ class _DashboardPageState extends State<DashboardPage> {
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
+                reservedSize: isMobile ? 45 : 50,
+                interval: 200000,
                 getTitlesWidget: (value, meta) {
-                  return Text(
-                    '₹${value.toInt() ~/ 1000}K',
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
-                  );
+                  if (value >= 1000000) {
+                    return Text(
+                      '₹${(value / 1000000).toStringAsFixed(1)}M',
+                      style: TextStyle(fontSize: isMobile ? 10 : 12),
+                    );
+                  } else if (value >= 1000) {
+                    return Text(
+                      '₹${(value / 1000).toStringAsFixed(0)}K',
+                      style: TextStyle(fontSize: isMobile ? 10 : 12),
+                    );
+                  } else {
+                    return Text(
+                      '₹${value.toInt()}',
+                      style: TextStyle(fontSize: isMobile ? 10 : 12),
+                    );
+                  }
                 },
-                reservedSize: 40,
               ),
             ),
             rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -1084,7 +1181,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   }).toList(),
               isCurved: true,
               color: Colors.green,
-              barWidth: 3,
+              barWidth: isMobile ? 2.5 : 3,
               isStrokeCapRound: true,
               dotData: FlDotData(show: true),
               belowBarData: BarAreaData(show: false),
@@ -1097,7 +1194,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   }).toList(),
               isCurved: true,
               color: Colors.red,
-              barWidth: 3,
+              barWidth: isMobile ? 2.5 : 3,
               isStrokeCapRound: true,
               dotData: FlDotData(show: true),
               belowBarData: BarAreaData(show: false),
@@ -1108,42 +1205,48 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _filterChip(String text) {
+  Widget _filterChip(String text, {required bool isMobile}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 12 : 14,
+        vertical: isMobile ? 6 : 8,
+      ),
       decoration: BoxDecoration(
         color: const Color(0xffF5F7FA),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(isMobile ? 18 : 20),
       ),
       child: Row(
         children: [
           Text(
             text,
-            style: const TextStyle(
-              fontSize: 11,
+            style: TextStyle(
+              fontSize: isMobile ? 11 : 12,
               fontWeight: FontWeight.w600,
               color: Colors.grey,
             ),
           ),
-          const SizedBox(width: 6),
-          const Icon(Icons.keyboard_arrow_down, size: 18),
+          SizedBox(width: isMobile ? 4 : 6),
+          const Icon(Icons.keyboard_arrow_down, size: 16),
         ],
       ),
     );
   }
 
-  Widget _legendDot(Color color, String label) {
+  Widget _legendDot(Color color, String label, bool isMobile) {
     return Row(
       children: [
         Container(
-          width: 8,
-          height: 8,
+          width: isMobile ? 10 : 12,
+          height: isMobile ? 10 : 12,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        const SizedBox(width: 4),
+        SizedBox(width: isMobile ? 4 : 6),
         Text(
           label,
-          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+          style: TextStyle(
+            fontSize: isMobile ? 12 : 13,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ],
     );
@@ -1154,16 +1257,17 @@ class _DashboardPageState extends State<DashboardPage> {
 class _StatCard extends StatelessWidget {
   final String title;
   final String value;
+  final bool isMobile;
 
-  const _StatCard(this.title, this.value);
+  const _StatCard(this.title, this.value, {required this.isMobile});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(isMobile ? 14 : 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(isMobile ? 14 : 16),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.08),
@@ -1178,39 +1282,22 @@ class _StatCard extends StatelessWidget {
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10, color: Colors.grey),
+            style: TextStyle(
+              fontSize: isMobile ? 13 : 14,
+              color: Colors.grey,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: isMobile ? 8 : 10),
           Text(
             value,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: isMobile ? 18 : 20,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
     );
   }
-}
-
-// Add these to your state variables
-List<SalesVsPurchaseData> salesVsPurchaseData = [];
-List<CashFlowData> cashFlowData = [];
-
-// Add these classes at the top of your file (outside the widget classes)
-class SalesVsPurchaseData {
-  final String month;
-  final double purchase;
-
-  SalesVsPurchaseData({required this.month, required this.purchase});
-}
-
-class CashFlowData {
-  final String day;
-  final double inAmount;
-  final double outAmount;
-
-  CashFlowData({
-    required this.day,
-    required this.inAmount,
-    required this.outAmount,
-  });
 }

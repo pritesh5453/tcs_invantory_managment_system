@@ -17,7 +17,7 @@ class _UpdateTimelineScreenState extends State<UpdateTimelineScreen> {
 
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in/api",
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
       headers: {"Content-Type": "application/json"},
     ),
   );

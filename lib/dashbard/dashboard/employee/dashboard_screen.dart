@@ -52,7 +52,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   // Dio instance
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: 'https://dashboard.theceramicstudio.in',
+      baseUrl: 'https://dashboarduat.theceramicstudio.in',
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
     ),
@@ -346,15 +346,26 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
   Future<void> _updateTaskStatus(int taskId, String status) async {
     try {
+      debugPrint("🟡 UPDATE TASK START");
+      //https://dashboarduat.theceramicstudio.in/api/tasks/update/9
+      //https://dashboarduat.theceramicstudio.in
       final response = await _dio.put(
-        '/api/tasks/$taskId',
-        data: {"status": status, "remark": remarkController.text.trim()},
+        '/api/tasks/update/$taskId',
+        data: {
+          "status": status.toLowerCase() == "done" ? "Done" : "Pending",
+          "remark": remarkController.text.trim(),
+        },
       );
 
-      if (response.statusCode == 200) {
+      debugPrint("STATUS : ${response.statusCode}");
+      debugPrint("DATA   : ${response.data}");
+
+      if (response.statusCode == 200 && response.data["success"] == true) {
         _showSnackBar("✅ Task updated successfully");
-        _fetchTasks();
+
+        await _fetchTasks();
         remarkController.clear();
+
         setState(() {
           showCompleteTask = false;
           selectedTask = null;
@@ -362,34 +373,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         });
       }
     } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
-        try {
-          final postResponse = await _dio.post(
-            '/api/tasks/update',
-            data: {
-              "taskId": taskId,
-              "status": status,
-              "remark": remarkController.text.trim(),
-            },
-          );
-
-          if (postResponse.statusCode == 200) {
-            _showSnackBar("✅ Task updated successfully");
-            _fetchTasks();
-            remarkController.clear();
-            setState(() {
-              showCompleteTask = false;
-              selectedTask = null;
-              selectedStatus = "done";
-            });
-          }
-        } catch (e2) {
-          _showSnackBar("❌ Failed to update task");
-        }
-      } else {
-        _showSnackBar("❌ Failed to update task");
-      }
-    } catch (e) {
+      debugPrint("❌ DIO ERROR");
+      debugPrint("Status : ${e.response?.statusCode}");
+      debugPrint("Data   : ${e.response?.data}");
       _showSnackBar("❌ Failed to update task");
     }
   }
@@ -447,7 +433,11 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => WalletScreen(userName: widget.userName),
+        builder:
+            (context) => WalletScreen(
+              userName: widget.userName,
+              userId: widget.userId.toString(),
+            ),
       ),
     );
   }

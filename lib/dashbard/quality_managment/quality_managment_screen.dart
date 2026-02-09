@@ -30,7 +30,7 @@ class Quality {
 final dioProvider = Provider<Dio>((ref) {
   return Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in/api/qualities",
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api/qualities",
       headers: {"Content-Type": "application/json"},
     ),
   );

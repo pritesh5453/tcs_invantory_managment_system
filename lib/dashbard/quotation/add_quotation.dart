@@ -11,7 +11,7 @@ class Addquotationscreen extends StatefulWidget {
 class _AddquotationscreenState extends State<Addquotationscreen> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in/api",
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );

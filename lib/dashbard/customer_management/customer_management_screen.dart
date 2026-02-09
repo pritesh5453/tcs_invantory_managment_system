@@ -44,7 +44,7 @@ class Customer {
 class CustomerApi {
   static final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in",
+      baseUrl: "https://dashboarduat.theceramicstudio.in",
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
     ),
@@ -60,6 +60,20 @@ class CustomerApi {
     customers.sort((a, b) => b.id.compareTo(a.id));
 
     return customers;
+  }
+
+  // ✅ ADD DELETE CUSTOMER METHOD
+  static Future<bool> deleteCustomer(int customerId) async {
+    try {
+      final response = await _dio.delete("/api/users/delete/$customerId");
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint("Delete customer error: $e");
+      return false;
+    }
   }
 }
 
@@ -77,6 +91,7 @@ class CustomerManagementScreen extends StatefulWidget {
 class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
   late bool canAddCustomer;
   late bool canEditCustomer;
+  late bool canDeleteCustomer; // ✅ ADD DELETE PERMISSION
   late Future<List<Customer>> customerFuture;
   List<Customer> _allCustomers = []; // Store all customers
   List<Customer> _filteredCustomers = []; // Store filtered customers
@@ -90,10 +105,13 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
     debugPrint("ALL PERMISSIONS => ${PermissionManager.allPermissions}");
 
     canAddCustomer = PermissionManager.hasPermission("Customer Management_Add");
-
     canEditCustomer = PermissionManager.hasPermission(
       "Customer Management_Edit",
     );
+    canDeleteCustomer = PermissionManager.hasPermission(
+      "Customer Management_Delete",
+    ); // ✅ ADDED
+
     _allCustomers = [];
     _filteredCustomers = [];
     _loadCustomers();
@@ -170,7 +188,6 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
         child: Column(
           children: [
             /// ================= APP BAR =================
-            /// ================= APP BAR =================
             Container(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
               decoration: const BoxDecoration(
@@ -243,7 +260,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
-                                    "You don't have permission to add employee. Please contact support.",
+                                    "You don't have permission to add customer. Please contact support.",
                                   ),
                                   backgroundColor: Colors.red,
                                 ),
@@ -267,7 +284,6 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
             ),
 
             /// ================= LIST =================
-            // Modify FutureBuilder:
             Expanded(
               child: RefreshIndicator(
                 color: Colors.orange,
@@ -319,6 +335,8 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                           customer: displayCustomers[index],
                           onRefresh: _loadCustomers,
                           canEditCustomer: canEditCustomer,
+                          canDeleteCustomer:
+                              canDeleteCustomer, // ✅ PASS DELETE PERMISSION
                         );
                       },
                     );
@@ -338,13 +356,74 @@ class CustomerCard extends StatelessWidget {
   final Customer customer;
   final VoidCallback onRefresh;
   final bool canEditCustomer;
+  final bool canDeleteCustomer; // ✅ ADD DELETE PERMISSION
 
   const CustomerCard({
     super.key,
     required this.customer,
     required this.onRefresh,
     required this.canEditCustomer,
+    required this.canDeleteCustomer, // ✅ ADDED
   });
+
+  // ✅ DELETE CUSTOMER FUNCTION
+  Future<void> _deleteCustomer(BuildContext context) async {
+    if (!canDeleteCustomer) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("You don't have permission to delete customer."),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Confirmation dialog
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text("Delete Customer"),
+            content: const Text(
+              "Are you sure you want to delete this customer?",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text("Delete"),
+              ),
+            ],
+          ),
+    );
+
+    if (confirm == true) {
+      final success = await CustomerApi.deleteCustomer(customer.id);
+
+      if (context.mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("✅ Customer deleted successfully"),
+              backgroundColor: Colors.green,
+            ),
+          );
+          onRefresh(); // Refresh the list
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Failed to delete customer"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -358,10 +437,56 @@ class CustomerCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            "Customer Info",
-            style: TextStyle(fontWeight: FontWeight.w600),
+          // ✅ TOP ROW WITH 3 DOTS MENU
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                "Customer Info",
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+
+              // ✅ 3 DOTS MENU
+              Opacity(
+                opacity: canDeleteCustomer ? 1 : 0.4,
+                child: PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, size: 20),
+                  onSelected: (value) {
+                    if (value == "delete") {
+                      _deleteCustomer(context);
+                    }
+                  },
+                  itemBuilder:
+                      (context) => [
+                        PopupMenuItem<String>(
+                          value: "delete",
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.delete,
+                                color: Colors.red,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                "Delete",
+                                style: TextStyle(
+                                  color:
+                                      canDeleteCustomer
+                                          ? Colors.red
+                                          : Colors.grey,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                ),
+              ),
+            ],
           ),
+
           const SizedBox(height: 10),
 
           infoRow("Customer Name:", "${customer.name} ${customer.lastName}"),

@@ -55,7 +55,7 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
 
     try {
       await Dio().post(
-        "https://dashboard.theceramicstudio.in/api/orderBook/create",
+        "https://dashboarduat.theceramicstudio.in/api/orderBook/create",
         data: {
           "name": productController.text.trim(),
           "size": sizeController.text.trim(),

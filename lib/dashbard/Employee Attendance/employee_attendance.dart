@@ -13,7 +13,7 @@ class EmployeeAttendanceScreen extends StatefulWidget {
 class _EmployeeAttendanceScreenState extends State<EmployeeAttendanceScreen> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in/api",
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );

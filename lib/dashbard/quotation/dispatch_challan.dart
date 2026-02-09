@@ -19,7 +19,7 @@ class _DispatchChallanScreenState extends State<DispatchChallanScreen> {
   final TextEditingController dispatchCtrl = TextEditingController(text: "0");
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in/api",
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );

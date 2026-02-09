@@ -10,10 +10,18 @@ Widget label(String text) => Padding(
   ),
 );
 
-InputDecoration _dec(String hint) => InputDecoration(
-  hintText: hint,
+InputDecoration _dec(String hint, {bool isRequired = false}) => InputDecoration(
+  hintText: hint + (isRequired ? " *" : ""),
   isDense: true,
   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+  errorBorder: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(8),
+    borderSide: const BorderSide(color: Colors.red),
+  ),
+  focusedErrorBorder: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(8),
+    borderSide: const BorderSide(color: Colors.red),
+  ),
 );
 
 /// ================= ADD CUSTOMER SCREEN =================
@@ -25,6 +33,9 @@ class AddCustomerScreen extends StatefulWidget {
 }
 
 class _AddCustomerScreenState extends State<AddCustomerScreen> {
+  // ===== FORM KEY FOR VALIDATION =====
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
   // ===== CONTROLLERS =====
   final firstNameCtrl = TextEditingController();
   final lastNameCtrl = TextEditingController();
@@ -45,12 +56,16 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
   bool isLoading = false;
 
+  // ===== ERROR FLAGS FOR MANDATORY FIELDS =====
+  bool _showEmployeeError = false;
+  bool _showArchitectError = false;
+
   // ===== LISTS =====
   List<Map<String, dynamic>> employees = [];
   List<Map<String, dynamic>> architects = [];
 
   final Dio dio = Dio(
-    BaseOptions(baseUrl: "https://dashboard.theceramicstudio.in"),
+    BaseOptions(baseUrl: "https://dashboarduat.theceramicstudio.in"),
   );
 
   @override
@@ -92,6 +107,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     required String title,
     required List<Map<String, dynamic>> list,
     required Function(Map<String, dynamic>) onSelect,
+    required bool isEmployeePicker,
   }) {
     List<Map<String, dynamic>> temp = List.from(list);
 
@@ -150,6 +166,11 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                         title: Text(temp[i]['name']),
                         onTap: () {
                           onSelect(temp[i]);
+                          if (isEmployeePicker) {
+                            setState(() => _showEmployeeError = false);
+                          } else {
+                            setState(() => _showArchitectError = false);
+                          }
                           Navigator.pop(context);
                         },
                       );
@@ -164,8 +185,66 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     );
   }
 
+  // ================= VALIDATE MANDATORY FIELDS =================
+  bool _validateMandatoryFields() {
+    bool isValid = true;
+
+    // Check customer name (first and last)
+    if (firstNameCtrl.text.trim().isEmpty || lastNameCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Customer Name is required"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      isValid = false;
+    }
+
+    // Check mobile number
+    if (phoneCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Mobile Number is required"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      isValid = false;
+    }
+
+    // Check assigned employee
+    if (assignedEmployee == null || assignedEmployee!.isEmpty) {
+      setState(() => _showEmployeeError = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Assigned Employee is required"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      isValid = false;
+    }
+
+    // Check associated architect
+    if (assignedArchitect == null || assignedArchitect!.isEmpty) {
+      setState(() => _showArchitectError = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Associated Architect is required"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      isValid = false;
+    }
+
+    return isValid;
+  }
+
   // ================= ADD CUSTOMER =================
   Future<void> _addCustomer() async {
+    // Validate mandatory fields
+    if (!_validateMandatoryFields()) {
+      return;
+    }
+
     setState(() => isLoading = true);
 
     try {
@@ -227,30 +306,30 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              label("Customer Name"),
+              label("Customer Name *"),
               Row(
                 children: [
                   Expanded(
                     child: TextField(
                       controller: firstNameCtrl,
-                      decoration: _dec("First name"),
+                      decoration: _dec("First name", isRequired: true),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: TextField(
                       controller: lastNameCtrl,
-                      decoration: _dec("Last name"),
+                      decoration: _dec("Last name", isRequired: true),
                     ),
                   ),
                 ],
               ),
 
-              label("Mobile Number"),
+              label("Mobile Number *"),
               TextField(
                 controller: phoneCtrl,
                 keyboardType: TextInputType.phone,
-                decoration: _dec("Mobile"),
+                decoration: _dec("Mobile", isRequired: true),
               ),
 
               label("Alternate Mobile Number"),
@@ -311,7 +390,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
 
-              label("Assigned Employee"),
+              label("Assigned Employee *"),
               InkWell(
                 onTap: () {
                   _openPicker(
@@ -322,21 +401,49 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                       assignedEmployeeId = e['id'];
                       setState(() {});
                     },
+                    isEmployeePicker: true,
                   );
                 },
-                child: InputDecorator(
-                  decoration: _dec("Select employee"),
-                  child: Text(
-                    assignedEmployee ?? "Select employee",
-                    style: TextStyle(
-                      color:
-                          assignedEmployee == null ? Colors.grey : Colors.black,
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: _showEmployeeError ? Colors.red : Colors.grey,
+                      width: 1,
                     ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 16,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          assignedEmployee ?? "Select employee",
+                          style: TextStyle(
+                            color:
+                                assignedEmployee == null
+                                    ? Colors.grey
+                                    : Colors.black,
+                          ),
+                        ),
+                      ),
+                      Icon(Icons.arrow_drop_down, color: Colors.grey.shade600),
+                    ],
                   ),
                 ),
               ),
+              if (_showEmployeeError)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 4),
+                  child: Text(
+                    "Assigned Employee is required",
+                    style: TextStyle(color: Colors.red.shade700, fontSize: 12),
+                  ),
+                ),
 
-              label("Associated Architect"),
+              label("Associated Architect *"),
               InkWell(
                 onTap: () {
                   _openPicker(
@@ -346,27 +453,59 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                       assignedArchitect = e['name'];
                       setState(() {});
                     },
+                    isEmployeePicker: false,
                   );
                 },
-                child: InputDecorator(
-                  decoration: _dec("Select architect"),
-                  child: Text(
-                    assignedArchitect ?? "Select architect",
-                    style: TextStyle(
-                      color:
-                          assignedArchitect == null
-                              ? Colors.grey
-                              : Colors.black,
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: _showArchitectError ? Colors.red : Colors.grey,
+                      width: 1,
                     ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 16,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          assignedArchitect ?? "Select architect",
+                          style: TextStyle(
+                            color:
+                                assignedArchitect == null
+                                    ? Colors.grey
+                                    : Colors.black,
+                          ),
+                        ),
+                      ),
+                      Icon(Icons.arrow_drop_down, color: Colors.grey.shade600),
+                    ],
                   ),
                 ),
               ),
+              if (_showArchitectError)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 4),
+                  child: Text(
+                    "Associated Architect is required",
+                    style: TextStyle(color: Colors.red.shade700, fontSize: 12),
+                  ),
+                ),
 
               label("Additional Notes"),
               TextField(
                 controller: notesCtrl,
                 maxLines: 3,
-                decoration: _dec("Any specific requirement or follow-up"),
+                decoration: InputDecoration(
+                  hintText: "Any specific requirement or follow-up",
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
               ),
             ],
           ),
@@ -379,7 +518,11 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
         onPressed: isLoading ? null : _addCustomer,
         label:
             isLoading
-                ? const CircularProgressIndicator(color: Colors.white)
+                ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(color: Colors.white),
+                )
                 : const Text("Save", style: TextStyle(color: Colors.white)),
       ),
     );

@@ -22,7 +22,7 @@ class NewEntrySection extends StatefulWidget {
 class _NewEntrySectionState extends State<NewEntrySection> {
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in/api",
+      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );
