@@ -48,26 +48,46 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                   .cast<Map<String, dynamic>>()
                   .toList();
 
-          // Extract and store currentStock for each item in each quotation
-          for (var quotation in quotations) {
-            if (quotation['items'] != null && quotation['items'] is List) {
-              for (var item in quotation['items']) {
-                item['currentStock'] = item['currentStock'] ?? 0;
-              }
-            }
-          }
-
           filteredQuotations = quotations;
           loading = false;
         });
       } else {
         setState(() => loading = false);
-        _showErrorSnackbar("Failed to load quotations");
+        _showSnackbar("Failed to load quotations", isError: true);
       }
     } catch (e) {
       debugPrint("Quotations fetch error: $e");
       setState(() => loading = false);
-      _showErrorSnackbar("Network error: $e");
+      _showSnackbar("Network error: $e", isError: true);
+    }
+  }
+
+  /// ================= EDIT QUOTATION FUNCTION =================
+  Future<void> _openEditQuotation(int quotationId) async {
+    try {
+      debugPrint("Fetching quotation details for ID: $quotationId");
+
+      final response = await dio.get("/Quotation/list/$quotationId");
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final quotationData = response.data['quotation'];
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder:
+                (_) => EditQuotationScreen(
+                  quotationId: quotationId.toString(),
+                  quotationData: quotationData, // ✅ PREFILL DATA
+                ),
+          ),
+        );
+      } else {
+        _showSnackbar("Failed to load quotation", isError: true);
+      }
+    } catch (e) {
+      debugPrint("Edit fetch error: $e");
+      _showSnackbar("Error loading quotation", isError: true);
     }
   }
 
@@ -142,12 +162,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
             }).toList();
       }
     });
-  }
-
-  void _showErrorSnackbar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
   }
 
   void _showSnackbar(String message, {bool isError = true}) {
@@ -261,16 +275,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                               (quotation) => InvoiceCard(
                                 quotation: quotation,
                                 onEdit: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder:
-                                          (context) => EditQuotationScreen(
-                                            quotationId: quotation['id'],
-                                            quotationData: {},
-                                          ),
-                                    ),
-                                  );
+                                  _openEditQuotation(quotation['id']);
                                 },
                                 onPay: () {
                                   Navigator.push(
@@ -411,7 +416,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const Addquotationscreen(),
+                        builder: (context) => AddQuotationSheet(),
                       ),
                     );
                   },
@@ -722,12 +727,6 @@ class InvoiceCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  void _showSnackbar(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
   }
 

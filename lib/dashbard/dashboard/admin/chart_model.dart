@@ -3,10 +3,7 @@ class ChartDataResponse {
   final bool success;
   final ChartData data;
 
-  ChartDataResponse({
-    required this.success,
-    required this.data,
-  });
+  ChartDataResponse({required this.success, required this.data});
 
   factory ChartDataResponse.fromJson(Map<String, dynamic> json) {
     return ChartDataResponse(
@@ -20,10 +17,7 @@ class ChartData {
   final List<SalesVsPurchaseData> salesVsPurchase;
   final List<CashFlowData> cashFlow;
 
-  ChartData({
-    required this.salesVsPurchase,
-    required this.cashFlow,
-  });
+  ChartData({required this.salesVsPurchase, required this.cashFlow});
 
   factory ChartData.fromJson(Map<String, dynamic> json) {
     return ChartData(
@@ -45,10 +39,7 @@ class SalesVsPurchaseData {
   final String month;
   final double purchase;
 
-  SalesVsPurchaseData({
-    required this.month,
-    required this.purchase,
-  });
+  SalesVsPurchaseData({required this.month, required this.purchase});
 
   factory SalesVsPurchaseData.fromJson(Map<String, dynamic> json) {
     return SalesVsPurchaseData(

@@ -5,6 +5,13 @@
     <!-- Internet (API calls, file downloads) -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- Network & WiFi (VERY IMPORTANT for connectivity / wifi plugins) -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+
+    <!-- Location (required for WiFi SSID/IP on Android 10+) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+
     <!-- Camera (Attendance / future features) -->
     <uses-permission android:name="android.permission.CAMERA"/>
 
@@ -17,7 +24,7 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
 
-    <!-- Android 13+ media permissions (permission_handler compatibility) -->
+    <!-- Android 13+ media permissions -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
@@ -78,9 +85,11 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
-            <meta-data
-    android:name="com.google.firebase.messaging.default_notification_channel_id"
-    android:value="high_importance_channel"/>
+
+        <!-- Firebase notification channel -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="high_importance_channel"/>
 
     </application>
 

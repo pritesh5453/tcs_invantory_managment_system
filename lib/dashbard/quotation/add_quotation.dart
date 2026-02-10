@@ -1,818 +1,1757 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:intl/intl.dart';
 
-class Addquotationscreen extends StatefulWidget {
-  const Addquotationscreen({super.key});
+class AddQuotationSheet extends StatefulWidget {
+  static Future<void> show(BuildContext context) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => AddQuotationSheet(),
+    );
+  }
 
   @override
-  State<Addquotationscreen> createState() => _AddquotationscreenState();
+  State<AddQuotationSheet> createState() => _AddQuotationSheetState();
 }
 
-class _AddquotationscreenState extends State<Addquotationscreen> {
-  final Dio dio = Dio(
-    BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
-      headers: {"Accept": "application/json"},
-    ),
+class _AddQuotationSheetState extends State<AddQuotationSheet> {
+  Timer? _productSearchDebounce;
+  final Dio _dio = Dio();
+
+  // Client Details Controllers
+  final TextEditingController _clientNameController = TextEditingController();
+  final TextEditingController _clientGstController = TextEditingController();
+  final TextEditingController _contactNumberController =
+      TextEditingController();
+  final TextEditingController _altNumberController = TextEditingController();
+  final TextEditingController _siteAddressController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+
+  // Additional Discount
+  final TextEditingController _additionalDiscountController =
+      TextEditingController(text: '0');
+
+  // Architect Data
+  List<dynamic> _architects = [];
+  String? _selectedArchitectId;
+  String? _selectedArchitectName;
+
+  // Attended By Data
+  List<dynamic> _employees = [];
+  String? _selectedEmployeeId;
+  String? _selectedEmployeeName;
+
+  // Products data
+  List<dynamic> _products = [];
+  List<dynamic> _filteredProducts = [];
+
+  // Form controllers
+  final TextEditingController _dateController = TextEditingController(
+    text: DateFormat('dd-MM-yyyy').format(DateTime.now()),
   );
+  final TextEditingController _billNoController = TextEditingController();
 
-  final _formKey = GlobalKey<FormState>();
+  // Product rows
+  List<ProductRow> _productRows = [ProductRow()];
 
-  final nameCtrl = TextEditingController();
-  final gstCtrl = TextEditingController();
-  final phoneCtrl = TextEditingController();
-  final addressCtrl = TextEditingController();
-  final detailsCtrl = TextEditingController();
-  final rateCtrl = TextEditingController();
-  final discountCtrl = TextEditingController();
-  final introCtrl = TextEditingController();
-  final bankCtrl = TextEditingController();
-  final qtyCtrl = TextEditingController(text: "1");
-  final boxCtrl = TextEditingController(text: "1");
+  bool _isLoading = true;
+  bool _isSubmitting = false;
+  bool _isLoadingArchitects = false;
+  bool _isLoadingEmployees = false;
 
-  // New controllers for additional fields
-  final altPhoneCtrl = TextEditingController();
-  final emailCtrl = TextEditingController();
-  final architectCtrl = TextEditingController();
-  final attendedByCtrl = TextEditingController();
-  final productNameCtrl = TextEditingController();
-
-  // Variables for dynamic items
-  List<Map<String, dynamic>> items = [];
-  bool isSaving = false;
-
-  // Default texts for introduction and bank details
-  final String defaultIntroText =
-      "This is with reference to our discussion with you regarding your requirement; here we quote our best price for your prestigious project as below:";
-
-  final String defaultBankText =
-      """<p>Above rates are including GST @ 18%, Excluding unloading charge and this are Nashik warehouse rates.</p><table width="100%" style="box-sizing: border-box; caption-side: bottom; border-collapse: collapse; width: 1387.46px; font-size: 18px;"><tbody style="box-sizing: border-box; border-color: inherit; border-style: solid; border-width: 0px;"><tr style="box-sizing: border-box; border-color: inherit; border-style: solid; border-width: 0px;"><td width="20%" style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;"><strong style="box-sizing: border-box; font-weight: bolder;">Payment Term</strong></td><td width="5%" style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;"><strong style="box-sizing: border-box; font-weight: bolder;">:</strong></td><td width="70%" style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;"><em style="box-sizing: border-box;">100% Advance.</em></td></tr><tr style="box-sizing: border-box; border-color: inherit; border-style: solid; border-width: 0px;"><td style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;"><strong style="box-sizing: border-box; font-weight: bolder;">Delivery Period</strong></td><td style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;"><strong style="box-sizing: border-box; font-weight: bolder;">:</strong></td><td style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;">7 TO 8 Days from the date of order / dispatch schedule.</td></tr><tr style="box-sizing: border-box; border-color: inherit; border-style: solid; border-width: 0px;"><td style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;"><strong style="box-sizing: border-box; font-weight: bolder;">Billing</strong></td><td style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;"><strong style="box-sizing: border-box; font-weight: bolder;">:</strong></td><td style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;">GST Billing @ 18%</td></tr><tr style="box-sizing: border-box; border-color: inherit; border-style: solid; border-width: 0px;"><td style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;"><strong style="box-sizing: border-box; font-weight: bolder;">Validity of price</strong></td><td style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;"><strong style="box-sizing: border-box; font-weight: bolder;">:</strong></td><td style="box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;">30 Days from Date of Quotation</td></tr></tbody></table><p><strong style="box-sizing: border-box; font-weight: bolder;">BANK DETAILS :</strong><strong style="box-sizing: border-box; font-weight: bolder;">Yes Bank :&nbsp;</strong>THE CERAMIC STUDIO</p><p><strong style="box-sizing: border-box; font-weight: bolder;">A/c no. :&nbsp;</strong>002163700002424</p><p><strong style="box-sizing: border-box; font-weight: bolder;">Branch :</strong>&nbsp;Canada Corner</p><p><strong style="box-sizing: border-box; font-weight: bolder;">IFSC :&nbsp;</strong>YESB0000021</p><p>We again express our gratitude for your esteemed organization and looking forward for a long and healthy business relationship. Assuring you of our best service all the times.Thanking You .</p><p><br></p><p><strong style="box-sizing: border-box; font-weight: bolder;">THE CERAMIC STUDIO-NASHIK.</strong></p><p><strong style="box-sizing: border-box; font-weight: bolder;">SALES (8847784888)</strong></p><p><strong style="box-sizing: border-box; font-weight: bolder;">ACCOUNT (8847785888)</strong></p>""";
+  // Scroll controller for keyboard handling
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    // Set default values
-    introCtrl.text = defaultIntroText;
-    bankCtrl.text = defaultBankText;
-    // Add first item
-    _addNewItem();
+    _initializeData();
   }
 
-  @override
-  void dispose() {
-    nameCtrl.dispose();
-    gstCtrl.dispose();
-    phoneCtrl.dispose();
-    addressCtrl.dispose();
-    detailsCtrl.dispose();
-    rateCtrl.dispose();
-    discountCtrl.dispose();
-    introCtrl.dispose();
-    bankCtrl.dispose();
-    qtyCtrl.dispose();
-    boxCtrl.dispose();
-    altPhoneCtrl.dispose();
-    emailCtrl.dispose();
-    architectCtrl.dispose();
-    attendedByCtrl.dispose();
-    productNameCtrl.dispose();
-    super.dispose();
+  Future<void> _initializeData() async {
+    try {
+      // Fetch architects
+      await _fetchArchitects();
+
+      // Fetch employees
+      await _fetchEmployees('');
+
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Error initializing data: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
-  /// ================= ADD NEW ITEM =================
-  void _addNewItem() {
+  Future<void> _fetchArchitects() async {
     setState(() {
-      items.add({
-        'productId': 0,
-        'productName':
-            productNameCtrl.text.isNotEmpty
-                ? productNameCtrl.text
-                : "Sample Product",
-        'size': "",
-        'quality': "",
-        'rate':
-            rateCtrl.text.isNotEmpty ? double.tryParse(rateCtrl.text) ?? 0 : 0,
-        'box': boxCtrl.text.isNotEmpty ? int.tryParse(boxCtrl.text) ?? 1 : 1,
-        'cov': 0,
-        'Weight': "0",
-        'discount':
-            discountCtrl.text.isNotEmpty
-                ? double.tryParse(discountCtrl.text) ?? 0
-                : 0,
-        'Coverage': "0",
-        'TWgt': "0",
-        'total': _calculateTotal(),
-        'area': detailsCtrl.text,
-        'search':
-            productNameCtrl.text.isNotEmpty
-                ? productNameCtrl.text
-                : "Sample Product",
-        'showList': false,
-        'filteredProducts': [],
+      _isLoadingArchitects = true;
+    });
+
+    try {
+      final response = await _dio.get(
+        'https://dashboarduat.theceramicstudio.in/api/architects/list',
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        setState(() {
+          _architects = response.data['architects'];
+        });
+      }
+    } catch (e) {
+      debugPrint('Architect fetch error: $e');
+    } finally {
+      setState(() {
+        _isLoadingArchitects = false;
+      });
+    }
+  }
+
+  Future<void> _fetchEmployees(String search) async {
+    setState(() {
+      _isLoadingEmployees = true;
+    });
+
+    try {
+      final response = await _dio.get(
+        'https://dashboarduat.theceramicstudio.in/api/employees/list',
+        queryParameters: {'search': search},
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        setState(() {
+          _employees = response.data['employees'];
+        });
+      }
+    } catch (e) {
+      debugPrint('Employees fetch error: $e');
+    } finally {
+      setState(() {
+        _isLoadingEmployees = false;
+      });
+    }
+  }
+
+  Future<void> _fetchProducts({required String search}) async {
+    if (search.trim().isEmpty) {
+      setState(() {
+        _filteredProducts = [];
+      });
+      return;
+    }
+
+    try {
+      final response = await _dio.get(
+        'https://dashboarduat.theceramicstudio.in/api/product/list',
+        queryParameters: {'search': search},
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        setState(() {
+          _filteredProducts = response.data['products'];
+          // Also update main products list for dropdowns
+          _products = response.data['products'];
+        });
+      }
+    } catch (e) {
+      debugPrint('Product search error: $e');
+    }
+  }
+
+  // Get unique sizes for a product name
+  List<String> _getSizesForProduct(String productName) {
+    if (productName.isEmpty) return [];
+
+    final productsWithSameName =
+        _products.where((p) => p['name'] == productName).toList();
+
+    if (productsWithSameName.isEmpty) return [];
+
+    final sizes =
+        productsWithSameName
+            .map((p) => p['size']?.toString() ?? '')
+            .where((size) => size.isNotEmpty)
+            .toSet()
+            .toList();
+
+    return sizes;
+  }
+
+  // Get unique qualities for a product name and size
+  List<String> _getQualitiesForProduct(String productName, String size) {
+    if (productName.isEmpty || size.isEmpty) return [];
+
+    final productsWithSameNameAndSize =
+        _products
+            .where(
+              (p) =>
+                  p['name'] == productName &&
+                  (p['size']?.toString() ?? '') == size,
+            )
+            .toList();
+
+    if (productsWithSameNameAndSize.isEmpty) return [];
+
+    final qualities =
+        productsWithSameNameAndSize
+            .map((p) => p['quality']?.toString() ?? '')
+            .where((quality) => quality.isNotEmpty)
+            .toSet()
+            .toList();
+
+    return qualities;
+  }
+
+  // Get product details for name, size, and quality
+  Map<String, dynamic>? _getProductDetails(
+    String productName,
+    String size,
+    String quality,
+  ) {
+    try {
+      return _products.firstWhere(
+        (p) =>
+            p['name'] == productName &&
+            (p['size']?.toString() ?? '') == size &&
+            (p['quality']?.toString() ?? '') == quality,
+        orElse: () => null,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  void _addProductRow() {
+    setState(() {
+      _productRows.add(ProductRow());
+      // Scroll to bottom after adding new row
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
       });
     });
   }
 
-  /// ================= DELETE ITEM =================
-  void _deleteItem(int index) {
-    if (items.length > 1) {
-      setState(() {
-        items.removeAt(index);
-      });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("At least one item is required"),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+  void _removeProductRow(int index) {
+    setState(() {
+      _productRows.removeAt(index);
+    });
   }
 
-  /// ================= CALCULATE TOTAL =================
-  String _calculateTotal() {
-    try {
-      final rate = double.tryParse(rateCtrl.text) ?? 0;
-      final qty = int.tryParse(qtyCtrl.text) ?? 1;
-      final box = int.tryParse(boxCtrl.text) ?? 1;
-      final discount = double.tryParse(discountCtrl.text) ?? 0;
+  // Calculate total of all product rows
+  double _calculateTotalAmount() {
+    double total = 0;
+    for (var row in _productRows) {
+      total += row.getTotalAmount();
+    }
+    return total;
+  }
 
-      double total = rate * qty * box;
-      if (discount > 0) {
-        total = total - (total * discount / 100);
+  // Calculate grand total after additional discount
+  double _calculateGrandTotal() {
+    double subtotal = _calculateTotalAmount();
+    double additionalDiscount =
+        double.tryParse(_additionalDiscountController.text) ?? 0;
+
+    // Apply additional discount as percentage
+    if (additionalDiscount > 0) {
+      double discountAmount = subtotal * (additionalDiscount / 100);
+      return subtotal - discountAmount;
+    }
+    return subtotal;
+  }
+
+  // Validate form before submission
+  bool _validateForm() {
+    // Validate client details
+    if (_clientNameController.text.trim().isEmpty) {
+      _showSnackBar('Please enter client name');
+      return false;
+    }
+
+    if (_contactNumberController.text.trim().isEmpty) {
+      _showSnackBar('Please enter contact number');
+      return false;
+    }
+
+    if (_siteAddressController.text.trim().isEmpty) {
+      _showSnackBar('Please enter site address');
+      return false;
+    }
+
+    if (_selectedArchitectId == null) {
+      _showSnackBar('Please select an architect');
+      return false;
+    }
+
+    if (_selectedEmployeeId == null) {
+      _showSnackBar('Please select attended by');
+      return false;
+    }
+
+    // Validate product rows
+    for (int i = 0; i < _productRows.length; i++) {
+      final row = _productRows[i];
+
+      if (row.productName.isEmpty) {
+        _showSnackBar('Please select product for row ${i + 1}');
+        return false;
       }
 
-      return total.toStringAsFixed(2);
-    } catch (e) {
-      return "0.00";
+      if (row.size.isEmpty) {
+        _showSnackBar('Please select size for row ${i + 1}');
+        return false;
+      }
+
+      if (row.quality.isEmpty) {
+        _showSnackBar('Please select quality for row ${i + 1}');
+        return false;
+      }
+
+      if (row.quantityController.text.trim().isEmpty ||
+          double.tryParse(row.quantityController.text) == 0) {
+        _showSnackBar('Please enter valid quantity for row ${i + 1}');
+        return false;
+      }
+
+      if (row.productId == null) {
+        _showSnackBar(
+          'Product ID not found for row ${i + 1}. Please reselect the product.',
+        );
+        return false;
+      }
     }
+
+    return true;
   }
 
-  /// ================= CALCULATE GRAND TOTAL =================
-  double _calculateGrandTotal() {
-    double grandTotal = 0;
-    for (var item in items) {
-      final total = double.tryParse(item['total'].toString()) ?? 0;
-      grandTotal += total;
-    }
-    return grandTotal;
+  // Show snackbar message
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
   }
 
-  /// ================= SAVE QUOTATION API =================
+  // Save quotation API call
   Future<void> _saveQuotation() async {
-    if (!_formKey.currentState!.validate()) {
+    if (!_validateForm()) {
       return;
     }
 
-    setState(() => isSaving = true);
-
-    // Prepare the request body
-    final body = {
-      "additionalDiscount": 0,
-      "clientDetails": {
-        "clientid":
-            0, // This should be fetched or selected from existing clients
-        "name": nameCtrl.text.trim(),
-        "contactNo": phoneCtrl.text.trim(),
-        "altContactNo": altPhoneCtrl.text.trim(),
-        "email": emailCtrl.text.trim(),
-        "address": addressCtrl.text.trim(),
-        "gstNo": gstCtrl.text.trim(),
-        "attendedBy": attendedByCtrl.text.trim(),
-        "architect": architectCtrl.text.trim(),
-        "Attended": "",
-      },
-      "headerSection": introCtrl.text.trim(),
-      "bottomSection": bankCtrl.text.trim(),
-      "rows":
-          items.map((item) {
-            return {
-              "productId": item['productId'],
-              "productName": item['productName'],
-              "size": item['size'],
-              "quality": item['quality'],
-              "rate": item['rate'],
-              "box": item['box'],
-              "cov": item['cov'],
-              "Weight": item['Weight'],
-              "discount": item['discount'],
-              "Coverage": item['Coverage'],
-              "TWgt": item['TWgt'],
-              "total": item['total'],
-              "area": item['area'],
-              "search": item['search'],
-              "showList": item['showList'],
-              "filteredProducts": item['filteredProducts'],
-            };
-          }).toList(),
-      "grandTotal": _calculateGrandTotal(),
-    };
+    setState(() {
+      _isSubmitting = true;
+    });
 
     try {
-      debugPrint("Sending request body: ${body.toString()}");
+      // Prepare rows data
+      List<Map<String, dynamic>> rowsData = [];
 
-      final response = await dio.post("/Quotation/saveQuotation", data: body);
-
-      if (response.data['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              response.data['message'] ?? "Quotation saved successfully!",
-            ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-          ),
+      for (var row in _productRows) {
+        final productDetails = _getProductDetails(
+          row.productName,
+          row.size,
+          row.quality,
         );
 
-        // Clear form after successful save
-        _clearForm();
+        if (productDetails == null) {
+          throw Exception('Product details not found for ${row.productName}');
+        }
 
-        // Navigate back after 2 seconds
-        Future.delayed(const Duration(seconds: 2), () {
-          Navigator.pop(context, true);
-        });
+        final rowData = {
+          "productId": productDetails['id'] ?? row.productId,
+          "productName": row.productName,
+          "size": row.size,
+          "quality": row.quality,
+          "rate": double.tryParse(row.rateController.text) ?? 0,
+          "box": int.tryParse(row.quantityController.text) ?? 0,
+          "area": "", // This field seems to be empty in your example
+          "Weight": row.weightController.text,
+          "TWgt": row.twgtController.text,
+          "Coverage": row.covController.text,
+          "cov": double.tryParse(row.covController.text) ?? 0,
+          "discount": double.tryParse(row.discountController.text) ?? 0,
+          "total": row.getTotalAmount().toStringAsFixed(2),
+          "godown": row.godown,
+        };
+        rowsData.add(rowData);
+      }
+
+      // Prepare client details
+      final clientDetails = {
+        "name": _clientNameController.text.trim(),
+        "contactNo": _contactNumberController.text.trim(),
+        "altContactNo": _altNumberController.text.trim(),
+        "email": _emailController.text.trim(),
+        "gstNo": _clientGstController.text.trim(),
+        "address": _siteAddressController.text.trim(),
+        "architect": _selectedArchitectId ?? "",
+        "attendedBy": _selectedEmployeeId ?? "",
+        "attended": "", // Empty as per your example
+      };
+
+      // Prepare request body
+      final requestBody = {
+        "additionalDiscount": _additionalDiscountController.text.trim(),
+        "clientDetails": clientDetails,
+        "rows": rowsData,
+        "grandTotal": _calculateGrandTotal(),
+      };
+
+      debugPrint('Request Body: ${requestBody.toString()}');
+
+      // Make API call
+      final response = await _dio.post(
+        'https://dashboarduat.theceramicstudio.in/api/Quotation/saveQuotation',
+        data: requestBody,
+        options: Options(headers: {'Content-Type': 'application/json'}),
+      );
+
+      debugPrint('Response: ${response.data}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = response.data;
+
+        if (responseData['success'] == true) {
+          // Show success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                responseData['message'] ?? 'Quotation saved successfully!',
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+
+          // Close the bottom sheet after delay
+          Future.delayed(const Duration(seconds: 1), () {
+            Navigator.pop(context, true); // Return success flag
+          });
+        } else {
+          throw Exception(
+            responseData['message'] ?? 'Failed to save quotation',
+          );
+        }
       } else {
-        throw Exception(response.data['message'] ?? "Failed to save quotation");
+        throw Exception('Failed with status code: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint("Save quotation error: $e");
+      debugPrint('Save quotation error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Error: ${e.toString()}"),
+          content: Text('Error: ${e.toString()}'),
           backgroundColor: Colors.red,
         ),
       );
     } finally {
-      setState(() => isSaving = false);
+      setState(() {
+        _isSubmitting = false;
+      });
     }
-  }
-
-  /// ================= CLEAR FORM =================
-  void _clearForm() {
-    nameCtrl.clear();
-    gstCtrl.clear();
-    phoneCtrl.clear();
-    addressCtrl.clear();
-    detailsCtrl.clear();
-    rateCtrl.clear();
-    discountCtrl.clear();
-    introCtrl.text = defaultIntroText;
-    bankCtrl.text = defaultBankText;
-    qtyCtrl.text = "1";
-    boxCtrl.text = "1";
-    altPhoneCtrl.clear();
-    emailCtrl.clear();
-    architectCtrl.clear();
-    attendedByCtrl.clear();
-    productNameCtrl.clear();
-    items.clear();
-    _addNewItem();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Stack(
+    final mediaQuery = MediaQuery.of(context);
+    final bottomPadding = mediaQuery.viewInsets.bottom;
+    final safeAreaBottom = mediaQuery.padding.bottom;
+
+    final totalAmount = _calculateTotalAmount();
+    final additionalDiscount =
+        double.tryParse(_additionalDiscountController.text) ?? 0;
+    final discountAmount = totalAmount * (additionalDiscount / 100);
+    final grandTotal = _calculateGrandTotal();
+
+    return Material(
+      child: Container(
+        margin: const EdgeInsets.only(top: 50),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
+          ),
+        ),
+        child: Column(
           children: [
-            Column(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
+            // Header (Fixed)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Color(0xffFFA54A),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    "Create Quotation",
+                    style: TextStyle(
                       color: Colors.white,
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _header(),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
 
-                            _section("Client Details"),
-                            _field(
-                              label: "Client Full Name *",
-                              controller: nameCtrl,
-                              hint: "Enter full name",
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter client name';
+            // Scrollable Content Area
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  // Close all dropdowns when tapping outside
+                  setState(() {
+                    for (var row in _productRows) {
+                      row.showProductDropdown = false;
+                    }
+                  });
+                  FocusScope.of(context).unfocus();
+                },
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    bottom:
+                        bottomPadding > 0
+                            ? bottomPadding + safeAreaBottom
+                            : safeAreaBottom,
+                  ),
+                  child:
+                      _isLoading
+                          ? const Center(
+                            child: CircularProgressIndicator(
+                              color: Color(0xffFFA54A),
+                            ),
+                          )
+                          : SingleChildScrollView(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(16),
+                            physics: const BouncingScrollPhysics(),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 12),
+
+                                // CLIENT DETAILS SECTION
+                                const Text(
+                                  'CLIENT DETAILS',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xffFFA54A),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Client Full Name
+                                _buildClientLabel('CLIENT FULL NAME'),
+                                const SizedBox(height: 4),
+                                _buildClientTextField(
+                                  _clientNameController,
+                                  'Type here...',
+                                ),
+                                const SizedBox(height: 12),
+
+                                // Client GST Number
+                                _buildClientLabel('CLIENT GST NUMBER'),
+                                const SizedBox(height: 4),
+                                _buildClientTextField(
+                                  _clientGstController,
+                                  '27XXXXX...',
+                                ),
+                                const SizedBox(height: 12),
+
+                                // Contact Number and Alt Number
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          _buildClientLabel('CONTACT NUMBER'),
+                                          const SizedBox(height: 4),
+                                          _buildClientTextField(
+                                            _contactNumberController,
+                                            '+91',
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          _buildClientLabel('ALT NUMBER'),
+                                          const SizedBox(height: 4),
+                                          _buildClientTextField(
+                                            _altNumberController,
+                                            '+91',
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+
+                                // Client Email
+                                _buildClientLabel('CLIENT EMAIL (OPTIONAL)'),
+                                const SizedBox(height: 4),
+                                _buildClientTextField(
+                                  _emailController,
+                                  'client@example.com',
+                                ),
+                                const SizedBox(height: 12),
+
+                                // Site Address
+                                _buildClientLabel('SITE ADDRESS'),
+                                const SizedBox(height: 4),
+                                _buildClientTextField(
+                                  _siteAddressController,
+                                  'Full location...',
+                                  maxLines: 3,
+                                ),
+                                const SizedBox(height: 12),
+
+                                // Select Architect and Attended By
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          _buildClientLabel('SELECT ARCHITECT'),
+                                          const SizedBox(height: 4),
+                                          Container(
+                                            height: 40,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              border: Border.all(
+                                                color: Colors.grey.shade300,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: DropdownButtonHideUnderline(
+                                              child: DropdownButton<String>(
+                                                isExpanded: true,
+                                                value: _selectedArchitectId,
+                                                hint:
+                                                    _isLoadingArchitects
+                                                        ? const Text(
+                                                          'Loading...',
+                                                        )
+                                                        : const Text(
+                                                          'Choose Architect...',
+                                                        ),
+                                                items:
+                                                    _architects.map((
+                                                      architect,
+                                                    ) {
+                                                      final fullName =
+                                                          '${architect['firstname']} ${architect['lastname']}';
+                                                      return DropdownMenuItem<
+                                                        String
+                                                      >(
+                                                        value:
+                                                            architect['id']
+                                                                .toString(),
+                                                        child: Text(fullName),
+                                                      );
+                                                    }).toList(),
+                                                onChanged: (value) {
+                                                  setState(() {
+                                                    _selectedArchitectId =
+                                                        value;
+                                                    final selectedArchitect =
+                                                        _architects.firstWhere(
+                                                          (a) =>
+                                                              a['id']
+                                                                  .toString() ==
+                                                              value,
+                                                          orElse: () => null,
+                                                        );
+                                                    if (selectedArchitect !=
+                                                        null) {
+                                                      _selectedArchitectName =
+                                                          '${selectedArchitect['firstname']} ${selectedArchitect['lastname']}';
+                                                    }
+                                                  });
+                                                },
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          _buildClientLabel('ATTENDED BY'),
+                                          const SizedBox(height: 4),
+                                          Container(
+                                            height: 40,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              border: Border.all(
+                                                color: Colors.grey.shade300,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: DropdownButtonHideUnderline(
+                                              child: DropdownButton<String>(
+                                                isExpanded: true,
+                                                value: _selectedEmployeeId,
+                                                hint:
+                                                    _isLoadingEmployees
+                                                        ? const Text(
+                                                          'Loading...',
+                                                        )
+                                                        : const Text(
+                                                          'Choose Person...',
+                                                        ),
+                                                items:
+                                                    _employees.map((employee) {
+                                                      return DropdownMenuItem<
+                                                        String
+                                                      >(
+                                                        value:
+                                                            employee['id']
+                                                                .toString(),
+                                                        child: Text(
+                                                          employee['name'] ??
+                                                              '',
+                                                        ),
+                                                      );
+                                                    }).toList(),
+                                                onChanged: (value) {
+                                                  setState(() {
+                                                    _selectedEmployeeId = value;
+                                                    final selectedEmployee =
+                                                        _employees.firstWhere(
+                                                          (e) =>
+                                                              e['id']
+                                                                  .toString() ==
+                                                              value,
+                                                          orElse: () => null,
+                                                        );
+                                                    if (selectedEmployee !=
+                                                        null) {
+                                                      _selectedEmployeeName =
+                                                          selectedEmployee['name'];
+                                                    }
+                                                  });
+                                                },
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 20),
+                                const Divider(),
+                                const SizedBox(height: 16),
+
+                                // Product Section Header
+                                const Text(
+                                  'PRODUCT DETAILS',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xffFFA54A),
+                                  ),
+                                ),
+
+                                const SizedBox(height: 16),
+
+                                // Product Rows
+                                ..._productRows.asMap().entries.map((entry) {
+                                  final index = entry.key;
+                                  final row = entry.value;
+                                  return _buildProductRow(index, row);
+                                }),
+
+                                // Add Product Button
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: _addProductRow,
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: const Color(0xffFFA54A),
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: const Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.add,
+                                              color: Color(0xffFFA54A),
+                                              size: 18,
+                                            ),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              "+ ADD PRODUCT ROW",
+                                              style: TextStyle(
+                                                color: Color(0xffFFA54A),
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                                const SizedBox(height: 20),
+
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: Colors.grey.shade300,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _buildClientLabel('ADDITIONAL DISCOUNT'),
+                                      const SizedBox(height: 8),
+                                      _buildClientTextField(
+                                        _additionalDiscountController,
+                                        'Enter discount percentage...',
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'This discount will be applied on the total amount',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                // Additional Discount Section
+                                const SizedBox(height: 20),
+
+                                // FINAL QUOTATION VALUE SECTION
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xffFFA54A,
+                                    ).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: const Color(
+                                        0xffFFA54A,
+                                      ).withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      // Subtotal
+
+                                      // Additional Discount
+                                      if (additionalDiscount > 0)
+                                        Column(
+                                          children: [
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                Text(
+                                                  'Additional Discount ($additionalDiscount%)',
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    color: Colors.green,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '-₹${discountAmount.toStringAsFixed(2)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: Colors.green,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                          ],
+                                        ),
+
+                                      // Grand Total
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: const Color(
+                                            0xffFFA54A,
+                                          ).withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(
+                                              0xffFFA54A,
+                                            ).withOpacity(0.3),
+                                          ),
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            // Subtotal
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                const Text(
+                                                  'Subtotal',
+                                                  style: TextStyle(
+                                                    fontSize: 16,
+                                                    color: Colors.black87,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '₹${totalAmount.toStringAsFixed(2)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: Colors.black87,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+
+                                            // Additional Discount
+                                            if (additionalDiscount > 0)
+                                              Column(
+                                                children: [
+                                                  Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .spaceBetween,
+                                                    children: [
+                                                      Text(
+                                                        'Additional Discount ($additionalDiscount%)',
+                                                        style: const TextStyle(
+                                                          fontSize: 14,
+                                                          color: Colors.green,
+                                                        ),
+                                                      ),
+                                                      Text(
+                                                        '-₹${discountAmount.toStringAsFixed(2)}',
+                                                        style: const TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                          color: Colors.green,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                ],
+                                              ),
+
+                                            // Grand Total
+                                            Divider(
+                                              color: Colors.grey.shade400,
+                                              thickness: 1,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                const Text(
+                                                  'Final Quotation Value',
+                                                  style: TextStyle(
+                                                    fontSize: 18,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xffFFA54A),
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '₹${grandTotal.toStringAsFixed(2)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 22,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Color(0xffFFA54A),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                const SizedBox(height: 24),
+
+                                // Buttons (Always visible at bottom)
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        style: OutlinedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 16,
+                                          ),
+                                          side: const BorderSide(
+                                            color: Colors.red,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                        ),
+                                        onPressed:
+                                            _isSubmitting
+                                                ? null
+                                                : () => Navigator.pop(context),
+                                        child: const Text(
+                                          'CANCEL',
+                                          style: TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(
+                                            0xffFFA54A,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 16,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                        ),
+                                        onPressed:
+                                            _isSubmitting
+                                                ? null
+                                                : _saveQuotation,
+                                        child:
+                                            _isSubmitting
+                                                ? const SizedBox(
+                                                  height: 20,
+                                                  width: 20,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                )
+                                                : const Text(
+                                                  'Proceed to Save',
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 20),
+                              ],
+                            ),
+                          ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClientLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: Colors.black87,
+      ),
+    );
+  }
+
+  Widget _buildClientTextField(
+    TextEditingController controller,
+    String hintText, {
+    int maxLines = 1,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: TextField(
+        controller: controller,
+        maxLines: maxLines,
+        style: const TextStyle(fontSize: 14),
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+          border: InputBorder.none,
+          isDense: true,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductRow(int index, ProductRow row) {
+    final sizes = _getSizesForProduct(row.productName);
+    final qualities = _getQualitiesForProduct(row.productName, row.size);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          // Product Name Search
+          _buildLabel('PRODUCT'),
+          const SizedBox(height: 4),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.search, size: 18, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: row.productSearchController,
+                          onChanged: (value) {
+                            row.productName = value;
+                            row.showProductDropdown = value.isNotEmpty;
+
+                            // Reset dependent fields
+                            row.size = '';
+                            row.quality = '';
+                            row.weightController.clear();
+                            row.twgtController.clear();
+                            row.covController.clear();
+                            row.rateController.clear();
+                            row.amountController.clear();
+
+                            // Debounce API call
+                            if (_productSearchDebounce?.isActive ?? false) {
+                              _productSearchDebounce!.cancel();
+                            }
+
+                            _productSearchDebounce = Timer(
+                              const Duration(milliseconds: 400),
+                              () {
+                                if (value.trim().isNotEmpty) {
+                                  _fetchProducts(search: value.trim());
+                                } else {
+                                  setState(() {
+                                    _filteredProducts = [];
+                                  });
                                 }
-                                return null;
                               },
-                            ),
+                            );
 
-                            _field(
-                              label: "Architect Name",
-                              controller: architectCtrl,
-                              hint: "Enter architect name",
-                            ),
+                            setState(() {});
+                          },
+                          onTap: () {
+                            setState(() {
+                              row.showProductDropdown = true;
+                            });
+                          },
+                          decoration: const InputDecoration(
+                            hintText: 'Search product...',
+                            hintStyle: TextStyle(fontSize: 14),
+                            border: InputBorder.none,
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (row.showProductDropdown && row.productName.isNotEmpty)
+                  Container(
+                    height: 150,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade200),
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(8),
+                        bottomRight: Radius.circular(8),
+                      ),
+                    ),
+                    child: ListView.builder(
+                      itemCount:
+                          _filteredProducts
+                              .where(
+                                (p) => p['name']
+                                    .toString()
+                                    .toLowerCase()
+                                    .contains(row.productName.toLowerCase()),
+                              )
+                              .length,
+                      itemBuilder: (context, idx) {
+                        final product =
+                            _filteredProducts
+                                .where(
+                                  (p) => p['name']
+                                      .toString()
+                                      .toLowerCase()
+                                      .contains(row.productName.toLowerCase()),
+                                )
+                                .toList()[idx];
+                        return ListTile(
+                          title: Text(product['name'] ?? ''),
+                          subtitle: Text(
+                            'Size: ${product['size']} | Quality: ${product['quality']}',
+                          ),
+                          onTap: () {
+                            setState(() {
+                              row.productId = product['id'];
+                              row.productName = product['name'];
+                              row.size = product['size'].toString();
+                              row.quality = product['quality'].toString();
+                              row.productSearchController.text =
+                                  product['name'];
+                              row.rateController.text = product['rate'] ?? '0';
+                              row.covController.text = product['cov'] ?? '0';
+                              row.showProductDropdown = false;
+                              row.updateTotal();
+                              FocusScope.of(context).unfocus();
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
 
-                            _orangeLabel("Client GST Number"),
-                            _field(
-                              label: "GST Number",
-                              controller: gstCtrl,
-                              hint: "Enter GST number",
-                            ),
+          const SizedBox(height: 12),
 
-                            _field(
-                              label: "Contact Number *",
-                              controller: phoneCtrl,
-                              hint: "+91 1234567890",
-                              keyboardType: TextInputType.phone,
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter contact number';
-                                }
-                                if (value.length < 10) {
-                                  return 'Please enter valid contact number';
-                                }
-                                return null;
-                              },
-                            ),
-
-                            _field(
-                              label: "Alternate Contact Number",
-                              controller: altPhoneCtrl,
-                              hint: "+91 9876543210",
-                              keyboardType: TextInputType.phone,
-                            ),
-
-                            _field(
-                              label: "Email Address",
-                              controller: emailCtrl,
-                              hint: "client@example.com",
-                              keyboardType: TextInputType.emailAddress,
-                            ),
-
-                            _field(
-                              label: "Attended By",
-                              controller: attendedByCtrl,
-                              hint: "Enter attended by name",
-                            ),
-
-                            _field(
-                              label: "Site Address *",
-                              controller: addressCtrl,
-                              hint: "Full address with city and pin code",
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter site address';
-                                }
-                                return null;
-                              },
-                            ),
-
-                            _infoTitle("Introduction Note"),
-                            _multiLineField(
-                              controller: introCtrl,
-                              hint: defaultIntroText,
-                            ),
-
-                            _section("Itemized Quotation"),
-
-                            // Items List
-                            for (int i = 0; i < items.length; i++)
-                              _buildItemCard(i),
-
-                            _field(
-                              label: "Product Name *",
-                              controller: productNameCtrl,
-                              hint: "Enter product name",
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter product name';
-                                }
-                                return null;
-                              },
-                            ),
-
-                            _field(
-                              label: "Details",
-                              controller: detailsCtrl,
-                              hint: "Additional details about the product",
-                            ),
-
-                            _field(
-                              label: "Rate *",
-                              controller: rateCtrl,
-                              hint: "₹00.00",
-                              keyboardType: TextInputType.number,
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter rate';
-                                }
-                                if (double.tryParse(value) == null) {
-                                  return 'Please enter valid number';
-                                }
-                                return null;
-                              },
-                            ),
-
-                            _qtyRow(),
-
-                            _field(
-                              label: "Discount %",
-                              controller: discountCtrl,
-                              hint: "00.00",
-                              keyboardType: TextInputType.number,
-                            ),
-
-                            _totalText(),
-                            _addDelete(),
-
-                            _infoTitle("Bank Details & Terms"),
-                            _multiLineField(
-                              controller: bankCtrl,
-                              hint: defaultBankText,
-                            ),
-
-                            _summary(),
-                            _saveButton(),
-
-                            const SizedBox(height: 20),
-                          ],
+          // Size and Quality Dropdowns
+          Row(
+            children: [
+              // Size Dropdown
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('SIZE'),
+                    const SizedBox(height: 4),
+                    Container(
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value:
+                              row.size.isNotEmpty && sizes.contains(row.size)
+                                  ? row.size
+                                  : null,
+                          hint: const Text('Select Size'),
+                          items:
+                              sizes.map((size) {
+                                return DropdownMenuItem<String>(
+                                  value: size,
+                                  child: Text(size),
+                                );
+                              }).toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() {
+                              row.size = value;
+                              row.quality = '';
+                              row.weightController.clear();
+                              row.twgtController.clear();
+                              row.covController.clear();
+                              row.rateController.clear();
+                              row.amountController.clear();
+                              row.updateTotal();
+                            });
+                          },
                         ),
                       ),
                     ),
-                  ),
-                ),
-              ],
-            ),
-
-            Positioned(
-              top: 18,
-              right: 22,
-              child: InkWell(
-                onTap: () => Navigator.pop(context),
-                child: const Icon(Icons.close, color: Colors.red),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// ================= BUILD ITEM CARD =================
-  Widget _buildItemCard(int index) {
-    final item = items[index];
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                "Item ${index + 1}: ${item['productName']}",
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
+                  ],
                 ),
               ),
-              if (items.length > 1)
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                  onPressed: () => _deleteItem(index),
+              const SizedBox(width: 12),
+
+              // Quality Dropdown
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('QUALITY'),
+                    const SizedBox(height: 4),
+                    Container(
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value:
+                              row.quality.isNotEmpty &&
+                                      qualities.contains(row.quality)
+                                  ? row.quality
+                                  : null,
+                          hint: const Text('Select Quality'),
+                          items:
+                              qualities.map((quality) {
+                                return DropdownMenuItem<String>(
+                                  value: quality,
+                                  child: Text(quality),
+                                );
+                              }).toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() {
+                              row.quality = value;
+                              final productDetails = _getProductDetails(
+                                row.productName,
+                                row.size,
+                                value,
+                              );
+                              if (productDetails != null) {
+                                row.productId = productDetails['id'];
+                                row.rateController.text =
+                                    productDetails['rate']?.toString() ?? '0';
+                                row.covController.text =
+                                    productDetails['cov']?.toString() ?? '0';
+                              }
+                              row.updateTotal();
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text("Rate: ₹${item['rate']}"),
-          Text("Quantity: ${qtyCtrl.text} x Box: ${boxCtrl.text}"),
-          Text("Discount: ${item['discount']}%"),
-          Text(
-            "Total: ₹${item['total']}",
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.green,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _header() {
-    return const Padding(
-      padding: EdgeInsets.only(top: 10, bottom: 20),
-      child: Row(
-        children: [
-          Icon(Icons.person, color: Colors.purple),
-          SizedBox(width: 85),
-          Text(
-            "Add Quotation",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
-    );
-  }
+          const SizedBox(height: 12),
 
-  Widget _section(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 18, bottom: 8),
-      child: Text(
-        text,
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-      ),
-    );
-  }
-
-  Widget _infoTitle(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 18, bottom: 6),
-      child: Row(
-        children: [
-          const Icon(Icons.info, color: Colors.blue, size: 18),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _field({
-    required String label,
-    required TextEditingController controller,
-    String? hint,
-    TextInputType keyboardType = TextInputType.text,
-    String? Function(String?)? validator,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 6),
-          TextFormField(
-            controller: controller,
-            keyboardType: keyboardType,
-            validator: validator,
-            onChanged: (value) {
-              // Update items when rate, discount, qty or box changes
-              if (items.isNotEmpty) {
-                setState(() {
-                  items[items.length - 1]['rate'] =
-                      double.tryParse(rateCtrl.text) ?? 0;
-                  items[items.length - 1]['box'] =
-                      int.tryParse(boxCtrl.text) ?? 1;
-                  items[items.length - 1]['discount'] =
-                      double.tryParse(discountCtrl.text) ?? 0;
-                  items[items.length - 1]['area'] = detailsCtrl.text;
-                  items[items.length - 1]['productName'] =
-                      productNameCtrl.text.isNotEmpty
-                          ? productNameCtrl.text
-                          : "Sample Product";
-                  items[items.length - 1]['search'] =
-                      productNameCtrl.text.isNotEmpty
-                          ? productNameCtrl.text
-                          : "Sample Product";
-                  items[items.length - 1]['total'] = _calculateTotal();
-                });
-              }
-            },
-            decoration: InputDecoration(
-              hintStyle: const TextStyle(color: Colors.grey),
-              hintText: hint,
-              filled: true,
-              fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 14,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _multiLineField({
-    required TextEditingController controller,
-    String? hint,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: TextFormField(
-        controller: controller,
-        minLines: 3,
-        maxLines: null,
-        decoration: InputDecoration(
-          hintText: hint,
-          filled: true,
-          fillColor: Colors.grey[50],
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 14,
-          ),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      ),
-    );
-  }
-
-  Widget _qtyRow() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "Quantity X Box *",
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Expanded(child: _qtyField(qtyCtrl, "Quantity")),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Text("X", style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-            Expanded(child: _qtyField(boxCtrl, "Box")),
-          ],
-        ),
-        const SizedBox(height: 14),
-      ],
-    );
-  }
-
-  Widget _qtyField(TextEditingController controller, String label) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-        const SizedBox(height: 4),
-        SizedBox(
-          height: 42,
-          child: TextFormField(
-            controller: controller,
-            textAlign: TextAlign.center,
-            keyboardType: TextInputType.number,
-            onChanged: (value) {
-              // Update items when qty or box changes
-              if (items.isNotEmpty) {
-                setState(() {
-                  items[items.length - 1]['box'] =
-                      int.tryParse(boxCtrl.text) ?? 1;
-                  items[items.length - 1]['total'] = _calculateTotal();
-                });
-              }
-            },
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.grey.shade100,
-              contentPadding: EdgeInsets.zero,
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Colors.grey),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Colors.grey, width: 1.5),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _totalText() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Text(
-        "Total\n₹${_calculateTotal()}",
-        style: const TextStyle(
-          color: Colors.orange,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  Widget _addDelete() {
-    return Row(
-      children: [
-        TextButton.icon(
-          onPressed: () {
-            _addNewItem();
-          },
-          icon: const Icon(Icons.add_circle_outline),
-          label: const Text("Add Item"),
-        ),
-        const SizedBox(width: 10),
-        TextButton.icon(
-          onPressed: () {
-            if (items.length > 1) {
-              _deleteItem(items.length - 1);
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("Cannot delete the only item"),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          },
-          icon: const Icon(Icons.delete, color: Colors.red),
-          label: const Text("Delete", style: TextStyle(color: Colors.red)),
-        ),
-      ],
-    );
-  }
-
-  Widget _summary() {
-    final grandTotal = _calculateGrandTotal();
-    return Container(
-      margin: const EdgeInsets.only(top: 14),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.orange.shade50,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text("Summary", style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 6),
-          Text("Items Total : ₹${grandTotal.toStringAsFixed(2)}"),
-          Text(
-            "Additional Discount : 0.00%",
-            style: TextStyle(color: Colors.orange),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            "Final Quotation Value",
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          Text(
-            "₹${grandTotal.toStringAsFixed(2)}",
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _saveButton() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 14),
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFFFA44D),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(30),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-          onPressed: isSaving ? null : _saveQuotation,
-          child:
-              isSaving
-                  ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
+          // Rate and COV
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('RATE (₹)'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.rateController,
+                      '0',
+                      onChanged: (_) => row.updateTotal(),
                     ),
-                  )
-                  : const Text(
-                    "Proceed to Save",
-                    style: TextStyle(fontSize: 16),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('COVERAGE'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.covController,
+                      '0',
+                      onChanged: (_) => row.updateTotal(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('BOX'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.quantityController,
+                      '0',
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => row.updateTWGT(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('DISCOUNT (%)'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.discountController,
+                      '0',
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => row.updateTotal(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+          // Weight and TWGT
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('WEIGHT'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.weightController,
+                      '0',
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => row.updateTWGT(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('TWGT'),
+                    const SizedBox(height: 4),
+                    _buildTextField(row.twgtController, '0', enabled: false),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Quantity and Discount
+
+          // Amount and Godown
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('AMOUNT (₹)'),
+                    const SizedBox(height: 4),
+                    _buildTextField(row.amountController, '0', enabled: false),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('GODOWN'),
+                    const SizedBox(height: 4),
+                    Container(
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value: row.godown,
+                          items: const [
+                            DropdownMenuItem(value: 'KKW', child: Text('KKW')),
+                            DropdownMenuItem(value: 'TCS', child: Text('TCS')),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              row.godown = value!;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // Delete button for additional rows
+          if (_productRows.length > 1)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _removeProductRow(index),
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      border: Border.all(color: Colors.red),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.delete, size: 16, color: Colors.red),
+                        SizedBox(width: 4),
+                        Text(
+                          'Delete Row',
+                          style: TextStyle(color: Colors.red, fontSize: 12),
+                        ),
+                      ],
+                    ),
                   ),
-        ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
+  }
+
+  Widget _buildLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: Colors.black87,
+      ),
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController controller,
+    String hintText, {
+    bool enabled = true,
+    TextInputType keyboardType = TextInputType.text,
+    void Function(String)? onChanged,
+  }) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: TextField(
+        controller: controller,
+        enabled: enabled,
+        keyboardType: keyboardType,
+        style: const TextStyle(fontSize: 14),
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+          border: InputBorder.none,
+          isDense: true,
+        ),
+        onChanged: onChanged,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _dateController.dispose();
+    _billNoController.dispose();
+    _clientNameController.dispose();
+    _clientGstController.dispose();
+    _contactNumberController.dispose();
+    _altNumberController.dispose();
+    _siteAddressController.dispose();
+    _emailController.dispose();
+    _additionalDiscountController.dispose();
+    _scrollController.dispose();
+    for (var row in _productRows) {
+      row.dispose();
+    }
+    super.dispose();
   }
 }
 
-Widget _orangeLabel(String text) {
-  return Padding(
-    padding: const EdgeInsets.only(top: 10, bottom: 4),
-    child: Text(
-      text,
-      style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
-    ),
-  );
+class ProductRow {
+  String productName = '';
+  String size = '';
+  String quality = '';
+  String godown = 'KKW';
+  bool showProductDropdown = false;
+  int? productId;
+
+  final TextEditingController productSearchController = TextEditingController();
+  final TextEditingController rateController = TextEditingController();
+  final TextEditingController covController = TextEditingController();
+  final TextEditingController weightController = TextEditingController();
+  final TextEditingController twgtController = TextEditingController();
+  final TextEditingController quantityController = TextEditingController();
+  final TextEditingController amountController = TextEditingController();
+  final TextEditingController discountController = TextEditingController();
+
+  void updateTWGT() {
+    try {
+      final weight = double.tryParse(weightController.text) ?? 0;
+      final quantity = double.tryParse(quantityController.text) ?? 0;
+
+      // Calculate TWGT: Weight * Quantity
+      final twgt = weight * quantity;
+      twgtController.text = twgt.toStringAsFixed(2);
+
+      // Update total amount
+      updateTotal();
+    } catch (e) {
+      twgtController.text = '0';
+      amountController.text = '0';
+    }
+  }
+
+  void updateTotal() {
+    try {
+      final quantity = double.tryParse(quantityController.text) ?? 0;
+      final rate = double.tryParse(rateController.text) ?? 0;
+
+      final cov = double.tryParse(covController.text) ?? 0;
+      final discount = double.tryParse(discountController.text) ?? 0;
+
+      // Calculate base amount: Rate * QUANTITY
+      final baseAmount = rate * quantity;
+
+      final covAmount = baseAmount * (cov);
+      final amountAfterCov = covAmount;
+
+      // Apply discount (assuming discount is a percentage)
+      final discountAmount = amountAfterCov * (discount / 100);
+      final finalAmount = amountAfterCov - discountAmount;
+
+      amountController.text = finalAmount.toStringAsFixed(2);
+    } catch (e) {
+      amountController.text = '0';
+    }
+  }
+
+  double getTotalAmount() {
+    return double.tryParse(amountController.text) ?? 0;
+  }
+
+  void dispose() {
+    productSearchController.dispose();
+    rateController.dispose();
+    covController.dispose();
+    weightController.dispose();
+    twgtController.dispose();
+    quantityController.dispose();
+    amountController.dispose();
+    discountController.dispose();
+  }
 }

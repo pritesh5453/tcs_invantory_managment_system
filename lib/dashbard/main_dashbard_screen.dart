@@ -16,6 +16,7 @@ import 'package:tcs_invantory_managment_system/dashbard/category_managment/categ
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/customer_management_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/employee/dashboard_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/admin_dash.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dashboard/employee/empdash/emp_dash.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/dilivery_chalan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/employee_managment/employee_managment_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/orderbook/orderbook.dart';

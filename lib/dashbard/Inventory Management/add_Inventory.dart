@@ -129,6 +129,7 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
       if (response.statusCode == 200 && response.data['success'] == true) {
         setState(() {
           _filteredProducts = response.data['products'];
+          _products = response.data['products']; // 🔥 IMPORTANT LINE
         });
       }
     } catch (e) {
@@ -911,22 +912,35 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,
-                          value: row.size.isNotEmpty ? row.size : null,
+
+                          // ✅ SAFE VALUE: sirf tab set hoga jab items me exist kare
+                          value: sizes.contains(row.size) ? row.size : null,
+
                           hint: const Text('Select Size'),
+
                           items:
-                              sizes.map((size) {
+                              sizes.map<DropdownMenuItem<String>>((size) {
                                 return DropdownMenuItem<String>(
                                   value: size,
                                   child: Text(size),
                                 );
                               }).toList(),
+
                           onChanged: (value) {
+                            if (value == null) return;
+
                             setState(() {
-                              row.size = value!;
+                              row.size = value;
+
+                              // 🔁 size change hote hi dependent fields reset
                               row.quality = '';
                               row.selectedBatch = null;
+
                               row.covController.clear();
                               row.rateController.clear();
+                              row.stockController.clear();
+                              row.amountController.clear();
+
                               row.updateTotal();
                             });
                           },
@@ -955,36 +969,56 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,
-                          value: row.quality.isNotEmpty ? row.quality : null,
+
+                          // ✅ SAFE VALUE: sirf tab set hogi jab items me exist kare
+                          value:
+                              qualities.contains(row.quality)
+                                  ? row.quality
+                                  : null,
+
                           hint: const Text('Select Quality'),
+
                           items:
-                              qualities.map((quality) {
+                              qualities.map<DropdownMenuItem<String>>((
+                                quality,
+                              ) {
                                 return DropdownMenuItem<String>(
                                   value: quality,
                                   child: Text(quality),
                                 );
                               }).toList(),
+
                           onChanged: (value) {
+                            if (value == null) return;
+
                             setState(() {
-                              row.quality = value!;
+                              row.quality = value;
+
                               final productDetails = _getProductDetails(
                                 row.productName,
                                 row.size,
                                 value,
                               );
+
                               if (productDetails != null) {
                                 row.rateController.text =
-                                    productDetails['rate'] ?? '0';
+                                    productDetails['rate']?.toString() ?? '0';
                                 row.covController.text =
-                                    productDetails['cov'] ?? '0';
+                                    productDetails['cov']?.toString() ?? '0';
+
                                 row.batches = productDetails['batches'] ?? [];
+
                                 if (row.batches.isNotEmpty) {
                                   row.selectedBatch =
                                       row.batches.first['batch_no'];
                                   row.stockController.text =
                                       row.batches.first['qty'].toString();
+                                } else {
+                                  row.selectedBatch = null;
+                                  row.stockController.text = '0';
                                 }
                               }
+
                               row.updateTotal();
                             });
                           },
@@ -1023,11 +1057,7 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                   children: [
                     _buildLabel('COV (%)'),
                     const SizedBox(height: 4),
-                    _buildTextField(
-                      row.covController,
-                      '0',
-                      onChanged: (_) => row.updateTotal(),
-                    ),
+                    _buildTextField(row.covController, '0', enabled: false),
                   ],
                 ),
               ),
@@ -1305,7 +1335,7 @@ class ProductRow {
 
       // Add COV (assuming COV is a percentage)
       final covAmount = baseAmount * (cov / 100);
-      final amountAfterCov = baseAmount + covAmount;
+      final amountAfterCov = baseAmount;
 
       // Apply discount (assuming discount is a percentage)
       final discountAmount = amountAfterCov * (discount / 100);

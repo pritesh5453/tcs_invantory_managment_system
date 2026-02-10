@@ -25,7 +25,7 @@ class _SettlementScreenState extends State<SettlementScreen> {
   );
 
   String? selectedMethod;
-  String billingType = "Billing"; // ✅ default
+  String billingType = "Billing";
   bool loading = false;
 
   final TextEditingController amountCtrl = TextEditingController();
@@ -50,7 +50,7 @@ class _SettlementScreenState extends State<SettlementScreen> {
       "amount": amountCtrl.text.trim(),
       "paymentType": selectedMethod,
       "remark": remarkCtrl.text.trim(),
-      "billingType": billingType, // ✅ dynamic
+      "billingType": billingType,
     };
 
     try {
@@ -94,16 +94,29 @@ class _SettlementScreenState extends State<SettlementScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                /// HEADER
+                /// ================= HEADER WITH CLOSE =================
                 Row(
-                  children: const [
-                    Icon(Icons.credit_card, color: Colors.blue),
-                    SizedBox(width: 8),
-                    Text(
-                      "Settlement",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(Icons.credit_card, color: Colors.blue),
+                        SizedBox(width: 8),
+                        Text(
+                          "Settlement",
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: const Icon(
+                        Icons.close,
+                        size: 22,
+                        color: Colors.grey,
                       ),
                     ),
                   ],
@@ -111,7 +124,7 @@ class _SettlementScreenState extends State<SettlementScreen> {
 
                 const SizedBox(height: 16),
 
-                /// AMOUNT BOXES
+                /// ================= AMOUNT BOXES =================
                 Row(
                   children: [
                     _amountBox(
@@ -130,7 +143,7 @@ class _SettlementScreenState extends State<SettlementScreen> {
 
                 const SizedBox(height: 18),
 
-                /// PAYMENT METHOD
+                /// ================= PAYMENT METHOD =================
                 const Text(
                   "Payment Method",
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
@@ -154,7 +167,7 @@ class _SettlementScreenState extends State<SettlementScreen> {
 
                 const SizedBox(height: 14),
 
-                /// AMOUNT
+                /// ================= AMOUNT =================
                 const Text(
                   "Amount",
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
@@ -168,7 +181,7 @@ class _SettlementScreenState extends State<SettlementScreen> {
 
                 const SizedBox(height: 14),
 
-                /// REMARK
+                /// ================= REMARK =================
                 const Text(
                   "Remark",
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
@@ -181,7 +194,7 @@ class _SettlementScreenState extends State<SettlementScreen> {
 
                 const SizedBox(height: 16),
 
-                /// TRANSACTION TYPE
+                /// ================= TRANSACTION TYPE =================
                 const Text(
                   "Transaction Type",
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
@@ -200,7 +213,7 @@ class _SettlementScreenState extends State<SettlementScreen> {
 
                 const SizedBox(height: 26),
 
-                /// SAVE BUTTON
+                /// ================= SAVE BUTTON =================
                 SizedBox(
                   width: double.infinity,
                   height: 48,

@@ -47,6 +47,11 @@ class _EditProductSheetState extends State<EditProductSheet> {
   List<Map<String, dynamic>> qualities = [];
   List<Map<String, dynamic>> categories = [];
 
+  // Store product's original values
+  String? originalBrand;
+  String? originalQuality;
+  String? originalCategory;
+
   String? selectedBrand;
   String? selectedQuality;
   String? selectedCategory;
@@ -147,36 +152,45 @@ class _EditProductSheetState extends State<EditProductSheet> {
     rateCtrl = TextEditingController(text: widget.product.rate);
     coverageCtrl = TextEditingController(text: widget.product.cov);
 
-    // Helper function to check if value is integer
-    bool isInteger(String? value) {
-      if (value == null || value.isEmpty) return false;
-      return int.tryParse(value) != null;
+    // Store original values
+    originalBrand = widget.product.brand;
+    originalQuality = widget.product.quality;
+    originalCategory = widget.product.category;
+
+    // Check if values exist in dropdown lists
+    // BRAND: Only select if value exists in brands list
+    if (originalBrand != null && originalBrand!.isNotEmpty) {
+      final brandExists = brands.any((brand) => brand['name'] == originalBrand);
+      if (brandExists) {
+        selectedBrand = originalBrand;
+      } else {
+        selectedBrand = null; // Don't select if not in list
+      }
     }
 
-    // Set selected dropdown values with integer handling
-    // Brand: if value is integer or empty, set to null
-    selectedBrand =
-        (widget.product.brand != null &&
-                widget.product.brand!.isNotEmpty &&
-                !isInteger(widget.product.brand!))
-            ? widget.product.brand
-            : null;
+    // QUALITY: Only select if value exists in qualities list
+    if (originalQuality != null && originalQuality!.isNotEmpty) {
+      final qualityExists = qualities.any(
+        (quality) => quality['name'] == originalQuality,
+      );
+      if (qualityExists) {
+        selectedQuality = originalQuality;
+      } else {
+        selectedQuality = null; // Don't select if not in list
+      }
+    }
 
-    // Quality: if value is integer or empty, set to null
-    selectedQuality =
-        (widget.product.quality != null &&
-                widget.product.quality!.isNotEmpty &&
-                !isInteger(widget.product.quality!))
-            ? widget.product.quality
-            : null;
-
-    // Category: if value is integer or empty, set to null
-    selectedCategory =
-        (widget.product.category != null &&
-                widget.product.category!.isNotEmpty &&
-                !isInteger(widget.product.category!))
-            ? widget.product.category
-            : null;
+    // CATEGORY: Only select if value exists in categories list
+    if (originalCategory != null && originalCategory!.isNotEmpty) {
+      final categoryExists = categories.any(
+        (category) => category['name'] == originalCategory,
+      );
+      if (categoryExists) {
+        selectedCategory = originalCategory;
+      } else {
+        selectedCategory = null; // Don't select if not in list
+      }
+    }
 
     /// ===== GODOWN PREFILL =====
     final godowns = widget.product.godown.split(",");
@@ -207,12 +221,19 @@ class _EditProductSheetState extends State<EditProductSheet> {
     if (godownKKW) godownList.add("KKW");
     if (godownTCS) godownList.add("TCS");
 
+    // Decide which value to send:
+    // 1. If user selected something from dropdown, use that
+    // 2. Else, use original value from product
+    final brandToSend = selectedBrand ?? originalBrand;
+    final qualityToSend = selectedQuality ?? originalQuality;
+    final categoryToSend = selectedCategory ?? originalCategory;
+
     final body = {
       "name": productNameCtrl.text.trim(),
       "size": sizeCtrl.text.trim(),
-      "brand": selectedBrand,
-      "category": selectedCategory,
-      "quality": selectedQuality,
+      "brand": brandToSend,
+      "category": categoryToSend,
+      "quality": qualityToSend,
       "rate": rateCtrl.text.trim(),
       "status": "",
       "link": "",
@@ -321,7 +342,11 @@ class _EditProductSheetState extends State<EditProductSheet> {
                 child: DropdownButton<String>(
                   value: selectedBrand,
                   isExpanded: true,
-                  hint: const Text("Select Brand"),
+                  hint: Text(
+                    originalBrand != null && originalBrand!.isNotEmpty
+                        ? "Original: $originalBrand"
+                        : "Select Brand",
+                  ),
                   items:
                       brands.map<DropdownMenuItem<String>>((brand) {
                         return DropdownMenuItem<String>(
@@ -350,7 +375,11 @@ class _EditProductSheetState extends State<EditProductSheet> {
                 child: DropdownButton<String>(
                   value: selectedQuality,
                   isExpanded: true,
-                  hint: const Text("Select Quality"),
+                  hint: Text(
+                    originalQuality != null && originalQuality!.isNotEmpty
+                        ? "Original: $originalQuality"
+                        : "Select Quality",
+                  ),
                   items:
                       qualities.map<DropdownMenuItem<String>>((quality) {
                         return DropdownMenuItem<String>(
@@ -379,7 +408,11 @@ class _EditProductSheetState extends State<EditProductSheet> {
                 child: DropdownButton<String>(
                   value: selectedCategory,
                   isExpanded: true,
-                  hint: const Text("Select Category"),
+                  hint: Text(
+                    originalCategory != null && originalCategory!.isNotEmpty
+                        ? "Original: $originalCategory"
+                        : "Select Category",
+                  ),
                   items:
                       categories.map<DropdownMenuItem<String>>((category) {
                         return DropdownMenuItem<String>(
@@ -497,6 +530,30 @@ class _EditProductSheetState extends State<EditProductSheet> {
             ),
 
             const SizedBox(height: 16),
+
+            // Show original values info
+            if ((originalBrand != null &&
+                    originalBrand!.isNotEmpty &&
+                    selectedBrand == null) ||
+                (originalQuality != null &&
+                    originalQuality!.isNotEmpty &&
+                    selectedQuality == null) ||
+                (originalCategory != null &&
+                    originalCategory!.isNotEmpty &&
+                    selectedCategory == null))
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange.shade200),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  "Note: Some values are not in the dropdown list but will be preserved as-is.",
+                  style: TextStyle(fontSize: 12, color: Colors.orange),
+                ),
+              ),
 
             Align(
               alignment: Alignment.centerRight,
