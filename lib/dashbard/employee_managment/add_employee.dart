@@ -55,6 +55,54 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
 
   final ImagePicker picker = ImagePicker();
 
+  @override
+  void initState() {
+    super.initState();
+
+    // Add listeners to automatically generate email
+    firstNameCtrl.addListener(_generateEmail);
+    lastNameCtrl.addListener(_generateEmail);
+  }
+
+  @override
+  void dispose() {
+    // Dispose controllers and remove listeners
+    firstNameCtrl.removeListener(_generateEmail);
+    lastNameCtrl.removeListener(_generateEmail);
+    firstNameCtrl.dispose();
+    lastNameCtrl.dispose();
+    phoneCtrl.dispose();
+    emailCtrl.dispose();
+    dobCtrl.dispose();
+    passwordCtrl.dispose();
+    expenseCtrl.dispose();
+    salaryCtrl.dispose();
+    commissionCtrl.dispose();
+    super.dispose();
+  }
+
+  /// ================= EMAIL GENERATION LOGIC =================
+  void _generateEmail() {
+    String firstName = firstNameCtrl.text.trim().toLowerCase();
+    String lastName = lastNameCtrl.text.trim().toLowerCase();
+
+    String generatedEmail = "";
+
+    if (firstName.isNotEmpty && lastName.isNotEmpty) {
+      // FirstName.LastName@tcs format
+      generatedEmail = "$firstName.$lastName@tcs";
+    } else if (firstName.isNotEmpty) {
+      // Only FirstName@tcs format
+      generatedEmail = "$firstName@tcs";
+    }
+
+    // Only update if email field is not manually edited or is empty
+    // OR we can force update it every time name changes
+    setState(() {
+      emailCtrl.text = generatedEmail;
+    });
+  }
+
   /// ================= IMAGE PICKER =================
   Future<void> pickImage(DocType type) async {
     final XFile? img = await picker.pickImage(
@@ -245,8 +293,19 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
             label("Email Address"),
             TextField(
               controller: emailCtrl,
+              readOnly: true, // Email field is not editable
+              enableInteractiveSelection: false, // Disable copy-paste
               keyboardType: TextInputType.emailAddress,
-              decoration: _dec("enter email address"),
+              decoration: _dec("email will auto-generate"),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              "Note: Email will be auto-generated from name",
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey,
+                fontStyle: FontStyle.italic,
+              ),
             ),
 
             label("Date Of Birth"),

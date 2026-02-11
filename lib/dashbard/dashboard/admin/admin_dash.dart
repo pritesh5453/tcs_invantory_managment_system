@@ -37,13 +37,22 @@ class _DashboardPageState extends State<DashboardPage> {
   bool isLoading = true;
   String errorMessage = '';
 
-  // Date selection state
+  // Date selection state - ✅ AUTOMATICALLY SET CURRENT MONTH DATES
   DateTime? fromDate;
   DateTime? toDate;
+
+  // ✅ ADD FLAG TO TRACK IF USER MANUALLY CHANGED DATES
+  bool _showMonthText = true;
 
   @override
   void initState() {
     super.initState();
+
+    // ✅ SET DEFAULT DATES TO CURRENT MONTH (1st to today)
+    final now = DateTime.now();
+    fromDate = DateTime(now.year, now.month, 1); // Month start (1st)
+    toDate = now; // Today's date
+
     _fetchAllData();
   }
 
@@ -108,12 +117,12 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  // Fetch User Wise Orders API
+  // Fetch User Wise Orders API - ✅ AUTOMATICALLY CALL WITH CURRENT MONTH DATES
   Future<void> _fetchUserWiseOrders() async {
     try {
-      // Use default dates if none selected, otherwise use selected dates
-      final startDate = fromDate ?? DateTime(2025, 1, 23);
-      final endDate = toDate ?? DateTime(2026, 1, 23);
+      // ✅ ALWAYS USE CURRENT DATES (fromDate and toDate are set in initState)
+      final startDate = fromDate!;
+      final endDate = toDate!;
 
       final response = await _dio.get(
         '/dashboard/user-wise-orders',
@@ -156,7 +165,7 @@ class _DashboardPageState extends State<DashboardPage> {
               ? (fromDate ?? DateTime.now())
               : (toDate ?? DateTime.now()),
       firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
+      lastDate: DateTime.now(), // ✅ CAN'T SELECT FUTURE DATES
     );
 
     if (picked != null) {
@@ -166,11 +175,12 @@ class _DashboardPageState extends State<DashboardPage> {
         } else {
           toDate = picked;
         }
+        // ✅ DON'T HIDE TEXT YET, ONLY HIDE WHEN USER CLICKS SUBMIT
       });
     }
   }
 
-  // Submit task function
+  // Submit task function - ✅ NOW HIDES THE MONTH TEXT
   Future<void> _submitTask() async {
     // Validate dates
     if (fromDate == null || toDate == null) {
@@ -193,6 +203,22 @@ class _DashboardPageState extends State<DashboardPage> {
       );
       return;
     }
+
+    // ✅ CAN'T SELECT FUTURE DATES
+    if (toDate!.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot select future dates'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // ✅ HIDE THE "Showing data for..." TEXT
+    setState(() {
+      _showMonthText = false;
+    });
 
     try {
       // Call the API with selected dates
@@ -320,11 +346,20 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _fetchAllData,
+        onPressed: () {
+          // ✅ RESET TO CURRENT MONTH AND SHOW TEXT AGAIN
+          final now = DateTime.now();
+          setState(() {
+            fromDate = DateTime(now.year, now.month, 1);
+            toDate = now;
+            _showMonthText = true;
+          });
+          _fetchAllData();
+        },
         backgroundColor: const Color(0xffFFA34D),
         foregroundColor: Colors.white,
         child: const Icon(Icons.refresh),
-        tooltip: 'Refresh Data',
+        tooltip: 'Reset to Current Month',
       ),
     );
   }
@@ -726,9 +761,53 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
               ),
             ),
+
+          // ✅ CURRENT MONTH INDICATOR - ONLY SHOW WHEN NOT MANUALLY SUBMITTED
+          if (_showMonthText)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: isMobile ? 16 : 18,
+                    color: Colors.blue,
+                  ),
+                  SizedBox(width: isMobile ? 8 : 12),
+                  Text(
+                    "Showing data for ${_getCurrentMonthName()} ${DateTime.now().year}",
+                    style: TextStyle(
+                      fontSize: isMobile ? 13 : 14,
+                      color: Colors.blue,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  // Helper function to get current month name
+  String _getCurrentMonthName() {
+    final monthNames = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return monthNames[DateTime.now().month - 1];
   }
 
   Widget _dateChip(String text, bool isMobile, [bool isFromDate = false]) {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
@@ -37,14 +39,28 @@ class CategoryApi {
     ),
   );
 
-  static Future<List<Category>> fetchCategories() async {
-    final res = await _dio.get(
-      "/list",
-      queryParameters: {"page": 1, "limit": 10},
-    );
+  static Future<Map<String, dynamic>> fetchCategories({
+    int page = 1,
+    int limit = 10,
+    String? search,
+  }) async {
+    final Map<String, dynamic> queryParams = {"page": page, "limit": limit};
+
+    if (search != null && search.isNotEmpty) {
+      queryParams['search'] = search;
+    }
+
+    final res = await _dio.get("/list", queryParameters: queryParams);
 
     final List list = res.data['categories'] ?? [];
-    return list.map((e) => Category.fromJson(e)).toList();
+    final pagination = res.data['pagination'] ?? {};
+
+    return {
+      'categories': list.map((e) => Category.fromJson(e)).toList(),
+      'currentPage': pagination['page'] ?? 1,
+      'totalPages': pagination['totalPages'] ?? 1,
+      'totalItems': pagination['totalItems'] ?? 0,
+    };
   }
 
   static Future<void> addCategory(String name, bool isAvailable) async {
@@ -83,6 +99,72 @@ final categoryProvider =
 // Search query provider
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
+// Pagination state provider
+final paginationProvider =
+    StateNotifierProvider<PaginationNotifier, PaginationState>((ref) {
+      return PaginationNotifier();
+    });
+
+class PaginationState {
+  final int currentPage;
+  final int totalPages;
+  final bool isLoadingMore;
+  final bool hasMoreData;
+  final int totalItems;
+
+  PaginationState({
+    required this.currentPage,
+    required this.totalPages,
+    required this.isLoadingMore,
+    required this.hasMoreData,
+    required this.totalItems,
+  });
+
+  PaginationState.initial()
+    : currentPage = 1,
+      totalPages = 1,
+      isLoadingMore = false,
+      hasMoreData = true,
+      totalItems = 0;
+
+  PaginationState copyWith({
+    int? currentPage,
+    int? totalPages,
+    bool? isLoadingMore,
+    bool? hasMoreData,
+    int? totalItems,
+  }) {
+    return PaginationState(
+      currentPage: currentPage ?? this.currentPage,
+      totalPages: totalPages ?? this.totalPages,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      hasMoreData: hasMoreData ?? this.hasMoreData,
+      totalItems: totalItems ?? this.totalItems,
+    );
+  }
+}
+
+class PaginationNotifier extends StateNotifier<PaginationState> {
+  PaginationNotifier() : super(PaginationState.initial());
+
+  void setLoadingMore(bool isLoading) {
+    state = state.copyWith(isLoadingMore: isLoading);
+  }
+
+  void updatePagination(int currentPage, int totalPages, int totalItems) {
+    state = state.copyWith(
+      currentPage: currentPage,
+      totalPages: totalPages,
+      hasMoreData: currentPage < totalPages,
+      totalItems: totalItems,
+    );
+  }
+
+  void reset() {
+    state = PaginationState.initial();
+  }
+}
+
 // Filtered categories provider
 final filteredCategoriesProvider = Provider<List<Category>>((ref) {
   final searchQuery = ref.watch(searchQueryProvider);
@@ -106,8 +188,42 @@ class CategoryNotifier extends StateNotifier<List<Category>> {
     load();
   }
 
-  Future<void> load() async {
-    state = await CategoryApi.fetchCategories();
+  Future<void> load({bool isLoadMore = false, String? search}) async {
+    try {
+      final pagination = PaginationNotifier();
+
+      if (!isLoadMore) {
+        pagination.reset();
+        state = [];
+      } else {
+        pagination.setLoadingMore(true);
+      }
+
+      final currentPage = isLoadMore ? pagination.state.currentPage + 1 : 1;
+
+      final response = await CategoryApi.fetchCategories(
+        page: currentPage,
+        limit: 10,
+        search: search,
+      );
+
+      final List<Category> newCategories = response['categories'];
+      final int currentPageNum = response['currentPage'];
+      final int totalPages = response['totalPages'];
+      final int totalItems = response['totalItems'];
+
+      if (isLoadMore) {
+        state = [...state, ...newCategories];
+      } else {
+        state = newCategories;
+      }
+
+      pagination.updatePagination(currentPageNum, totalPages, totalItems);
+      pagination.setLoadingMore(false);
+    } catch (e) {
+      debugPrint("Error loading categories: $e");
+      PaginationNotifier().setLoadingMore(false);
+    }
   }
 
   Future<void> add(String name, bool isAvailable) async {
@@ -129,6 +245,13 @@ class CategoryNotifier extends StateNotifier<List<Category>> {
     await CategoryApi.updateCategory(c.id, c.name, value);
     await load();
   }
+
+  Future<void> loadMore({String? search}) async {
+    final pagination = PaginationNotifier();
+    if (pagination.state.isLoadingMore || !pagination.state.hasMoreData) return;
+
+    await load(isLoadMore: true, search: search);
+  }
 }
 
 /// ================= SEARCH BAR WIDGET =================
@@ -142,12 +265,12 @@ class SearchBarWidget extends ConsumerStatefulWidget {
 class _SearchBarWidgetState extends ConsumerState<SearchBarWidget> {
   late TextEditingController _searchController;
   FocusNode _searchFocusNode = FocusNode();
+  Timer? _searchDebounceTimer;
 
   @override
   void initState() {
     super.initState();
     _searchController = TextEditingController();
-    // Initialize with current search query
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentQuery = ref.read(searchQueryProvider);
       if (currentQuery.isNotEmpty) {
@@ -158,6 +281,7 @@ class _SearchBarWidgetState extends ConsumerState<SearchBarWidget> {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -167,7 +291,6 @@ class _SearchBarWidgetState extends ConsumerState<SearchBarWidget> {
   Widget build(BuildContext context) {
     final searchQuery = ref.watch(searchQueryProvider);
 
-    // Sync controller with provider state
     if (_searchController.text != searchQuery) {
       _searchController.text = searchQuery;
     }
@@ -188,7 +311,14 @@ class _SearchBarWidgetState extends ConsumerState<SearchBarWidget> {
               controller: _searchController,
               focusNode: _searchFocusNode,
               onChanged: (value) {
-                ref.read(searchQueryProvider.notifier).state = value;
+                _searchDebounceTimer?.cancel();
+                _searchDebounceTimer = Timer(
+                  const Duration(milliseconds: 500),
+                  () {
+                    ref.read(searchQueryProvider.notifier).state = value;
+                    ref.read(categoryProvider.notifier).load(search: value);
+                  },
+                );
               },
               decoration: const InputDecoration(
                 hintText: "Search by name, ID or status...",
@@ -206,6 +336,7 @@ class _SearchBarWidgetState extends ConsumerState<SearchBarWidget> {
               onPressed: () {
                 _searchController.clear();
                 ref.read(searchQueryProvider.notifier).state = '';
+                ref.read(categoryProvider.notifier).load();
                 _searchFocusNode.requestFocus();
               },
               padding: EdgeInsets.zero,
@@ -218,11 +349,46 @@ class _SearchBarWidgetState extends ConsumerState<SearchBarWidget> {
 }
 
 /// ================= MAIN SCREEN =================
-class CategoryManagementScreen extends ConsumerWidget {
+class CategoryManagementScreen extends ConsumerStatefulWidget {
   const CategoryManagementScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CategoryManagementScreen> createState() =>
+      _CategoryManagementScreenState();
+}
+
+class _CategoryManagementScreenState
+    extends ConsumerState<CategoryManagementScreen> {
+  late ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_scrollListener);
+  }
+
+  void _scrollListener() {
+    final pagination = ref.read(paginationProvider);
+    final searchQuery = ref.read(searchQueryProvider);
+
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        !pagination.isLoadingMore &&
+        pagination.hasMoreData &&
+        searchQuery.isEmpty) {
+      ref.read(categoryProvider.notifier).loadMore();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final canAdd = PermissionManager.hasPermission("Category Management_Add");
     final canEdit = PermissionManager.hasPermission("Category Management_Edit");
     final canDelete = PermissionManager.hasPermission(
@@ -232,6 +398,8 @@ class CategoryManagementScreen extends ConsumerWidget {
     final searchQuery = ref.watch(searchQueryProvider);
     final filteredList = ref.watch(filteredCategoriesProvider);
     final notifier = ref.read(categoryProvider.notifier);
+    final pagination = ref.watch(paginationProvider);
+    final allCategories = ref.watch(categoryProvider);
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
@@ -294,55 +462,137 @@ class CategoryManagementScreen extends ConsumerWidget {
                 await notifier.load();
                 ref.read(searchQueryProvider.notifier).state = '';
               },
-              child:
-                  filteredList.isEmpty
-                      ? _buildEmptyState(searchQuery)
-                      : ListView.builder(
-                        physics: const AlwaysScrollableScrollPhysics(),
+              child: CustomScrollView(
+                controller: _scrollController,
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  /// CATEGORY COUNT
+                  if (allCategories.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
                         padding: const EdgeInsets.all(16),
-                        itemCount: filteredList.length,
-                        itemBuilder:
-                            (_, i) => CategoryCard(
-                              cat: filteredList[i],
-                              canEdit: canEdit,
-                              canDelete: canDelete,
-                            ),
+                        child: Text(
+                          "Categories (${allCategories.length} of ${pagination.totalItems})",
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
                       ),
+                    ),
+
+                  /// CATEGORY LIST
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      if (index < filteredList.length) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          child: CategoryCard(
+                            cat: filteredList[index],
+                            canEdit: canEdit,
+                            canDelete: canDelete,
+                          ),
+                        );
+                      }
+                      return null;
+                    }, childCount: filteredList.length),
+                  ),
+
+                  /// EMPTY STATE
+                  if (filteredList.isEmpty &&
+                      searchQuery.isEmpty &&
+                      allCategories.isEmpty)
+                    SliverFillRemaining(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.category,
+                              size: 60,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              "No categories found",
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                  /// SEARCH EMPTY STATE
+                  if (filteredList.isEmpty && searchQuery.isNotEmpty)
+                    SliverFillRemaining(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.search_off,
+                              size: 60,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              "No results found for '$searchQuery'",
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              "Try searching with different keywords",
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                  /// LOAD MORE INDICATOR
+                  if (pagination.isLoadingMore)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    ),
+
+                  /// NO MORE DATA MESSAGE
+                  if (!pagination.hasMoreData && allCategories.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(
+                          child: Text(
+                            "No more categories",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  /// EXTRA SPACE AT BOTTOM
+                  SliverToBoxAdapter(child: Container(height: 50)),
+                ],
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildEmptyState(String searchQuery) {
-    if (searchQuery.isNotEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              "No results found for '$searchQuery'",
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "Try searching with different keywords",
-              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: const [
-        SizedBox(height: 250),
-        Center(child: CircularProgressIndicator()),
-      ],
     );
   }
 }
@@ -362,7 +612,6 @@ class CategoryCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,

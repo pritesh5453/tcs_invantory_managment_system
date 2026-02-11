@@ -45,10 +45,71 @@ final qualityProvider =
 // Search query provider
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
-// Filtered qualities provider
+// Pagination state provider
+final paginationStateProvider =
+    StateNotifierProvider<PaginationNotifier, PaginationState>((ref) {
+      return PaginationNotifier();
+    });
+
+class PaginationState {
+  final int currentPage;
+  final int totalPages;
+  final bool isLoadingMore;
+  final bool hasMoreData;
+
+  PaginationState({
+    required this.currentPage,
+    required this.totalPages,
+    required this.isLoadingMore,
+    required this.hasMoreData,
+  });
+
+  PaginationState.initial()
+    : currentPage = 1,
+      totalPages = 1,
+      isLoadingMore = false,
+      hasMoreData = true;
+
+  PaginationState copyWith({
+    int? currentPage,
+    int? totalPages,
+    bool? isLoadingMore,
+    bool? hasMoreData,
+  }) {
+    return PaginationState(
+      currentPage: currentPage ?? this.currentPage,
+      totalPages: totalPages ?? this.totalPages,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      hasMoreData: hasMoreData ?? this.hasMoreData,
+    );
+  }
+}
+
+class PaginationNotifier extends StateNotifier<PaginationState> {
+  PaginationNotifier() : super(PaginationState.initial());
+
+  void setLoadingMore(bool isLoading) {
+    state = state.copyWith(isLoadingMore: isLoading);
+  }
+
+  void updatePagination(int currentPage, int totalPages) {
+    state = state.copyWith(
+      currentPage: currentPage,
+      totalPages: totalPages,
+      hasMoreData: currentPage < totalPages,
+    );
+  }
+
+  void reset() {
+    state = PaginationState.initial();
+  }
+}
+
+// Filtered qualities provider with pagination
 final filteredQualitiesProvider = Provider<AsyncValue<List<Quality>>>((ref) {
   final searchQuery = ref.watch(searchQueryProvider);
   final qualities = ref.watch(qualityProvider);
+  final pagination = ref.watch(paginationStateProvider);
 
   return qualities.when(
     data: (qualitiesList) {
@@ -81,18 +142,45 @@ class QualityNotifier extends StateNotifier<AsyncValue<List<Quality>>> {
 
   Dio get dio => ref.read(dioProvider);
 
-  /// ---------- LIST ----------
-  Future<void> fetchQualities() async {
+  /// ---------- LIST WITH PAGINATION ----------
+  Future<void> fetchQualities({bool isLoadMore = false}) async {
     try {
+      final pagination = ref.read(paginationStateProvider.notifier);
+
+      if (!isLoadMore) {
+        pagination.reset();
+        state = const AsyncLoading();
+      } else {
+        pagination.setLoadingMore(true);
+      }
+
+      final currentPage =
+          isLoadMore ? ref.read(paginationStateProvider).currentPage + 1 : 1;
+
       final res = await dio.get(
         "/list",
-        queryParameters: {"page": 1, "limit": 10},
+        queryParameters: {"page": currentPage, "limit": 10},
       );
 
-      final List data = res.data['qualities'];
-      state = AsyncData(data.map((e) => Quality.fromJson(e)).toList());
+      final List data = res.data['qualities'] ?? [];
+      final paginationData = res.data['pagination'] ?? {};
+      final totalPages = paginationData['totalPages'] ?? 1;
+
+      if (isLoadMore) {
+        final currentList = state.value ?? [];
+        state = AsyncData([
+          ...currentList,
+          ...data.map((e) => Quality.fromJson(e)).toList(),
+        ]);
+      } else {
+        state = AsyncData(data.map((e) => Quality.fromJson(e)).toList());
+      }
+
+      pagination.updatePagination(currentPage, totalPages);
+      pagination.setLoadingMore(false);
     } catch (e, st) {
       state = AsyncError(e, st);
+      ref.read(paginationStateProvider.notifier).setLoadingMore(false);
     }
   }
 
@@ -130,6 +218,14 @@ class QualityNotifier extends StateNotifier<AsyncValue<List<Quality>>> {
       q.copyWith(status: value ? "Available" : "unAvailable"),
     );
   }
+
+  /// ---------- LOAD MORE ----------
+  Future<void> loadMore() async {
+    final pagination = ref.read(paginationStateProvider);
+    if (pagination.isLoadingMore || !pagination.hasMoreData) return;
+
+    await fetchQualities(isLoadMore: true);
+  }
 }
 
 /// ================= SEARCH BAR WIDGET =================
@@ -148,7 +244,6 @@ class _SearchBarWidgetState extends ConsumerState<SearchBarWidget> {
   void initState() {
     super.initState();
     _searchController = TextEditingController();
-    // Initialize with current search query
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentQuery = ref.read(searchQueryProvider);
       if (currentQuery.isNotEmpty) {
@@ -168,7 +263,6 @@ class _SearchBarWidgetState extends ConsumerState<SearchBarWidget> {
   Widget build(BuildContext context) {
     final searchQuery = ref.watch(searchQueryProvider);
 
-    // Sync controller with provider state
     if (_searchController.text != searchQuery) {
       _searchController.text = searchQuery;
     }
@@ -232,6 +326,19 @@ class QualityManagementScreen extends ConsumerWidget {
 
     final searchQuery = ref.watch(searchQueryProvider);
     final filteredState = ref.watch(filteredQualitiesProvider);
+    final pagination = ref.watch(paginationStateProvider);
+    final scrollController = ScrollController();
+
+    // Scroll listener for pagination
+    scrollController.addListener(() {
+      if (scrollController.position.pixels >=
+              scrollController.position.maxScrollExtent - 100 &&
+          !pagination.isLoadingMore &&
+          pagination.hasMoreData &&
+          searchQuery.isEmpty) {
+        ref.read(qualityProvider.notifier).loadMore();
+      }
+    });
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
@@ -329,25 +436,76 @@ class QualityManagementScreen extends ConsumerWidget {
                     await ref.read(qualityProvider.notifier).fetchQualities();
                     ref.read(searchQueryProvider.notifier).state = '';
                   },
-                  child:
-                      list.isEmpty
-                          ? const Center(
-                            child: Text(
-                              "No qualities found",
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          )
-                          : ListView.builder(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.all(16),
-                            itemCount: list.length,
-                            itemBuilder:
-                                (_, i) => QualityCard(
-                                  q: list[i],
-                                  canEdit: canEdit,
-                                  canDelete: canDelete,
+                  child: CustomScrollView(
+                    controller: scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      /// QUALITIES LIST
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          if (index < list.length) {
+                            return QualityCard(
+                              q: list[index],
+                              canEdit: canEdit,
+                              canDelete: canDelete,
+                            );
+                          }
+                          return null;
+                        }, childCount: list.length),
+                      ),
+
+                      /// EMPTY STATE
+                      if (list.isEmpty && searchQuery.isEmpty)
+                        SliverFillRemaining(
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.category,
+                                  size: 60,
+                                  color: Colors.grey[400],
                                 ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  "No qualities found",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                        ),
+
+                      /// LOAD MORE INDICATOR
+                      if (pagination.isLoadingMore)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
+                          ),
+                        ),
+
+                      /// NO MORE DATA MESSAGE
+                      if (!pagination.hasMoreData && list.isNotEmpty)
+                        SliverToBoxAdapter(
+                          child: const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(
+                              child: Text(
+                                "No more qualities",
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                      /// EXTRA SPACE AT BOTTOM
+                      SliverToBoxAdapter(child: Container(height: 50)),
+                    ],
+                  ),
                 );
               },
             ),
@@ -373,7 +531,7 @@ class QualityCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
@@ -35,6 +36,7 @@ class SearchBarWidget extends StatefulWidget {
 class _SearchBarWidgetState extends State<SearchBarWidget> {
   late TextEditingController _searchController;
   late FocusNode _searchFocusNode;
+  Timer? _searchTimer;
 
   @override
   void initState() {
@@ -53,9 +55,25 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchTimer?.cancel();
+
+    // Debounce search (500ms delay)
+    _searchTimer = Timer(const Duration(milliseconds: 500), () {
+      widget.onSearchChanged(value);
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    widget.onSearchChanged('');
+    _searchFocusNode.requestFocus();
   }
 
   @override
@@ -75,7 +93,7 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
             child: TextField(
               controller: _searchController,
               focusNode: _searchFocusNode,
-              onChanged: widget.onSearchChanged,
+              onChanged: _onSearchChanged,
               decoration: const InputDecoration(
                 hintText: "Search by name, ID or status...",
                 border: InputBorder.none,
@@ -89,11 +107,7 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
           if (_searchController.text.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
-              onPressed: () {
-                _searchController.clear();
-                widget.onSearchChanged('');
-                _searchFocusNode.requestFocus();
-              },
+              onPressed: _clearSearch,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
             ),
@@ -124,9 +138,17 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
   );
 
   bool loading = false;
+  bool loadingMore = false;
   List<Brand> brands = [];
-  List<Brand> filteredBrands = [];
   String searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  // ✅ PAGINATION VARIABLES
+  int _currentPage = 1;
+  int _totalPages = 1;
+  int _totalItems = 0;
+  bool _hasMoreData = true;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -137,47 +159,108 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
     canDeleteBrand = PermissionManager.hasPermission("Brand Management_Delete");
 
     fetchBrands();
+
+    // Add scroll listener for pagination
+    _scrollController.addListener(_scrollListener);
   }
 
-  /// ================= LIST API =================
-  Future<void> fetchBrands() async {
-    setState(() => loading = true);
-    try {
-      final res = await dio.get(
-        "/list",
-        queryParameters: {"page": 1, "limit": 10},
-      );
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
 
-      final List list = res.data['brands'];
-      brands = list.map((e) => Brand.fromJson(e)).toList();
-      _filterBrands();
+  /// ================= LIST API WITH PAGINATION =================
+  Future<void> fetchBrands({bool isLoadMore = false}) async {
+    if (!isLoadMore) {
+      setState(() {
+        loading = true;
+        _currentPage = 1;
+        brands = [];
+        _hasMoreData = true;
+      });
+    } else {
+      setState(() {
+        loadingMore = true;
+      });
+    }
+
+    try {
+      final Map<String, dynamic> queryParams = {
+        "page": _currentPage,
+        "limit": 10,
+      };
+
+      if (searchQuery.isNotEmpty) {
+        queryParams['search'] = searchQuery;
+      }
+
+      final res = await dio.get("/list", queryParameters: queryParams);
+
+      final List list = res.data['brands'] ?? [];
+      final pagination = res.data['pagination'] ?? {};
+
+      setState(() {
+        if (isLoadMore) {
+          brands.addAll(list.map((e) => Brand.fromJson(e)).toList());
+        } else {
+          brands = list.map((e) => Brand.fromJson(e)).toList();
+        }
+
+        _currentPage = pagination['page'] ?? _currentPage;
+        _totalPages = pagination['totalPages'] ?? _totalPages;
+        _totalItems = pagination['totalItems'] ?? 0;
+        _hasMoreData = (_currentPage) < (_totalPages);
+
+        loading = false;
+        loadingMore = false;
+      });
     } catch (e) {
       debugPrint(e.toString());
-    }
-    setState(() => loading = false);
-  }
-
-  /// ================= FILTER BRANDS =================
-  void _filterBrands() {
-    if (searchQuery.isEmpty) {
-      filteredBrands = List.from(brands);
-    } else {
-      filteredBrands =
-          brands.where((brand) {
-            return brand.name.toLowerCase().contains(
-                  searchQuery.toLowerCase(),
-                ) ||
-                brand.id.toString().contains(searchQuery) ||
-                brand.status.toLowerCase().contains(searchQuery.toLowerCase());
-          }).toList();
+      setState(() {
+        loading = false;
+        loadingMore = false;
+      });
     }
   }
 
+  /// ================= SCROLL LISTENER =================
+  void _scrollListener() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        !loadingMore &&
+        _hasMoreData) {
+      _loadMoreData();
+    }
+  }
+
+  /// ================= LOAD MORE DATA =================
+  Future<void> _loadMoreData() async {
+    if (!_hasMoreData || loadingMore) return;
+
+    setState(() {
+      loadingMore = true;
+    });
+
+    _currentPage++;
+    await fetchBrands(isLoadMore: true);
+  }
+
+  /// ================= API-BASED SEARCH =================
   void _onSearchChanged(String value) {
     setState(() {
       searchQuery = value;
-      _filterBrands();
     });
+    fetchBrands();
+  }
+
+  void _clearSearch() {
+    setState(() {
+      searchQuery = '';
+      _searchController.clear();
+    });
+    fetchBrands();
   }
 
   /// ================= ADD / EDIT SHEET =================
@@ -351,6 +434,16 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
     );
   }
 
+  /// ================= REFRESH FUNCTION =================
+  Future<void> _refreshBrands() async {
+    setState(() {
+      loading = true;
+      searchQuery = '';
+      _searchController.clear();
+    });
+    await fetchBrands();
+  }
+
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
@@ -409,36 +502,93 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
               ),
             ),
 
-            /// LIST
+            /// LIST WITH PAGINATION
             Expanded(
               child:
-                  loading
+                  loading && brands.isEmpty
                       ? const Center(child: CircularProgressIndicator())
                       : RefreshIndicator(
-                        onRefresh: () async {
-                          await fetchBrands();
-                          setState(() {
-                            searchQuery = '';
-                          });
-                        },
-                        child:
-                            filteredBrands.isEmpty
-                                ? _buildEmptyState()
-                                : ListView.builder(
+                        onRefresh: _refreshBrands,
+                        child: CustomScrollView(
+                          controller: _scrollController,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          slivers: [
+                            /// BRAND COUNT
+                            if (brands.isNotEmpty)
+                              SliverToBoxAdapter(
+                                child: Padding(
                                   padding: const EdgeInsets.all(16),
-                                  itemCount: filteredBrands.length,
-                                  itemBuilder: (context, index) {
-                                    final brand = filteredBrands[index];
-                                    return BrandCard(
+                                  child: Text(
+                                    "Brands (${brands.length} of $_totalItems)",
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            /// BRAND LIST
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate((
+                                context,
+                                index,
+                              ) {
+                                if (index < brands.length) {
+                                  final brand = brands[index];
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    child: BrandCard(
                                       brand: brand,
                                       canEdit: canEditBrand,
                                       canDelete: canDeleteBrand,
                                       onEdit:
                                           () => openBrandSheet(brand: brand),
                                       onDelete: () => deleteBrand(brand.id),
-                                    );
-                                  },
+                                    ),
+                                  );
+                                }
+                                return null;
+                              }, childCount: brands.length),
+                            ),
+
+                            /// EMPTY STATE
+                            if (brands.isEmpty && !loading)
+                              SliverFillRemaining(child: _buildEmptyState()),
+
+                            /// LOAD MORE INDICATOR
+                            if (loadingMore)
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
                                 ),
+                              ),
+
+                            /// NO MORE BRANDS MESSAGE
+                            if (!_hasMoreData && brands.isNotEmpty)
+                              SliverToBoxAdapter(
+                                child: const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(
+                                    child: Text(
+                                      "No more brands",
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            /// EXTRA SPACE AT BOTTOM
+                            SliverToBoxAdapter(child: Container(height: 50)),
+                          ],
+                        ),
                       ),
             ),
           ],
@@ -464,13 +614,36 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
               "Try searching with different keywords",
               style: TextStyle(fontSize: 14, color: Colors.grey[500]),
             ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _clearSearch,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xffFFA54A),
+              ),
+              child: const Text("Clear Search"),
+            ),
           ],
         ),
       );
     }
 
-    return const Center(
-      child: Text("No brands found", style: TextStyle(color: Colors.grey)),
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.branding_watermark, size: 60, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          const Text(
+            "No brands found",
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Add your first brand to get started",
+            style: TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -495,7 +668,6 @@ class BrandCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,

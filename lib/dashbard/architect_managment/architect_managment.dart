@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/architect_managment/architect_commision.dart';
@@ -24,6 +26,7 @@ class ArchitectSearchBarWidget extends StatefulWidget {
 class _ArchitectSearchBarWidgetState extends State<ArchitectSearchBarWidget> {
   late TextEditingController _searchController;
   late FocusNode _searchFocusNode;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -44,6 +47,7 @@ class _ArchitectSearchBarWidgetState extends State<ArchitectSearchBarWidget> {
   void dispose() {
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
@@ -64,7 +68,13 @@ class _ArchitectSearchBarWidgetState extends State<ArchitectSearchBarWidget> {
             child: TextField(
               controller: _searchController,
               focusNode: _searchFocusNode,
-              onChanged: widget.onSearchChanged,
+              onChanged: (value) {
+                // DEBOUNCE IMPLEMENTATION (300ms)
+                _debounceTimer?.cancel();
+                _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+                  widget.onSearchChanged(value);
+                });
+              },
               decoration: const InputDecoration(
                 hintText: "Search by name, whatsapp or commission...",
                 border: InputBorder.none,
@@ -124,6 +134,23 @@ class Architect {
   }
 }
 
+/// ================= ARCHITECT RESPONSE MODEL =================
+class ArchitectResponse {
+  final List<Architect> architects;
+  final int currentPage;
+  final int totalPages;
+  final int total;
+  final bool hasMore;
+
+  ArchitectResponse({
+    required this.architects,
+    required this.currentPage,
+    required this.totalPages,
+    required this.total,
+    required this.hasMore,
+  });
+}
+
 /// ================= CLIENT MODEL =================
 class Client {
   final int id;
@@ -171,15 +198,24 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
 
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api/architects",
+      baseUrl: "https://dashboarduat.theceramicstudio.in",
       headers: {"Content-Type": "application/json"},
     ),
   );
 
   bool loading = false;
+  bool loadingMore = false;
   List<Architect> architects = [];
-  List<Architect> filteredArchitects = [];
-  String searchQuery = '';
+
+  // ✅ PAGINATION VARIABLES
+  int _currentPage = 1;
+  int _totalPages = 1;
+  bool _hasMoreData = true;
+  final ScrollController _scrollController = ScrollController();
+
+  // ✅ SEARCH VARIABLES
+  String _searchQuery = '';
+  Timer? _searchTimer;
 
   @override
   void initState() {
@@ -201,58 +237,143 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
     canViewCommission =
         PermissionManager.role == 2 ||
         PermissionManager.role.toLowerCase() == "superadmin";
+
+    // Initial fetch
     fetchArchitects();
+
+    // Add scroll listener for pagination
+    _scrollController.addListener(_scrollListener);
   }
 
-  /// ================= GET ARCHITECTS =================
-  Future<void> fetchArchitects() async {
-    setState(() => loading = true);
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _searchTimer?.cancel();
+    super.dispose();
+  }
+
+  /// ================= GET ARCHITECTS WITH PAGINATION =================
+  Future<ArchitectResponse> _fetchArchitectsAPI({
+    int page = 1,
+    String search = '',
+  }) async {
     try {
-      final res = await dio.get("/list");
-      architects =
-          (res.data['architects'] as List)
-              .map((e) => Architect.fromJson(e))
-              .toList();
-      _filterArchitects();
+      final response = await dio.get(
+        "/api/architects/list",
+        queryParameters: {
+          'page': page,
+          'limit': 10,
+          if (search.isNotEmpty) 'search': search,
+        },
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final List<dynamic> data = response.data['architects'] ?? [];
+        final architects = data.map((e) => Architect.fromJson(e)).toList();
+
+        return ArchitectResponse(
+          architects: architects,
+          currentPage: response.data['page'] ?? 1,
+          totalPages: response.data['totalPages'] ?? 1,
+          total: response.data['total'] ?? 0,
+          hasMore:
+              (response.data['page'] ?? 1) < (response.data['totalPages'] ?? 1),
+        );
+      } else {
+        throw Exception('Failed to load architects');
+      }
+    } catch (e) {
+      debugPrint("API Error: $e");
+      throw Exception('Failed to load architects');
+    }
+  }
+
+  Future<void> fetchArchitects({bool isLoadMore = false}) async {
+    if (!isLoadMore) {
+      setState(() {
+        loading = true;
+        _currentPage = 1;
+        architects = [];
+      });
+    } else {
+      setState(() {
+        loadingMore = true;
+      });
+    }
+
+    try {
+      final response = await _fetchArchitectsAPI(
+        page: _currentPage,
+        search: _searchQuery,
+      );
+
+      setState(() {
+        if (isLoadMore) {
+          architects.addAll(response.architects);
+        } else {
+          architects = response.architects;
+        }
+
+        _currentPage = response.currentPage;
+        _totalPages = response.totalPages;
+        _hasMoreData = response.hasMore;
+        loading = false;
+        loadingMore = false;
+      });
     } catch (e) {
       debugPrint("Fetch error: $e");
-    }
-    setState(() => loading = false);
-  }
-
-  /// ================= FILTER ARCHITECTS =================
-  void _filterArchitects() {
-    if (searchQuery.isEmpty) {
-      filteredArchitects = List.from(architects);
-    } else {
-      filteredArchitects =
-          architects.where((architect) {
-            return architect.fullName.toLowerCase().contains(
-                  searchQuery.toLowerCase(),
-                ) ||
-                architect.whatsapp.contains(searchQuery) ||
-                architect.commission.toString().contains(searchQuery) ||
-                architect.firstname.toLowerCase().contains(
-                  searchQuery.toLowerCase(),
-                ) ||
-                architect.lastname.toLowerCase().contains(
-                  searchQuery.toLowerCase(),
-                );
-          }).toList();
+      setState(() {
+        loading = false;
+        loadingMore = false;
+      });
     }
   }
 
-  void _onSearchChanged(String value) {
+  /// ================= SCROLL LISTENER FOR PAGINATION =================
+  void _scrollListener() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        !loadingMore &&
+        _hasMoreData) {
+      _loadMoreData();
+    }
+  }
+
+  /// ================= LOAD MORE DATA =================
+  Future<void> _loadMoreData() async {
+    if (!_hasMoreData || loadingMore) return;
+
     setState(() {
-      searchQuery = value;
-      _filterArchitects();
+      loadingMore = true;
+    });
+
+    _currentPage++;
+    await fetchArchitects(isLoadMore: true);
+  }
+
+  /// ================= SEARCH HANDLER =================
+  void _onSearchChanged(String value) {
+    _searchTimer?.cancel();
+
+    setState(() {
+      _searchQuery = value;
+    });
+
+    // Debounce search (500ms)
+    _searchTimer = Timer(const Duration(milliseconds: 500), () {
+      fetchArchitects();
     });
   }
 
   /// ================= DELETE ARCHITECT =================
   Future<void> deleteArchitect(int id) async {
-    await dio.delete("/delete/$id");
-    fetchArchitects();
+    try {
+      await dio.delete("/api/architects/delete/$id");
+      await fetchArchitects(); // Refresh the list
+    } catch (e) {
+      debugPrint("Delete error: $e");
+      throw Exception('Failed to delete architect');
+    }
   }
 
   void confirmDelete(int id) {
@@ -296,7 +417,7 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
           child: SizedBox(
             height: 420,
             child: FutureBuilder(
-              future: dio.get("/getCustomersById/$architectId"),
+              future: dio.get("/api/architects/getCustomersById/$architectId"),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -421,7 +542,7 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
                   Expanded(
                     child: ArchitectSearchBarWidget(
                       onSearchChanged: _onSearchChanged,
-                      initialValue: searchQuery,
+                      initialValue: _searchQuery,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -466,28 +587,47 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
 
           const SizedBox(height: 10),
 
-          /// LIST WITH SEARCH RESULTS
+          /// LIST WITH SEARCH RESULTS AND PAGINATION
           Expanded(
             child:
-                loading
+                loading && architects.isEmpty
                     ? const Center(child: CircularProgressIndicator())
                     : RefreshIndicator(
                       onRefresh: () async {
                         await fetchArchitects();
-                        setState(() {
-                          searchQuery = '';
-                        });
                       },
                       child:
-                          filteredArchitects.isEmpty
+                          architects.isEmpty
                               ? _buildEmptyState()
                               : ListView.builder(
+                                controller: _scrollController,
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                 ),
-                                itemCount: filteredArchitects.length,
+                                itemCount:
+                                    architects.length + (loadingMore ? 1 : 0),
                                 itemBuilder: (context, index) {
-                                  final a = filteredArchitects[index];
+                                  // Loading more indicator
+                                  if (index == architects.length) {
+                                    return Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Center(
+                                        child:
+                                            loadingMore
+                                                ? const CircularProgressIndicator()
+                                                : !_hasMoreData
+                                                ? const Text(
+                                                  "No more architects",
+                                                  style: TextStyle(
+                                                    color: Colors.grey,
+                                                  ),
+                                                )
+                                                : const SizedBox(),
+                                      ),
+                                    );
+                                  }
+
+                                  final a = architects[index];
 
                                   return InkWell(
                                     borderRadius: BorderRadius.circular(8),
@@ -534,7 +674,7 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
   }
 
   Widget _buildEmptyState() {
-    if (searchQuery.isNotEmpty) {
+    if (_searchQuery.isNotEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -542,7 +682,7 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
             Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
-              "No architects found for '$searchQuery'",
+              "No architects found for '$_searchQuery'",
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
             const SizedBox(height: 8),
@@ -645,7 +785,6 @@ class ArchitectCard extends StatelessWidget {
                           backgroundColor: Colors.red,
                         ),
                       );
-                      return;
                     }
                     onDelete();
                   }

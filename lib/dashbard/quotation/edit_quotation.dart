@@ -694,7 +694,14 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButton<String>(
                                       isExpanded: true,
-                                      value: _selectedArchitectId,
+                                      value:
+                                          _architects.any(
+                                                (a) =>
+                                                    a['id'].toString() ==
+                                                    _selectedArchitectId,
+                                              )
+                                              ? _selectedArchitectId
+                                              : null,
                                       hint:
                                           _isLoadingArchitects
                                               ? const Text('Loading...')

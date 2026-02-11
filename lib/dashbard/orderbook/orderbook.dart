@@ -24,6 +24,7 @@ class OrderBookSearchBarWidget extends StatefulWidget {
 class _OrderBookSearchBarWidgetState extends State<OrderBookSearchBarWidget> {
   late TextEditingController _searchController;
   late FocusNode _searchFocusNode;
+  Timer? _searchTimer;
 
   @override
   void initState() {
@@ -43,6 +44,7 @@ class _OrderBookSearchBarWidgetState extends State<OrderBookSearchBarWidget> {
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -52,6 +54,15 @@ class _OrderBookSearchBarWidgetState extends State<OrderBookSearchBarWidget> {
     _searchController.clear();
     widget.onSearchChanged('');
     _searchFocusNode.requestFocus();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchTimer?.cancel();
+
+    // Debounce search (500ms delay)
+    _searchTimer = Timer(const Duration(milliseconds: 500), () {
+      widget.onSearchChanged(value);
+    });
   }
 
   @override
@@ -71,7 +82,7 @@ class _OrderBookSearchBarWidgetState extends State<OrderBookSearchBarWidget> {
             child: TextField(
               controller: _searchController,
               focusNode: _searchFocusNode,
-              onChanged: widget.onSearchChanged,
+              onChanged: _onSearchChanged,
               decoration: const InputDecoration(
                 hintText: "Search by product name, size, quality...",
                 border: InputBorder.none,
@@ -105,89 +116,163 @@ class OrderBookManagementScreen extends StatefulWidget {
 
 class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
   bool isLoading = true;
-  List allOrders = []; // Store all orders
-  List filteredOrders = []; // Store filtered orders
+  bool loadingMore = false;
+  List orders = []; // Store orders
   String searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  // ✅ PAGINATION VARIABLES
+  int _currentPage = 1;
+  int _totalPages = 1;
+  int _totalItems = 0;
+  bool _hasMoreData = true;
+  final ScrollController _scrollController = ScrollController();
+  final Dio _dio = Dio();
 
   @override
   void initState() {
     super.initState();
     _fetchOrders();
+    _scrollController.addListener(_scrollListener);
   }
 
-  /// ================= FETCH ORDER LIST =================
-  Future<void> _fetchOrders() async {
-    try {
-      setState(() => isLoading = true);
-
-      final response = await Dio().get(
-        "https://dashboarduat.theceramicstudio.in/api/orderBook/list",
-      );
-
-      setState(() {
-        allOrders = response.data["orders"] ?? [];
-        _filterOrders(); // Apply search filter
-        isLoading = false;
-      });
-    } catch (e) {
-      setState(() => isLoading = false);
-      debugPrint("ORDER LIST ERROR: $e");
-    }
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
-  /// ================= LOCAL SEARCH FILTER =================
-  void _filterOrders() {
-    if (searchQuery.isEmpty) {
+  /// ================= FETCH ORDER LIST WITH PAGINATION =================
+  Future<void> _fetchOrders({bool isLoadMore = false}) async {
+    if (!isLoadMore) {
       setState(() {
-        filteredOrders = List.from(allOrders);
+        isLoading = true;
+        _currentPage = 1;
+        orders = [];
+        _hasMoreData = true;
       });
     } else {
-      final filtered =
-          allOrders.where((order) {
-            final name = order["name"]?.toString().toLowerCase() ?? '';
-            final size = order["size"]?.toString().toLowerCase() ?? '';
-            final quality = order["quality"]?.toString().toLowerCase() ?? '';
-            final brand = order["brand"]?.toString().toLowerCase() ?? '';
-            final quantity = order["quantity"]?.toString().toLowerCase() ?? '';
-            final date = order["date"]?.toString().toLowerCase() ?? '';
-            final id = order["id"]?.toString().toLowerCase() ?? '';
-
-            final query = searchQuery.toLowerCase();
-
-            return name.contains(query) ||
-                size.contains(query) ||
-                quality.contains(query) ||
-                brand.contains(query) ||
-                quantity.contains(query) ||
-                date.contains(query) ||
-                id.contains(query);
-          }).toList();
-
       setState(() {
-        filteredOrders = filtered;
+        loadingMore = true;
       });
+    }
+
+    try {
+      final Map<String, dynamic> queryParams = {
+        'page': _currentPage,
+        'limit': 10,
+        if (searchQuery.isNotEmpty) 'search': searchQuery,
+      };
+
+      debugPrint('Fetching orders with params: $queryParams');
+
+      final response = await _dio.get(
+        "https://dashboarduat.theceramicstudio.in/api/orderBook/list",
+        queryParameters: queryParams,
+      );
+
+      if (response.statusCode == 200 && response.data["success"] == true) {
+        final data = response.data;
+
+        setState(() {
+          if (isLoadMore) {
+            orders.addAll(data["orders"] ?? []);
+          } else {
+            orders = data["orders"] ?? [];
+          }
+
+          _currentPage = data["page"] ?? _currentPage;
+          _totalPages = data["totalPages"] ?? _totalPages;
+          _totalItems = data["total"] ?? _totalItems;
+          _hasMoreData = (_currentPage) < (_totalPages);
+
+          isLoading = false;
+          loadingMore = false;
+        });
+
+        debugPrint('Pagination Info:');
+        debugPrint('Current Page: $_currentPage');
+        debugPrint('Total Pages: $_totalPages');
+        debugPrint('Total Items: $_totalItems');
+        debugPrint('Has More Data: $_hasMoreData');
+        debugPrint('Orders Count: ${orders.length}');
+      } else {
+        throw Exception('Failed to load orders');
+      }
+    } catch (e) {
+      debugPrint("ORDER LIST ERROR: $e");
+      setState(() {
+        isLoading = false;
+        loadingMore = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Failed to load orders"),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
-  /// ================= SEARCH FUNCTIONALITY =================
+  /// ================= SCROLL LISTENER FOR PAGINATION =================
+  void _scrollListener() {
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+
+    debugPrint('Scroll Position: $currentScroll / $maxScroll');
+    debugPrint('Loading More: $loadingMore, Has More: $_hasMoreData');
+
+    // Agar 50 pixels pehle ho bottom se aur data load karne ke liye available hai
+    if (currentScroll >= (maxScroll - 50) &&
+        !loadingMore &&
+        _hasMoreData &&
+        orders.isNotEmpty) {
+      debugPrint('Loading more data...');
+      _loadMoreData();
+    }
+  }
+
+  /// ================= LOAD MORE DATA =================
+  Future<void> _loadMoreData() async {
+    if (!_hasMoreData || loadingMore) {
+      debugPrint(
+        'Cannot load more: HasMore=$_hasMoreData, LoadingMore=$loadingMore',
+      );
+      return;
+    }
+
+    debugPrint('Starting to load more data. Current page: $_currentPage');
+    setState(() {
+      loadingMore = true;
+    });
+
+    _currentPage++;
+    await _fetchOrders(isLoadMore: true);
+  }
+
+  /// ================= API-BASED SEARCH =================
   void _searchOrders(String query) {
+    // Cancel any previous search timer
     setState(() {
       searchQuery = query;
     });
-    _filterOrders();
+    _fetchOrders();
   }
 
   void _clearSearch() {
     setState(() {
       searchQuery = '';
+      _searchController.clear();
     });
-    _filterOrders();
+    _fetchOrders();
   }
 
   /// ================= DELETE ORDER =================
   Future<void> _deleteOrder(int id) async {
     try {
-      await Dio().delete(
+      await _dio.delete(
         "https://dashboarduat.theceramicstudio.in/api/orderBook/delete/$id",
       );
 
@@ -242,6 +327,7 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
     setState(() {
       isLoading = true;
       searchQuery = '';
+      _searchController.clear();
     });
     await _fetchOrders();
   }
@@ -303,36 +389,96 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
             /// ================= ORDER LIST =================
             Expanded(
               child:
-                  isLoading
+                  isLoading && orders.isEmpty
                       ? const Center(child: CircularProgressIndicator())
-                      : filteredOrders.isEmpty
-                      ? _buildEmptyState()
                       : RefreshIndicator(
                         onRefresh: _refreshOrders,
-                        child: ListView.builder(
+                        child: CustomScrollView(
+                          controller: _scrollController,
                           physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: filteredOrders.length,
-                          itemBuilder: (context, index) {
-                            final order = filteredOrders[index];
-                            return OrderCard(
-                              order: order,
-                              onEdit: () async {
-                                final refresh = await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder:
-                                        (_) => EditOrderScreen(order: order),
+                          slivers: [
+                            /// ORDER COUNT HEADER
+                            if (orders.isNotEmpty)
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Text(
+                                    "Orders (${orders.length} of $_totalItems)",
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            /// ORDERS LIST
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate((
+                                context,
+                                index,
+                              ) {
+                                final order = orders[index];
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
+                                  child: OrderCard(
+                                    order: order,
+                                    onEdit: () async {
+                                      final refresh = await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder:
+                                              (_) =>
+                                                  EditOrderScreen(order: order),
+                                        ),
+                                      );
+
+                                      if (refresh == true) {
+                                        _fetchOrders();
+                                      }
+                                    },
+                                    onDelete: () => _confirmDelete(order["id"]),
                                   ),
                                 );
+                              }, childCount: orders.length),
+                            ),
 
-                                if (refresh == true) {
-                                  _fetchOrders();
-                                }
-                              },
-                              onDelete: () => _confirmDelete(order["id"]),
-                            );
-                          },
+                            /// EMPTY STATE
+                            if (orders.isEmpty && !isLoading)
+                              SliverFillRemaining(child: _buildEmptyState()),
+
+                            /// LOAD MORE INDICATOR
+                            if (loadingMore)
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                ),
+                              ),
+
+                            /// NO MORE ORDERS MESSAGE
+                            if (!_hasMoreData && orders.isNotEmpty)
+                              SliverToBoxAdapter(
+                                child: const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(
+                                    child: Text(
+                                      "No more orders",
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            /// EXTRA SPACE AT BOTTOM FOR BETTER SCROLLING
+                            SliverToBoxAdapter(child: Container(height: 50)),
+                          ],
                         ),
                       ),
             ),
@@ -373,28 +519,35 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _refreshOrders,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(height: MediaQuery.of(context).size.height * 0.3),
-          const Center(
-            child: Column(
-              children: [
-                Icon(Icons.inventory_outlined, size: 60, color: Colors.grey),
-                SizedBox(height: 16),
-                Text(
-                  "No Orders Found",
-                  style: TextStyle(fontSize: 16, color: Colors.grey),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  "Add your first order to get started",
-                  style: TextStyle(fontSize: 14, color: Colors.grey),
-                ),
-              ],
+          const Icon(Icons.inventory_outlined, size: 60, color: Colors.grey),
+          const SizedBox(height: 16),
+          const Text(
+            "No Orders Found",
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Add your first order to get started",
+            style: TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AddOrderScreen()),
+              ).then((_) {
+                _refreshOrders();
+              });
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFA54A),
             ),
+            child: const Text("Add Order"),
           ),
         ],
       ),
@@ -431,7 +584,6 @@ class OrderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,

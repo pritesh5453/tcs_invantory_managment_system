@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
@@ -15,6 +16,7 @@ class Customer {
   final String lastName;
   final String phone;
   final String? assignedEmployee;
+  final String? assignedEmployeeId;
   final String? siteType;
 
   Customer({
@@ -23,6 +25,7 @@ class Customer {
     required this.lastName,
     required this.phone,
     this.assignedEmployee,
+    this.assignedEmployeeId,
     this.siteType,
   });
 
@@ -33,9 +36,27 @@ class Customer {
       lastName: json['Last_Name'] ?? '',
       phone: json['phone'] ?? '',
       assignedEmployee: json['assignedEmployee'],
+      assignedEmployeeId: json['assignedEmployeeId']?.toString(),
       siteType: json['siteType'],
     );
   }
+}
+
+/// =====================
+/// API RESPONSE MODEL
+/// =====================
+class CustomerResponse {
+  final List<Customer> customers;
+  final bool hasMore;
+  final int currentPage;
+  final int totalItems;
+
+  CustomerResponse({
+    required this.customers,
+    required this.hasMore,
+    required this.currentPage,
+    required this.totalItems,
+  });
 }
 
 /// =====================
@@ -50,19 +71,123 @@ class CustomerApi {
     ),
   );
 
-  static Future<List<Customer>> fetchCustomers() async {
-    final response = await _dio.get("/api/users/list");
-    final List list = response.data['customers'];
+  // ✅ ADMIN/Superadmin ke liye (with pagination and search)
+  static Future<CustomerResponse> fetchAllCustomers({
+    int page = 1,
+    int limit = 10,
+    String? search,
+  }) async {
+    try {
+      final Map<String, dynamic> queryParams = {'page': page, 'limit': limit};
 
-    final customers = list.map((e) => Customer.fromJson(e)).toList();
+      if (search != null && search.isNotEmpty) {
+        queryParams['search'] = search;
+      }
 
-    // 🔥 SORT: latest first (higher ID on top)
-    customers.sort((a, b) => b.id.compareTo(a.id));
+      final response = await _dio.get(
+        "/api/users/list",
+        queryParameters: queryParams,
+      );
 
-    return customers;
+      final List list = response.data['customers'] ?? [];
+      final customers = list.map((e) => Customer.fromJson(e)).toList();
+      customers.sort((a, b) => b.id.compareTo(a.id));
+
+      // Pagination data extract karein
+      final pagination = response.data['pagination'] ?? {};
+      final currentPage = pagination['page'] ?? 1;
+      final totalPages = pagination['totalPages'] ?? 1;
+      final totalItems = pagination['totalItems'] ?? list.length;
+      final hasMore = currentPage < totalPages;
+
+      return CustomerResponse(
+        customers: customers,
+        hasMore: hasMore,
+        currentPage: currentPage,
+        totalItems: totalItems,
+      );
+    } catch (e) {
+      debugPrint("Error fetching all customers: $e");
+      return CustomerResponse(
+        customers: [],
+        hasMore: false,
+        currentPage: 1,
+        totalItems: 0,
+      );
+    }
   }
 
-  // ✅ ADD DELETE CUSTOMER METHOD
+  // ✅ EMPLOYEE ke liye (assigned customers with pagination and search)
+  static Future<CustomerResponse> fetchEmployeeCustomers({
+    required int employeeId,
+    int page = 1,
+    int limit = 10,
+    String? search,
+  }) async {
+    try {
+      final Map<String, dynamic> queryParams = {
+        'page': page,
+        'limit': limit,
+        'employeeId': employeeId,
+      };
+
+      if (search != null && search.isNotEmpty) {
+        queryParams['search'] = search;
+      }
+
+      final response = await _dio.get(
+        "/api/users/list/employee",
+        queryParameters: queryParams,
+      );
+
+      final List list = response.data['customers'] ?? [];
+      final customers = list.map((e) => Customer.fromJson(e)).toList();
+      customers.sort((a, b) => b.id.compareTo(a.id));
+
+      final pagination = response.data['pagination'] ?? {};
+      final currentPage = pagination['page'] ?? 1;
+      final totalPages = pagination['totalPages'] ?? 1;
+      final totalItems = pagination['totalItems'] ?? list.length;
+      final hasMore = currentPage < totalPages;
+
+      return CustomerResponse(
+        customers: customers,
+        hasMore: hasMore,
+        currentPage: currentPage,
+        totalItems: totalItems,
+      );
+    } catch (e) {
+      debugPrint("Error fetching employee customers: $e");
+      return CustomerResponse(
+        customers: [],
+        hasMore: false,
+        currentPage: page,
+        totalItems: 0,
+      );
+    }
+  }
+
+  // ✅ SMART FETCH METHOD - role aur employeeId ke hisab se API call karega
+  static Future<CustomerResponse> fetchCustomers({
+    required String userRole,
+    required int employeeId,
+    int page = 1,
+    int limit = 10,
+    String? search,
+  }) async {
+    if (userRole == "admin" || userRole == "superadmin") {
+      return await fetchAllCustomers(page: page, limit: limit, search: search);
+    } else {
+      return await fetchEmployeeCustomers(
+        employeeId: employeeId,
+        page: page,
+        limit: limit,
+        search: search,
+      );
+    }
+  }
+
+  // ✅ DELETE CUSTOMER METHOD
   static Future<bool> deleteCustomer(int customerId) async {
     try {
       final response = await _dio.delete("/api/users/delete/$customerId");
@@ -81,7 +206,14 @@ class CustomerApi {
 /// MAIN SCREEN
 /// =====================
 class CustomerManagementScreen extends StatefulWidget {
-  const CustomerManagementScreen({super.key});
+  final int employeeId;
+  final String userRole;
+
+  const CustomerManagementScreen({
+    super.key,
+    required this.employeeId,
+    required this.userRole,
+  });
 
   @override
   State<CustomerManagementScreen> createState() =>
@@ -91,93 +223,153 @@ class CustomerManagementScreen extends StatefulWidget {
 class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
   late bool canAddCustomer;
   late bool canEditCustomer;
-  late bool canDeleteCustomer; // ✅ ADD DELETE PERMISSION
-  late Future<List<Customer>> customerFuture;
-  List<Customer> _allCustomers = []; // Store all customers
-  List<Customer> _filteredCustomers = []; // Store filtered customers
-  String _searchQuery = ''; // Search query
-  final TextEditingController _searchController =
-      TextEditingController(); // Add controller
+  late bool canDeleteCustomer;
+
+  List<Customer> _allCustomers = [];
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounceTimer;
+
+  // ✅ PAGINATION VARIABLES
+  int _currentPage = 1;
+  bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMoreData = true;
+  int _totalItems = 0;
+  final ScrollController _scrollController = ScrollController();
+  final int _limit = 10;
 
   @override
   void initState() {
     super.initState();
-    debugPrint("ALL PERMISSIONS => ${PermissionManager.allPermissions}");
 
+    // Permissions
     canAddCustomer = PermissionManager.hasPermission("Customer Management_Add");
     canEditCustomer = PermissionManager.hasPermission(
       "Customer Management_Edit",
     );
     canDeleteCustomer = PermissionManager.hasPermission(
       "Customer Management_Delete",
-    ); // ✅ ADDED
+    );
 
-    _allCustomers = [];
-    _filteredCustomers = [];
+    // Load initial data
     _loadCustomers();
+
+    // Add scroll listener for pagination
+    _scrollController.addListener(_scrollListener);
   }
 
-  /// 🔄 Reload customers
-  Future<void> _loadCustomers() async {
-    setState(() {
-      customerFuture = CustomerApi.fetchCustomers();
-    });
-
-    // Update local lists after fetching data
-    final customers = await CustomerApi.fetchCustomers();
-    setState(() {
-      _allCustomers = customers;
-      _filteredCustomers = customers;
-      _searchQuery = '';
-      _searchController.clear(); // Clear search field
-    });
-  }
-
-  void _filterCustomers(String query) {
-    setState(() {
-      _searchQuery = query;
-      if (query.isEmpty) {
-        _filteredCustomers = _allCustomers;
-      } else {
-        _filteredCustomers =
-            _allCustomers.where((customer) {
-              final fullName =
-                  '${customer.name} ${customer.lastName}'.toLowerCase();
-              final phone = customer.phone.toLowerCase();
-              final searchLower = query.toLowerCase();
-
-              return fullName.contains(searchLower) ||
-                  phone.contains(searchLower) ||
-                  customer.name.toLowerCase().contains(searchLower) ||
-                  customer.lastName.toLowerCase().contains(searchLower);
-            }).toList();
-      }
-    });
-  }
-
-  // Add this method in _CustomerManagementScreenState
-  void _updateCustomerLists(List<Customer> customers) {
-    if (mounted) {
+  /// 🔄 Load customers (initial or refresh)
+  Future<void> _loadCustomers({
+    bool isRefresh = false,
+    bool isLoadMore = false,
+    String? search,
+  }) async {
+    if (isRefresh) {
       setState(() {
-        _allCustomers = customers;
-        if (_searchQuery.isEmpty) {
-          _filteredCustomers = customers;
+        _currentPage = 1;
+        _hasMoreData = true;
+        _allCustomers = [];
+        _isLoading = true;
+        _totalItems = 0;
+      });
+    } else if (isLoadMore) {
+      setState(() {
+        _isLoadingMore = true;
+      });
+    } else if (!isLoadMore) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
+
+    try {
+      final response = await CustomerApi.fetchCustomers(
+        userRole: widget.userRole,
+        employeeId: widget.employeeId,
+        page: _currentPage,
+        limit: _limit,
+        search: search ?? _searchQuery,
+      );
+
+      setState(() {
+        if (isLoadMore) {
+          _allCustomers.addAll(response.customers);
         } else {
-          _filterCustomers(_searchQuery);
+          _allCustomers = response.customers;
         }
+
+        _hasMoreData = response.hasMore;
+        _totalItems = response.totalItems;
+        _isLoading = false;
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      debugPrint("Error loading customers: $e");
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
       });
     }
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  /// 📜 Scroll listener for pagination
+  void _scrollListener() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        !_isLoadingMore &&
+        !_isLoading &&
+        _hasMoreData) {
+      _loadMoreData();
+    }
   }
 
-  /// 🔽 Pull to refresh handler
+  /// 🔽 Load more data for pagination
+  Future<void> _loadMoreData() async {
+    if (!_hasMoreData || _isLoadingMore || _isLoading) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    _currentPage++;
+    await _loadCustomers(isLoadMore: true);
+  }
+
+  /// 🔍 API-based Search functionality with debounce
+  void _searchCustomers(String query) {
+    setState(() {
+      _searchQuery = query;
+    });
+
+    // Cancel previous timer
+    _searchDebounceTimer?.cancel();
+
+    // Set new timer for debounce
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _loadCustomers(isRefresh: true, search: query);
+    });
+  }
+
+  void _clearSearch() {
+    setState(() {
+      _searchQuery = '';
+      _searchController.clear();
+    });
+    _loadCustomers(isRefresh: true);
+  }
+
+  /// 🔄 Pull to refresh handler
   Future<void> _onRefresh() async {
-    await _loadCustomers();
+    await _loadCustomers(isRefresh: true);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _searchController.dispose();
+    _searchDebounceTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -215,16 +407,15 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                             color: Colors.grey,
                           ),
                           const SizedBox(width: 8),
-
                           Expanded(
                             child: TextField(
-                              controller: _searchController, // Add controller
+                              controller: _searchController,
                               decoration: const InputDecoration(
                                 hintText: "Search by name or phone...",
                                 border: InputBorder.none,
                                 hintStyle: TextStyle(color: Colors.grey),
                               ),
-                              onChanged: _filterCustomers, // Trigger search
+                              onChanged: _searchCustomers,
                               style: const TextStyle(color: Colors.black),
                             ),
                           ),
@@ -235,10 +426,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                                 size: 18,
                                 color: Colors.grey,
                               ),
-                              onPressed: () {
-                                _searchController.clear();
-                                _filterCustomers(''); // Clear search
-                              },
+                              onPressed: _clearSearch,
                             ),
                         ],
                       ),
@@ -255,12 +443,15 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                                   builder: (_) => const AddCustomerScreen(),
                                 ),
                               );
+                              if (result == true) {
+                                _loadCustomers(isRefresh: true);
+                              }
                             }
                             : () {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
-                                    "You don't have permission to add customer. Please contact support.",
+                                    "You don't have permission to add customer.",
                                   ),
                                   backgroundColor: Colors.red,
                                 ),
@@ -288,60 +479,130 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
               child: RefreshIndicator(
                 color: Colors.orange,
                 onRefresh: _onRefresh,
-                child: FutureBuilder<List<Customer>>(
-                  future: customerFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
+                child:
+                    _isLoading && _allCustomers.isEmpty
+                        ? const Center(child: CircularProgressIndicator())
+                        : CustomScrollView(
+                          controller: _scrollController,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          slivers: [
+                            /// CUSTOMER COUNT
+                            if (_allCustomers.isNotEmpty)
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Text(
+                                    "Customers (${_allCustomers.length} of $_totalItems)",
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              ),
 
-                    if (snapshot.hasError) {
-                      return const Center(
-                        child: Text("Failed to load customers"),
-                      );
-                    }
+                            /// CUSTOMER LIST
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate((
+                                context,
+                                index,
+                              ) {
+                                if (index < _allCustomers.length) {
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    child: CustomerCard(
+                                      customer: _allCustomers[index],
+                                      onRefresh:
+                                          () => _loadCustomers(isRefresh: true),
+                                      canEditCustomer: canEditCustomer,
+                                      canDeleteCustomer: canDeleteCustomer,
+                                      userRole: widget.userRole,
+                                      employeeId: widget.employeeId,
+                                    ),
+                                  );
+                                }
+                                return null;
+                              }, childCount: _allCustomers.length),
+                            ),
 
-                    // Update lists after widget is built
-                    if (snapshot.hasData) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _updateCustomerLists(snapshot.data!);
-                      });
-                    }
+                            /// EMPTY STATE
+                            if (_allCustomers.isEmpty && !_isLoading)
+                              SliverFillRemaining(
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          _searchQuery.isNotEmpty
+                                              ? Icons.search_off
+                                              : Icons.people_outline,
+                                          size: 60,
+                                          color: Colors.grey,
+                                        ),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          _searchQuery.isNotEmpty
+                                              ? "No customers found for '$_searchQuery'"
+                                              : "No customers found",
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                        if (_searchQuery.isNotEmpty)
+                                          const SizedBox(height: 8),
+                                        if (_searchQuery.isNotEmpty)
+                                          ElevatedButton(
+                                            onPressed: _clearSearch,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(
+                                                0xFFFFA54A,
+                                              ),
+                                            ),
+                                            child: const Text("Clear Search"),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
 
-                    // Decide which list to display
-                    List<Customer> displayCustomers;
-                    if (_searchQuery.isEmpty) {
-                      displayCustomers = snapshot.hasData ? snapshot.data! : [];
-                    } else {
-                      displayCustomers = _filteredCustomers;
-                    }
+                            /// LOAD MORE INDICATOR
+                            if (_isLoadingMore)
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                ),
+                              ),
 
-                    if (displayCustomers.isEmpty) {
-                      return Center(
-                        child: Text(
-                          _searchQuery.isNotEmpty
-                              ? "No customers found for '$_searchQuery'"
-                              : "No customers found",
+                            /// NO MORE CUSTOMERS MESSAGE
+                            if (!_hasMoreData && _allCustomers.isNotEmpty)
+                              SliverToBoxAdapter(
+                                child: const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(
+                                    child: Text(
+                                      "No more customers",
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            /// EXTRA SPACE AT BOTTOM
+                            SliverToBoxAdapter(child: Container(height: 50)),
+                          ],
                         ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.all(16),
-                      itemCount: displayCustomers.length,
-                      itemBuilder: (_, index) {
-                        return CustomerCard(
-                          customer: displayCustomers[index],
-                          onRefresh: _loadCustomers,
-                          canEditCustomer: canEditCustomer,
-                          canDeleteCustomer:
-                              canDeleteCustomer, // ✅ PASS DELETE PERMISSION
-                        );
-                      },
-                    );
-                  },
-                ),
               ),
             ),
           ],
@@ -356,17 +617,20 @@ class CustomerCard extends StatelessWidget {
   final Customer customer;
   final VoidCallback onRefresh;
   final bool canEditCustomer;
-  final bool canDeleteCustomer; // ✅ ADD DELETE PERMISSION
+  final bool canDeleteCustomer;
+  final String userRole;
+  final int employeeId;
 
   const CustomerCard({
     super.key,
     required this.customer,
     required this.onRefresh,
     required this.canEditCustomer,
-    required this.canDeleteCustomer, // ✅ ADDED
+    required this.canDeleteCustomer,
+    required this.userRole,
+    required this.employeeId,
   });
 
-  // ✅ DELETE CUSTOMER FUNCTION
   Future<void> _deleteCustomer(BuildContext context) async {
     if (!canDeleteCustomer) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -378,7 +642,17 @@ class CustomerCard extends StatelessWidget {
       return;
     }
 
-    // Confirmation dialog
+    if (userRole == "employee" &&
+        customer.assignedEmployeeId != employeeId.toString()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("You can only delete your assigned customers."),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder:
@@ -412,7 +686,7 @@ class CustomerCard extends StatelessWidget {
               backgroundColor: Colors.green,
             ),
           );
-          onRefresh(); // Refresh the list
+          onRefresh();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -427,8 +701,16 @@ class CustomerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    bool canEditThisCustomer = canEditCustomer;
+    bool canDeleteThisCustomer = canDeleteCustomer;
+
+    if (userRole == "employee" &&
+        customer.assignedEmployeeId != employeeId.toString()) {
+      canEditThisCustomer = false;
+      canDeleteThisCustomer = false;
+    }
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade400),
@@ -437,7 +719,6 @@ class CustomerCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ✅ TOP ROW WITH 3 DOTS MENU
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -445,10 +726,8 @@ class CustomerCard extends StatelessWidget {
                 "Customer Info",
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
-
-              // ✅ 3 DOTS MENU
               Opacity(
-                opacity: canDeleteCustomer ? 1 : 0.4,
+                opacity: canDeleteThisCustomer ? 1 : 0.4,
                 child: PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert, size: 20),
                   onSelected: (value) {
@@ -472,7 +751,7 @@ class CustomerCard extends StatelessWidget {
                                 "Delete",
                                 style: TextStyle(
                                   color:
-                                      canDeleteCustomer
+                                      canDeleteThisCustomer
                                           ? Colors.red
                                           : Colors.grey,
                                   fontWeight: FontWeight.w500,
@@ -486,24 +765,21 @@ class CustomerCard extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 10),
-
-          infoRow("Customer Name:", "${customer.name} ${customer.lastName}"),
-          infoRow("Mobile No.", customer.phone),
-          infoRow("Employee:", customer.assignedEmployee ?? "-"),
-          infoRow("Site Type:", customer.siteType ?? "-"),
-
+          _infoRow("Customer Name:", "${customer.name} ${customer.lastName}"),
+          _infoRow("Mobile No.", customer.phone),
+          _infoRow("Employee:", customer.assignedEmployee ?? "-"),
+          _infoRow("Employee ID:", customer.assignedEmployeeId ?? "-"),
+          _infoRow("Site Type:", customer.siteType ?? "-"),
           const SizedBox(height: 14),
-
           Row(
             children: [
               Expanded(
                 child: Opacity(
-                  opacity: canEditCustomer ? 1 : 0.4,
+                  opacity: canEditThisCustomer ? 1 : 0.4,
                   child: InkWell(
                     onTap:
-                        canEditCustomer
+                        canEditThisCustomer
                             ? () async {
                               await showDialog(
                                 context: context,
@@ -517,9 +793,11 @@ class CustomerCard extends StatelessWidget {
                             }
                             : () {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
+                                SnackBar(
                                   content: Text(
-                                    "You don't have permission to edit customer.",
+                                    userRole == "employee"
+                                        ? "You can only edit your assigned customers."
+                                        : "You don't have permission to edit customer.",
                                   ),
                                   backgroundColor: Colors.red,
                                 ),
@@ -547,9 +825,8 @@ class CustomerCard extends StatelessWidget {
                   ),
                 ),
               ),
-
               const SizedBox(width: 10),
-              actionBtn(
+              _actionBtn(
                 icon: Icons.history,
                 text: "History",
                 color: Colors.grey,
@@ -563,7 +840,7 @@ class CustomerCard extends StatelessWidget {
                 },
               ),
               const SizedBox(width: 10),
-              actionBtn(
+              _actionBtn(
                 icon: Icons.phone,
                 text: "Follow UP",
                 color: Colors.black,
@@ -573,7 +850,7 @@ class CustomerCard extends StatelessWidget {
                     barrierDismissible: false,
                     builder: (_) => AddFollowUpPopup(customerId: customer.id),
                   );
-                  onRefresh(); // ✅ refresh after follow-up
+                  onRefresh();
                 },
               ),
             ],
@@ -582,28 +859,27 @@ class CustomerCard extends StatelessWidget {
       ),
     );
   }
-}
 
-/// ================= HELPERS =================
-Widget infoRow(String title, String value) {
-  return Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: RichText(
-      text: TextSpan(
-        style: const TextStyle(color: Colors.black),
-        children: [
-          TextSpan(
-            text: "$title ",
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          TextSpan(text: value, style: const TextStyle(color: Colors.grey)),
-        ],
+  Widget _infoRow(String title, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: RichText(
+        text: TextSpan(
+          style: const TextStyle(color: Colors.black),
+          children: [
+            TextSpan(
+              text: "$title ",
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            TextSpan(text: value, style: const TextStyle(color: Colors.grey)),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
-Widget actionBtn({
+Widget _actionBtn({
   required IconData icon,
   required String text,
   required Color color,

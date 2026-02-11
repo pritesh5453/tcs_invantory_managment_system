@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/employee/services/punchInService.dart';
@@ -33,10 +34,12 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
   /// ================= FETCH STATUS =================
   Future<void> _fetchPunchStatus() async {
     final status = await _punchService.fetchPunchStatus(widget.employeeId);
-    setState(() => punchStatus = status);
+    if (mounted) {
+      setState(() => punchStatus = status);
+    }
   }
 
-  /// ================= WIFI CHECK (CRASH SAFE) =================
+  /// ================= WIFI + OFFICE IP CHECK =================
   Future<bool> _isOnOfficeWifi() async {
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
@@ -46,8 +49,23 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
         return false;
       }
 
-      // ✅ WiFi connected
-      return true;
+      // 🔥 Get device IPv4 address
+      for (var interface in await NetworkInterface.list()) {
+        for (var addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4) {
+            final ip = addr.address;
+            debugPrint("Device IP: $ip");
+
+            // ✅ Office WiFi Range Check
+            if (ip.startsWith("192.168.1.")) {
+              return true;
+            }
+          }
+        }
+      }
+
+      widget.showSnackBar("Not connected to Office Network");
+      return false;
     } catch (e) {
       debugPrint("Connectivity error: $e");
       widget.showSnackBar("Network check failed");
@@ -61,8 +79,12 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
     if (!allowed) return;
 
     setState(() => isPunchLoading = true);
+
     final result = await _punchService.punchIn(widget.employeeId);
-    setState(() => isPunchLoading = false);
+
+    if (mounted) {
+      setState(() => isPunchLoading = false);
+    }
 
     widget.showSnackBar(result['message']);
 
@@ -76,8 +98,12 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
     if (!allowed) return;
 
     setState(() => isPunchLoading = true);
+
     final result = await _punchService.punchOut(widget.employeeId);
-    setState(() => isPunchLoading = false);
+
+    if (mounted) {
+      setState(() => isPunchLoading = false);
+    }
 
     widget.showSnackBar(result['message']);
 
@@ -145,6 +171,7 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
   }
 
   /// ================= UI HELPERS =================
+
   Widget _refreshButton() {
     return ElevatedButton(
       onPressed: _fetchPunchStatus,

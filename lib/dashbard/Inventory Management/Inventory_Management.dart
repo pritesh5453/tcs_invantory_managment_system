@@ -16,11 +16,19 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   late bool canAddInventory;
   late bool canDeleteInventory;
   final Dio _dio = Dio();
+
   List<dynamic> purchases = [];
   List<dynamic> filteredPurchases = [];
   bool isLoading = true;
+  bool loadingMore = false;
   String searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+
+  // ✅ PAGINATION VARIABLES
+  int _currentPage = 1;
+  bool _hasMoreData = true;
+  final ScrollController _scrollController = ScrollController();
+  final int _pageLimit = 10;
 
   @override
   void initState() {
@@ -32,36 +40,111 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     canDeleteInventory = PermissionManager.hasPermission(
       "Inventory Management_Delete",
     );
+
     fetchPurchases();
+
+    // Add scroll listener for pagination
+    _scrollController.addListener(_scrollListener);
   }
 
-  Future<void> fetchPurchases() async {
-    setState(() {
-      isLoading = true;
-    });
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
+  /// ================= FETCH PURCHASES WITH PAGINATION =================
+  Future<List<dynamic>> _fetchPurchasesAPI({
+    int page = 1,
+    String search = '',
+  }) async {
     try {
       final response = await _dio.get(
         'https://dashboarduat.theceramicstudio.in/api/purchase/list',
+        queryParameters: {
+          'page': page,
+          'limit': _pageLimit,
+          if (search.isNotEmpty) 'search': search,
+        },
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
-        setState(() {
-          purchases = response.data['purchases'];
-          filteredPurchases = purchases;
-          isLoading = false;
-        });
+        return response.data['purchases'] ?? [];
       } else {
         throw Exception('Failed to load purchases');
       }
     } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
-      print('Error fetching purchases: $e');
+      print('API Error fetching purchases: $e');
+      throw Exception('Failed to load purchases');
     }
   }
 
+  Future<void> fetchPurchases({bool isLoadMore = false}) async {
+    if (!isLoadMore) {
+      setState(() {
+        isLoading = true;
+        _currentPage = 1;
+        purchases = [];
+        filteredPurchases = [];
+      });
+    } else {
+      setState(() {
+        loadingMore = true;
+      });
+    }
+
+    try {
+      final List<dynamic> newPurchases = await _fetchPurchasesAPI(
+        page: _currentPage,
+        search: searchQuery,
+      );
+
+      setState(() {
+        if (isLoadMore) {
+          purchases.addAll(newPurchases);
+          filteredPurchases.addAll(newPurchases);
+        } else {
+          purchases = newPurchases;
+          filteredPurchases = newPurchases;
+        }
+
+        // ✅ CHECK IF WE HAVE MORE DATA
+        _hasMoreData = newPurchases.length >= _pageLimit;
+        isLoading = false;
+        loadingMore = false;
+      });
+    } catch (e) {
+      print('Error fetching purchases: $e');
+      setState(() {
+        isLoading = false;
+        loadingMore = false;
+      });
+    }
+  }
+
+  /// ================= SCROLL LISTENER FOR PAGINATION =================
+  void _scrollListener() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        !loadingMore &&
+        _hasMoreData) {
+      _loadMoreData();
+    }
+  }
+
+  /// ================= LOAD MORE DATA =================
+  Future<void> _loadMoreData() async {
+    if (!_hasMoreData || loadingMore) return;
+
+    setState(() {
+      loadingMore = true;
+    });
+
+    _currentPage++;
+    await fetchPurchases(isLoadMore: true);
+  }
+
+  /// ================= FILTER PURCHASES (LOCAL SEARCH) =================
   void filterPurchases(String query) {
     setState(() {
       searchQuery = query;
@@ -85,6 +168,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     });
   }
 
+  /// ================= FORMAT DATE =================
   String formatDate(String dateString) {
     try {
       final date = DateTime.parse(dateString);
@@ -94,7 +178,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     }
   }
 
-  // Edit function
+  /// ================= EDIT FUNCTION =================
   void _openEditInventorySheet(
     BuildContext context,
     Map<String, dynamic> purchase,
@@ -199,7 +283,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
             // List
             Expanded(
               child:
-                  isLoading
+                  isLoading && purchases.isEmpty
                       ? const Center(
                         child: CircularProgressIndicator(
                           color: Color(0xffFFA54A),
@@ -240,13 +324,41 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                         color: const Color(0xffFFA54A),
                         onRefresh: fetchPurchases,
                         child: ListView.builder(
+                          controller: _scrollController,
                           padding: const EdgeInsets.all(16),
-                          itemCount: filteredPurchases.length,
+                          itemCount:
+                              filteredPurchases.length +
+                              (loadingMore ? 1 : 0) +
+                              (_hasMoreData && !loadingMore ? 1 : 0),
                           itemBuilder: (_, index) {
+                            // Loading more indicator
+                            if (index >= filteredPurchases.length) {
+                              if (loadingMore) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      color: Color(0xffFFA54A),
+                                    ),
+                                  ),
+                                );
+                              } else if (!_hasMoreData) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(
+                                    child: Text(
+                                      "No more purchases",
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
+                                  ),
+                                );
+                              }
+                              return const SizedBox(); // For hasMore but not loading
+                            }
+
                             final purchase = filteredPurchases[index];
                             return InventoryCard(
                               purchase: purchase,
-
                               canDelete: canDeleteInventory,
                               onEdit: () {
                                 _openEditInventorySheet(context, purchase);
@@ -409,7 +521,6 @@ class InventoryCard extends StatelessWidget {
   const InventoryCard({
     super.key,
     required this.purchase,
-
     required this.canDelete,
     required this.onView,
     required this.onEdit,

@@ -1,8 +1,10 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
-import 'dart:io';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/add_quotation.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/dispatch_challan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/edit_quotation.dart';
@@ -26,40 +28,132 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
 
   List<Map<String, dynamic>> quotations = [];
   bool loading = true;
+  bool loadingMore = false;
   String searchQuery = '';
-  List<Map<String, dynamic>> filteredQuotations = [];
+  final TextEditingController _searchController = TextEditingController();
+
+  // ✅ PAGINATION VARIABLES
+  int _currentPage = 1;
+  int _totalPages = 1;
+  bool _hasMoreData = true;
+  final ScrollController _scrollController = ScrollController();
+  Timer? _searchTimer;
   bool _isDownloadingPdf = false;
 
   @override
   void initState() {
     super.initState();
     _fetchQuotations();
+
+    // Add scroll listener for pagination
+    _scrollController.addListener(_scrollListener);
   }
 
-  /// ================= FETCH QUOTATIONS API =================
-  Future<void> _fetchQuotations() async {
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _searchTimer?.cancel();
+    super.dispose();
+  }
+
+  /// ================= FETCH QUOTATIONS API WITH PAGINATION =================
+  Future<Map<String, dynamic>> _fetchQuotationsAPI({
+    int page = 1,
+    String search = '',
+  }) async {
     try {
-      final response = await dio.get("/Quotation/list");
+      final response = await dio.get(
+        "/Quotation/list",
+        queryParameters: {
+          'page': page,
+          'limit': 10,
+          if (search.isNotEmpty) 'search': search,
+        },
+      );
 
-      if (response.data['success'] == true) {
-        setState(() {
-          quotations =
-              (response.data['quotations'] as List)
-                  .cast<Map<String, dynamic>>()
-                  .toList();
-
-          filteredQuotations = quotations;
-          loading = false;
-        });
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final data = response.data;
+        return {
+          'quotations':
+              (data['quotations'] as List).cast<Map<String, dynamic>>(),
+          'currentPage': data['pagination']['currentPage'] ?? 1,
+          'totalPages': data['pagination']['totalPages'] ?? 1,
+          'totalItems': data['pagination']['totalItems'] ?? 0,
+          'hasMore':
+              (data['pagination']['currentPage'] ?? 1) <
+              (data['pagination']['totalPages'] ?? 1),
+        };
       } else {
-        setState(() => loading = false);
-        _showSnackbar("Failed to load quotations", isError: true);
+        throw Exception('Failed to load quotations');
       }
     } catch (e) {
       debugPrint("Quotations fetch error: $e");
-      setState(() => loading = false);
-      _showSnackbar("Network error: $e", isError: true);
+      throw Exception('Network error: $e');
     }
+  }
+
+  Future<void> _fetchQuotations({bool isLoadMore = false}) async {
+    if (!isLoadMore) {
+      setState(() {
+        loading = true;
+        _currentPage = 1;
+        quotations = [];
+      });
+    } else {
+      setState(() {
+        loadingMore = true;
+      });
+    }
+
+    try {
+      final result = await _fetchQuotationsAPI(
+        page: _currentPage,
+        search: searchQuery,
+      );
+
+      setState(() {
+        if (isLoadMore) {
+          quotations.addAll(result['quotations']);
+        } else {
+          quotations = result['quotations'];
+        }
+
+        _currentPage = result['currentPage'];
+        _totalPages = result['totalPages'];
+        _hasMoreData = result['hasMore'];
+        loading = false;
+        loadingMore = false;
+      });
+    } catch (e) {
+      debugPrint("Error fetching quotations: $e");
+      setState(() {
+        loading = false;
+        loadingMore = false;
+      });
+      _showSnackbar("Failed to load quotations", isError: true);
+    }
+  }
+
+  /// ================= SCROLL LISTENER FOR PAGINATION =================
+  void _scrollListener() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        !loadingMore &&
+        _hasMoreData) {
+      _loadMoreData();
+    }
+  }
+
+  /// ================= LOAD MORE DATA =================
+  Future<void> _loadMoreData() async {
+    if (!_hasMoreData || loadingMore) return;
+
+    setState(() {
+      loadingMore = true;
+    });
+
+    _currentPage++;
+    await _fetchQuotations(isLoadMore: true);
   }
 
   /// ================= EDIT QUOTATION FUNCTION =================
@@ -78,7 +172,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
             builder:
                 (_) => EditQuotationScreen(
                   quotationId: quotationId.toString(),
-                  quotationData: quotationData, // ✅ PREFILL DATA
+                  quotationData: quotationData,
                 ),
           ),
         );
@@ -140,28 +234,26 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
-  /// ================= SEARCH FUNCTIONALITY =================
+  /// ================= SEARCH FUNCTIONALITY (API-BASED) =================
   void _searchQuotations(String query) {
+    _searchTimer?.cancel();
+
     setState(() {
       searchQuery = query;
-      if (query.isEmpty) {
-        filteredQuotations = quotations;
-      } else {
-        filteredQuotations =
-            quotations.where((quotation) {
-              final clientName =
-                  quotation['clientName']?.toString().toLowerCase() ?? '';
-              final quotationId =
-                  quotation['id']?.toString().toLowerCase() ?? '';
-              final contactNo =
-                  quotation['contactNo']?.toString().toLowerCase() ?? '';
-
-              return clientName.contains(query.toLowerCase()) ||
-                  quotationId.contains(query.toLowerCase()) ||
-                  contactNo.contains(query.toLowerCase());
-            }).toList();
-      }
     });
+
+    // Debounce search (500ms)
+    _searchTimer = Timer(const Duration(milliseconds: 500), () {
+      _fetchQuotations();
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() {
+      searchQuery = '';
+    });
+    _fetchQuotations();
   }
 
   void _showSnackbar(String message, {bool isError = true}) {
@@ -176,7 +268,12 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
 
   /// ================= REFRESH FUNCTION =================
   Future<void> _refreshQuotations() async {
-    setState(() => loading = true);
+    setState(() {
+      loading = true;
+      _currentPage = 1;
+      searchQuery = '';
+      _searchController.clear();
+    });
     await _fetchQuotations();
   }
 
@@ -184,27 +281,30 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: RefreshIndicator(
-        onRefresh: _refreshQuotations,
-        child: Stack(
-          children: [
-            SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          onRefresh: _refreshQuotations,
+          child: Stack(
+            children: [
+              // ✅ YAHAN PAR SINGLE CHILD SCROLL VIEW KI JAGAH LISTVIEW USE KARENGE
+              ListView(
+                controller: _scrollController,
+                physics: const AlwaysScrollableScrollPhysics(),
                 children: [
                   /// HEADER WITH SEARCH
                   _buildHeader(),
 
-                  SizedBox(height: 20),
+                  const SizedBox(height: 20),
 
                   /// LOADING INDICATOR
-                  if (loading)
+                  if (loading && quotations.isEmpty)
                     Container(
                       height: MediaQuery.of(context).size.height * 0.6,
                       child: const Center(child: CircularProgressIndicator()),
                     )
                   /// EMPTY STATE
-                  else if (filteredQuotations.isEmpty && !loading)
+                  else if (quotations.isEmpty && !loading)
                     Container(
                       height: MediaQuery.of(context).size.height * 0.6,
                       child: Center(
@@ -218,7 +318,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                               size: 60,
                               color: Colors.grey.shade400,
                             ),
-                            SizedBox(height: 16),
+                            const SizedBox(height: 16),
                             Text(
                               searchQuery.isEmpty
                                   ? "No quotations found"
@@ -229,11 +329,11 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                               ),
                             ),
                             if (searchQuery.isEmpty) ...[
-                              SizedBox(height: 8),
+                              const SizedBox(height: 8),
                               TextButton.icon(
                                 onPressed: _refreshQuotations,
-                                icon: Icon(Icons.refresh),
-                                label: Text("Refresh"),
+                                icon: const Icon(Icons.refresh),
+                                label: const Text("Refresh"),
                               ),
                             ],
                           ],
@@ -251,7 +351,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                "Quotations (${filteredQuotations.length})",
+                                "Quotations (${quotations.length})",
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   color: Colors.grey.shade700,
@@ -259,8 +359,8 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                               ),
                               TextButton.icon(
                                 onPressed: _refreshQuotations,
-                                icon: Icon(Icons.refresh, size: 18),
-                                label: Text("Refresh"),
+                                icon: const Icon(Icons.refresh, size: 18),
+                                label: const Text("Refresh"),
                                 style: TextButton.styleFrom(
                                   foregroundColor: Colors.orange,
                                 ),
@@ -269,13 +369,15 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                           ),
                         ),
 
-                        /// QUOTATION CARDS
-                        ...filteredQuotations
+                        /// QUOTATION CARDS - ListView.builder se replace karein
+                        ...quotations
+                            .asMap()
+                            .entries
                             .map(
-                              (quotation) => InvoiceCard(
-                                quotation: quotation,
+                              (entry) => InvoiceCard(
+                                quotation: entry.value,
                                 onEdit: () {
-                                  _openEditQuotation(quotation['id']);
+                                  _openEditQuotation(entry.value['id']);
                                 },
                                 onPay: () {
                                   Navigator.push(
@@ -283,10 +385,10 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                                     MaterialPageRoute(
                                       builder:
                                           (context) => SettlementScreen(
-                                            quotationId: quotation['id'],
+                                            quotationId: entry.value['id'],
                                             dueAmount:
                                                 double.tryParse(
-                                                  quotation['due_amount']
+                                                  entry.value['due_amount']
                                                           ?.toString() ??
                                                       '0',
                                                 ) ??
@@ -302,8 +404,8 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                                     MaterialPageRoute(
                                       builder:
                                           (context) => DispatchChallanScreen(
-                                            quotationId: quotation['id'],
-                                            quotationData: quotation,
+                                            quotationId: entry.value['id'],
+                                            quotationData: entry.value,
                                           ),
                                     ),
                                   );
@@ -313,7 +415,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                                     context: context,
                                     builder:
                                         (context) => FollowUpScreen(
-                                          quotationId: quotation['id'],
+                                          quotationId: entry.value['id'],
                                           onFollowUpSaved: () {
                                             _refreshQuotations();
                                             _showSnackbar(
@@ -325,49 +427,70 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                                   );
                                 },
                                 onDownloadPdf: (pdfType) {
-                                  _downloadAndOpenPdf(pdfType, quotation['id']);
+                                  _downloadAndOpenPdf(
+                                    pdfType,
+                                    entry.value['id'],
+                                  );
                                 },
                               ),
                             )
                             .toList(),
 
-                        SizedBox(height: 20),
+                        /// LOAD MORE INDICATOR
+                        if (loadingMore)
+                          const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
+                          ),
+
+                        if (!_hasMoreData && quotations.isNotEmpty)
+                          const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(
+                              child: Text(
+                                "No more quotations",
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                          ),
+
+                        const SizedBox(height: 20),
                       ],
                     ),
                 ],
               ),
-            ),
 
-            // PDF Downloading Overlay
-            if (_isDownloadingPdf)
-              Container(
-                color: Colors.black.withOpacity(0.5),
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(color: Colors.orange),
-                        SizedBox(height: 20),
-                        Text(
-                          'Downloading PDF...',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey[700],
+              // PDF Downloading Overlay
+              if (_isDownloadingPdf)
+                Container(
+                  color: Colors.black.withOpacity(0.5),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(color: Colors.orange),
+                          const SizedBox(height: 20),
+                          Text(
+                            'Downloading PDF...',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[700],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -375,66 +498,92 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
 
   /// ================= HEADER WIDGET =================
   Widget _buildHeader() {
-    return SafeArea(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: const BoxDecoration(
-          color: Color(0xFFFFA54A),
-          borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(25),
-            bottomRight: Radius.circular(25),
+    return Container(
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 12,
+        left: 12,
+        right: 12,
+        bottom: 12,
+      ),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFFA54A),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(25),
+          bottomRight: Radius.circular(25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              /// SEARCH FIELD
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: Row(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 12),
+                        child: Icon(Icons.search, color: Colors.grey),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: _searchQuotations,
+                          decoration: InputDecoration(
+                            hintText: "Search by client name, ID or contact...",
+                            hintStyle: const TextStyle(color: Colors.grey),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (searchQuery.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: _clearSearch,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              /// ADD BUTTON
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AddQuotationSheet(),
+                    ),
+                  ).then((_) {
+                    _refreshQuotations();
+                  });
+                },
+                child: Container(
+                  height: 45,
+                  width: 45,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFA9C42),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: const Icon(Icons.add, color: Colors.white),
+                ),
+              ),
+            ],
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                /// SEARCH FIELD
-                Expanded(
-                  child: TextField(
-                    onChanged: _searchQuotations,
-                    decoration: InputDecoration(
-                      hintText: "Search by client name, ID or contact...",
-                      prefixIcon: const Icon(Icons.search),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 12),
-
-                /// ADD BUTTON
-                InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => AddQuotationSheet(),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    height: 45,
-                    width: 45,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFA9C42),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: const Icon(Icons.add, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }

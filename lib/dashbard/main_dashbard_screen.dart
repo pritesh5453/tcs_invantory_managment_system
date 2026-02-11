@@ -57,6 +57,7 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
   String userRole = "";
   String userName = "";
   int userId = 0;
+  int employeeId = 0; // ✅ ADD EMPLOYEE ID
   bool isLoading = true;
 
   // Special top items (will appear at the top of drawer)
@@ -186,6 +187,11 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
         userId = prefs.getInt("userId") ?? 0;
         userRole = prefs.getString("role") ?? "employee";
         userName = prefs.getString("userName") ?? "";
+
+        // ✅ EMPLOYEE ID SET KARO
+        // Agar employee hai to userId hi employeeId hai
+        // Agar admin/superadmin hai to alag employeeId hoga (agar assigned ho to)
+        employeeId = prefs.getInt("employeeId") ?? userId; // Default userId se
       });
     } catch (e) {
       print("Error loading user data: $e");
@@ -309,6 +315,7 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
               userRole: userRole,
               userName: userName,
               userId: userId,
+              employeeId: employeeId, // ✅ PASS EMPLOYEE ID
               filteredMenuItems: getCombinedMenuItems(),
               specialMenuItems: getFilteredSpecialItems(),
               regularMenuItems: getFilteredRegularItems(),
@@ -357,6 +364,7 @@ class MainScreenWidget extends StatelessWidget {
   final String userRole;
   final String userName;
   final int userId;
+  final int employeeId; // ✅ ADD EMPLOYEE ID
   final List<MenuItem> filteredMenuItems;
   final List<MenuItem> specialMenuItems;
   final List<MenuItem> regularMenuItems;
@@ -368,6 +376,7 @@ class MainScreenWidget extends StatelessWidget {
     required this.userRole,
     required this.userName,
     required this.userId,
+    required this.employeeId, // ✅ ADDED
     required this.filteredMenuItems,
     required this.specialMenuItems,
     required this.regularMenuItems,
@@ -509,7 +518,10 @@ class MainScreenWidget extends StatelessWidget {
             )
             : DashboardPage(userId: userId, role: userRole);
       case "Customer Management":
-        return CustomerManagementScreen();
+        return CustomerManagementScreen(
+          employeeId: employeeId, // ✅ EMPLOYEE ID PASS KARO
+          userRole: userRole, // ✅ ROLE BHI PASS KARO
+        );
       case "Employee Registration":
         return EmployeeManagmentScreen();
       case "Quality Management":

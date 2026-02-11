@@ -207,18 +207,19 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
   late bool canPrint;
   late bool canReturnPrint;
 
-  final Dio dio = Dio(
-    BaseOptions(
-      baseUrl:
-          "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan",
-      responseType: ResponseType.bytes,
-    ),
-  );
+  final Dio dio = Dio();
 
   bool loading = false;
+  bool loadingMore = false;
   String searchQuery = '';
   List<DeliveryChallan> challans = [];
   final Debouncer _debouncer = Debouncer(milliseconds: 500);
+
+  // ✅ PAGINATION VARIABLES
+  int _currentPage = 1;
+  int _totalPages = 1;
+  bool _hasMoreData = true;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -236,37 +237,106 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
     );
 
     fetchChallans();
+
+    // Add scroll listener for pagination
+    _scrollController.addListener(_scrollListener);
   }
 
-  /// ================= FETCH API WITH SEARCH =================
-  Future<void> fetchChallans({String? search}) async {
-    setState(() => loading = true);
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// ================= FETCH API WITH PAGINATION =================
+  Future<void> fetchChallans({String? search, bool isLoadMore = false}) async {
+    if (!isLoadMore) {
+      setState(() {
+        loading = true;
+        _currentPage = 1;
+        challans = [];
+      });
+    } else {
+      setState(() {
+        loadingMore = true;
+      });
+    }
+
     try {
-      final Map<String, dynamic> queryParams = {"page": 1, "limit": 10};
+      final Map<String, dynamic> queryParams = {
+        "page": _currentPage,
+        "limit": 10,
+      };
       if (search != null && search.isNotEmpty) {
         queryParams['search'] = search;
       }
 
       print('Fetching delivery challans with query: $queryParams');
 
-      final res = await Dio().get(
+      final res = await dio.get(
         "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan/list",
         queryParameters: queryParams,
       );
 
-      final List data = res.data['challans'];
-      challans = data.map((e) => DeliveryChallan.fromJson(e)).toList();
+      if (res.statusCode == 200 && res.data['success'] == true) {
+        final List data = res.data['challans'];
+        final pagination = res.data['pagination'] ?? {};
+
+        setState(() {
+          if (isLoadMore) {
+            challans.addAll(
+              data.map((e) => DeliveryChallan.fromJson(e)).toList(),
+            );
+          } else {
+            challans = data.map((e) => DeliveryChallan.fromJson(e)).toList();
+          }
+
+          _currentPage = pagination['currentPage'] ?? _currentPage;
+          _totalPages = pagination['totalPages'] ?? _totalPages;
+          _hasMoreData = (_currentPage) < (_totalPages);
+
+          loading = false;
+          loadingMore = false;
+        });
+      } else {
+        throw Exception('Failed to load delivery challans');
+      }
     } catch (e) {
       debugPrint("Delivery Challan API Error: $e");
+      setState(() {
+        loading = false;
+        loadingMore = false;
+      });
+      _showError("Failed to load delivery challans");
     }
-    setState(() => loading = false);
+  }
+
+  /// ================= SCROLL LISTENER =================
+  void _scrollListener() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        !loadingMore &&
+        _hasMoreData) {
+      _loadMoreData();
+    }
+  }
+
+  /// ================= LOAD MORE DATA =================
+  Future<void> _loadMoreData() async {
+    if (!_hasMoreData || loadingMore) return;
+
+    setState(() {
+      loadingMore = true;
+    });
+
+    _currentPage++;
+    await fetchChallans(search: searchQuery, isLoadMore: true);
   }
 
   /// ================= SEARCH FUNCTIONALITY =================
   void _searchChallans(String query) {
     setState(() {
       searchQuery = query;
-      loading = true;
     });
 
     _debouncer.run(() {
@@ -277,7 +347,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
   void _clearSearch() {
     setState(() {
       searchQuery = '';
-      loading = true;
     });
     fetchChallans();
   }
@@ -305,7 +374,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
   /// ================= DELETE API =================
   Future<void> deleteChallan(int id) async {
     try {
-      final res = await Dio().delete(
+      final res = await dio.delete(
         "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan/delete/$id",
       );
 
@@ -489,30 +558,78 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
             ),
           ),
 
-          /// ================= LIST =================
+          /// ================= LIST WITH PAGINATION =================
           Expanded(
             child:
-                loading
+                loading && challans.isEmpty
                     ? const Center(child: CircularProgressIndicator())
                     : RefreshIndicator(
                       onRefresh: _refreshChallans,
-                      child:
-                          challans.isEmpty
-                              ? _buildEmptyState()
-                              : ListView.separated(
-                                padding: const EdgeInsets.all(16),
-                                itemCount: challans.length,
-                                separatorBuilder:
-                                    (_, __) => const SizedBox(height: 16),
-                                itemBuilder: (context, index) {
-                                  return _chalanCard(context, challans[index]);
-                                },
+                      child: ListView(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          /// EMPTY STATE
+                          if (challans.isEmpty && !loading)
+                            SizedBox(
+                              height: MediaQuery.of(context).size.height * 0.7,
+                              child: _buildEmptyState(),
+                            )
+                          /// CHALLAN LIST
+                          else if (challans.isNotEmpty)
+                            ..._buildChallanList(),
+
+                          /// LOAD MORE INDICATOR
+                          if (loadingMore)
+                            const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
+
+                          if (!_hasMoreData && challans.isNotEmpty)
+                            const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(
+                                child: Text(
+                                  "No more delivery challans",
+                                  style: TextStyle(color: Colors.grey),
+                                ),
                               ),
+                            ),
+                        ],
+                      ),
                     ),
           ),
         ],
       ),
     );
+  }
+
+  /// ================= BUILD CHALLAN LIST WIDGETS =================
+  List<Widget> _buildChallanList() {
+    return [
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          "Delivery Challans (${challans.length})",
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+      ),
+      ...challans
+          .asMap()
+          .entries
+          .map(
+            (entry) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: _chalanCard(context, entry.value),
+            ),
+          )
+          .toList(),
+    ];
   }
 
   /// ================= EMPTY STATE =================
