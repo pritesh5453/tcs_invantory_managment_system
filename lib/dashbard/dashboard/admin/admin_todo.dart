@@ -38,7 +38,7 @@ class _TodoPageState extends State<TodoPage> {
       setState(() => isLoading = true);
 
       final response = await _dio.post(
-        'https://dashboarduat.theceramicstudio.in/api/todo/CreateTodo',
+        'https://dashboard.theceramicstudio.in/api/todo/CreateTodo',
         data: {
           "title": _titleController.text.trim(),
           "section": widget.section,
@@ -68,14 +68,26 @@ class _TodoPageState extends State<TodoPage> {
       setState(() => isLoading = true);
 
       final response = await _dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/todo/getTodo',
-        queryParameters: {"role": widget.role, "section": widget.section},
+        'https://dashboard.theceramicstudio.in/api/todo/getTodo',
+        queryParameters: {
+          "role": widget.role,
+          "section": widget.section,
+          "user_id": widget.userId, // 👈 IMPORTANT (missing in your code)
+        },
       );
 
       if (response.statusCode == 200) {
-        setState(() {
-          todoList = response.data;
-        });
+        final data = response.data;
+
+        if (data['success'] == true) {
+          setState(() {
+            todoList = data['tasks']; // 👈 Correct extraction
+          });
+        } else {
+          setState(() {
+            todoList = [];
+          });
+        }
       }
     } catch (e) {
       debugPrint('Fetch Todo Error: $e');
@@ -88,7 +100,7 @@ class _TodoPageState extends State<TodoPage> {
   Future<void> deleteTodo(int id) async {
     try {
       await _dio.delete(
-        'https://dashboarduat.theceramicstudio.in/api/todo/Delete/$id',
+        'https://dashboard.theceramicstudio.in/api/todo/Delete/$id',
       );
 
       fetchTodos();

@@ -115,7 +115,7 @@ class _WalletScreenState extends State<WalletScreen> {
   // Dio Instance
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: 'https://dashboarduat.theceramicstudio.in/api',
+      baseUrl: 'https://dashboard.theceramicstudio.in/api',
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
     ),

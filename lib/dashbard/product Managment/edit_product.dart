@@ -32,7 +32,7 @@ class EditProductSheet extends StatefulWidget {
 class _EditProductSheetState extends State<EditProductSheet> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );

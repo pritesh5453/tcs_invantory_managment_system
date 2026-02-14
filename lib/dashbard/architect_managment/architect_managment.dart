@@ -198,7 +198,7 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
 
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in",
+      baseUrl: "https://dashboard.theceramicstudio.in",
       headers: {"Content-Type": "application/json"},
     ),
   );

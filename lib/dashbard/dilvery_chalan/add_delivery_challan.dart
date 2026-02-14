@@ -175,7 +175,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
 
       try {
         final response = await dio.get(
-          "https://dashboarduat.theceramicstudio.in/api/Quotation/search/$query",
+          "https://dashboard.theceramicstudio.in/api/Quotation/search/$query",
         );
 
         if (response.statusCode == 200 && response.data['success'] == true) {
@@ -291,7 +291,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       debugPrint("Payload: ${jsonEncode(payload)}");
 
       final response = await dio.post(
-        "https://dashboarduat.theceramicstudio.in/api/Quotation/generate-dc",
+        "https://dashboard.theceramicstudio.in/api/Quotation/generate-dc",
         data: payload,
         options: Options(headers: {"Content-Type": "application/json"}),
       );

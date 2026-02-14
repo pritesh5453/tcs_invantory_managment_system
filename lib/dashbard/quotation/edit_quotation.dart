@@ -143,6 +143,9 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
           row.covController.text = item['cov']?.toString() ?? '0';
 
+          row.areaController.text =
+              item['area']?.toString() ?? ''; // 👈 AREA ADDED
+
           row.weightController.text = item['weight']?.toString() ?? '0';
 
           row.quantityController.text = item['box']?.toString() ?? '0';
@@ -173,7 +176,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
     try {
       final response = await _dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/architects/list',
+        'https://dashboard.theceramicstudio.in/api/architects/list',
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
@@ -197,7 +200,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
     try {
       final response = await _dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/employees/list',
+        'https://dashboard.theceramicstudio.in/api/employees/list',
         queryParameters: {'search': search},
       );
 
@@ -218,7 +221,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
   Future<void> _fetchProducts({required String search}) async {
     try {
       final response = await _dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/product/list',
+        'https://dashboard.theceramicstudio.in/api/product/list',
         queryParameters: {'search': search},
       );
 
@@ -443,29 +446,31 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
           "quality": row.quality,
           "rate": double.tryParse(row.rateController.text) ?? 0,
           "box": int.tryParse(row.quantityController.text) ?? 0,
-          "area": "", // Empty as per API example
-          "Weight":
-              row.weightController.text.isNotEmpty
-                  ? double.tryParse(row.weightController.text) ?? 0
-                  : 0,
-          "TWgt":
-              row.twgtController.text.isNotEmpty
-                  ? double.tryParse(row.twgtController.text) ?? 0
-                  : 0,
-          "Coverage":
-              row.covController.text.isNotEmpty
-                  ? double.tryParse(row.covController.text) ?? 0
-                  : 0,
+
+          // FORCE STRING FORMAT
+          "area": row.areaController.text.trim(),
+
+          "Coverage": double.parse(
+            row.covController.text.isEmpty ? "0" : row.covController.text,
+          ).toStringAsFixed(2),
+
+          "TWgt": double.parse(
+            row.twgtController.text.isEmpty ? "0" : row.twgtController.text,
+          ).toStringAsFixed(2),
+
+          "total": double.parse(
+            row.amountController.text.isEmpty ? "0" : row.amountController.text,
+          ).toStringAsFixed(2),
+
+          "Weight": double.tryParse(row.weightController.text) ?? 0,
           "cov": double.tryParse(row.covController.text) ?? 0,
           "discount": double.tryParse(row.discountController.text) ?? 0,
-          "total": row.getTotalAmount(),
         };
         rowsData.add(rowData);
       }
 
       // Prepare client details
       final clientDetails = {
-        "clientid": null, // From example
         "name": _clientNameController.text.trim(),
         "contactNo": _contactNumberController.text.trim(),
         "altContactNo": _altNumberController.text.trim(),
@@ -486,14 +491,14 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         "bottomSection": _bottomController.text.trim(),
         "clientDetails": clientDetails,
         "rows": rowsData,
-        "grandTotal": _calculateGrandTotal(),
+        "grandTotal": double.parse(_calculateGrandTotal().toStringAsFixed(2)),
       };
 
       debugPrint('Update Request Body: ${requestBody.toString()}');
 
-      // Make API call
+      // Make API call - UPDATED URL
       final response = await _dio.put(
-        'https://dashboarduat.theceramicstudio.in/api/Quotation/updateQuotation/${widget.quotationId}',
+        'https://dashboard.theceramicstudio.in/api/Quotation/updateQuotation/${widget.quotationId}',
         data: requestBody,
         options: Options(headers: {'Content-Type': 'application/json'}),
       );
@@ -539,6 +544,73 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         _isSubmitting = false;
       });
     }
+  }
+
+  // Helper methods for null-safe dropdown values
+  String? _getValidArchitectId() {
+    if (_selectedArchitectId == null) return null;
+
+    final exists = _architects.any(
+      (a) => a['id'].toString() == _selectedArchitectId,
+    );
+
+    if (!exists) {
+      debugPrint(
+        'Architect ID $_selectedArchitectId not found in list, setting to null',
+      );
+      return null;
+    }
+
+    return _selectedArchitectId;
+  }
+
+  String? _getValidEmployeeId() {
+    if (_selectedEmployeeId == null) return null;
+
+    final exists = _employees.any(
+      (e) => e['id'].toString() == _selectedEmployeeId,
+    );
+
+    if (!exists) {
+      debugPrint(
+        'Employee ID $_selectedEmployeeId not found in list, setting to null',
+      );
+      return null;
+    }
+
+    return _selectedEmployeeId;
+  }
+
+  String? _getValidSize(ProductRow row, List<String> sizes) {
+    if (row.size.isEmpty) return null;
+
+    final exists = sizes.contains(row.size);
+
+    if (!exists) {
+      debugPrint(
+        'Size ${row.size} not available for product ${row.productName}, resetting',
+      );
+      row.size = ''; // Reset invalid size
+      return null;
+    }
+
+    return row.size;
+  }
+
+  String? _getValidQuality(ProductRow row, List<String> qualities) {
+    if (row.quality.isEmpty) return null;
+
+    final exists = qualities.contains(row.quality);
+
+    if (!exists) {
+      debugPrint(
+        'Quality ${row.quality} not available for product ${row.productName} size ${row.size}, resetting',
+      );
+      row.quality = ''; // Reset invalid quality
+      return null;
+    }
+
+    return row.quality;
   }
 
   @override
@@ -695,13 +767,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                     child: DropdownButton<String>(
                                       isExpanded: true,
                                       value:
-                                          _architects.any(
-                                                (a) =>
-                                                    a['id'].toString() ==
-                                                    _selectedArchitectId,
-                                              )
-                                              ? _selectedArchitectId
-                                              : null,
+                                          _getValidArchitectId(), // NULL SAFE
                                       hint:
                                           _isLoadingArchitects
                                               ? const Text('Loading...')
@@ -759,7 +825,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButton<String>(
                                       isExpanded: true,
-                                      value: _selectedEmployeeId,
+                                      value: _getValidEmployeeId(), // NULL SAFE
                                       hint:
                                           _isLoadingEmployees
                                               ? const Text('Loading...')
@@ -1256,10 +1322,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,
-                          value:
-                              row.size.isNotEmpty && sizes.contains(row.size)
-                                  ? row.size
-                                  : null,
+                          value: _getValidSize(row, sizes), // NULL SAFE
                           hint: const Text('Select Size'),
                           items:
                               sizes.map((size) {
@@ -1306,11 +1369,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,
-                          value:
-                              row.quality.isNotEmpty &&
-                                      qualities.contains(row.quality)
-                                  ? row.quality
-                                  : null,
+                          value: _getValidQuality(row, qualities), // NULL SAFE
                           hint: const Text('Select Quality'),
                           items:
                               qualities.map((quality) {
@@ -1349,9 +1408,10 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
           const SizedBox(height: 12),
 
-          // Rate and COV
+          // Rate, COV, and AREA
           Row(
             children: [
+              // Rate
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1366,7 +1426,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
+              // COV
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1381,13 +1442,32 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              // AREA (NEW FIELD)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('AREA'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.areaController, // 👈 NEW CONTROLLER
+                      '0',
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => row.updateTotal(),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
 
           const SizedBox(height: 12),
 
+          // BOX, DISCOUNT, WEIGHT
           Row(
             children: [
+              // BOX
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1403,7 +1483,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
+              // DISCOUNT
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1419,13 +1500,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                   ],
                 ),
               ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-          // Weight and TWGT
-          Row(
-            children: [
+              const SizedBox(width: 8),
+              // WEIGHT
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1441,7 +1517,15 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // TWGT, AMOUNT, GODOWN
+          Row(
+            children: [
+              // TWGT
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1452,14 +1536,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                   ],
                 ),
               ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // Amount and Godown
-          Row(
-            children: [
+              const SizedBox(width: 8),
+              // AMOUNT
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1470,7 +1548,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
+              // GODOWN
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1616,6 +1695,8 @@ class ProductRow {
   final TextEditingController productSearchController = TextEditingController();
   final TextEditingController rateController = TextEditingController();
   final TextEditingController covController = TextEditingController();
+  final TextEditingController areaController =
+      TextEditingController(); // 👈 NEW
   final TextEditingController weightController = TextEditingController();
   final TextEditingController twgtController = TextEditingController();
   final TextEditingController quantityController = TextEditingController();
@@ -1671,6 +1752,7 @@ class ProductRow {
     productSearchController.dispose();
     rateController.dispose();
     covController.dispose();
+    areaController.dispose(); // 👈 NEW
     weightController.dispose();
     twgtController.dispose();
     quantityController.dispose();

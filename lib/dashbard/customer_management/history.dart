@@ -16,7 +16,7 @@ class _FollowUpHistoryPopupState extends State<FollowUpHistoryPopup> {
 
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in",
+      baseUrl: "https://dashboard.theceramicstudio.in",
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
     ),

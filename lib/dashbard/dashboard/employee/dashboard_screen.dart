@@ -52,7 +52,7 @@
 //   // Dio instance
 //   final Dio _dio = Dio(
 //     BaseOptions(
-//       baseUrl: 'https://dashboarduat.theceramicstudio.in',
+//       baseUrl: 'https://dashboard.theceramicstudio.in',
 //       connectTimeout: const Duration(seconds: 30),
 //       receiveTimeout: const Duration(seconds: 30),
 //     ),
@@ -347,8 +347,8 @@
 //   Future<void> _updateTaskStatus(int taskId, String status) async {
 //     try {
 //       debugPrint("🟡 UPDATE TASK START");
-//       //https://dashboarduat.theceramicstudio.in/api/tasks/update/9
-//       //https://dashboarduat.theceramicstudio.in
+//       //https://dashboard.theceramicstudio.in/api/tasks/update/9
+//       //https://dashboard.theceramicstudio.in
 //       final response = await _dio.put(
 //         '/api/tasks/update/$taskId',
 //         data: {

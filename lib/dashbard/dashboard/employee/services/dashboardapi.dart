@@ -3,7 +3,7 @@ import 'package:dio/dio.dart';
 class DashboardApiService {
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: 'https://dashboarduat.theceramicstudio.in',
+      baseUrl: 'https://dashboard.theceramicstudio.in',
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
     ),
@@ -23,7 +23,9 @@ class DashboardApiService {
 
   Future<Map<String, dynamic>?> fetchDashboardStats(int employeeId) async {
     try {
-      final response = await _dio.get('/api/users/employee-dashboard/$employeeId');
+      final response = await _dio.get(
+        '/api/users/employee-dashboard/$employeeId',
+      );
       if (response.statusCode == 200) {
         return response.data['counts'] ?? {};
       }
@@ -35,7 +37,9 @@ class DashboardApiService {
 
   Future<Map<String, dynamic>?> fetchAttendanceSummary(int employeeId) async {
     try {
-      final response = await _dio.get('/api/employees/attendance-summary/$employeeId');
+      final response = await _dio.get(
+        '/api/employees/attendance-summary/$employeeId',
+      );
       if (response.statusCode == 200) {
         return {
           'daysPresent': response.data['daysPresent'] ?? 0,
@@ -48,7 +52,11 @@ class DashboardApiService {
     return null;
   }
 
-  Future<bool> updateTaskStatus(int taskId, String status, String remark) async {
+  Future<bool> updateTaskStatus(
+    int taskId,
+    String status,
+    String remark,
+  ) async {
     try {
       final response = await _dio.put(
         '/api/tasks/update/$taskId',

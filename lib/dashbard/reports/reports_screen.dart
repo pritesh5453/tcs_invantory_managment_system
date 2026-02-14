@@ -98,7 +98,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
 
     try {
       final res = await Dio().get(
-        "https://dashboarduat.theceramicstudio.in/api/employees/list",
+        "https://dashboard.theceramicstudio.in/api/employees/list",
         queryParameters: {"search": query},
       );
 
@@ -138,7 +138,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
       final response = await Dio(
         BaseOptions(responseType: ResponseType.bytes),
       ).get(
-        "https://dashboarduat.theceramicstudio.in/api/dashboard/records",
+        "https://dashboard.theceramicstudio.in/api/dashboard/records",
         queryParameters: {
           "employeeId": selectedEmployeeId,
           "from": from,
@@ -244,28 +244,28 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
                       keyName: "customer",
                       title: "Customer Register",
                       url:
-                          "https://dashboarduat.theceramicstudio.in/api/dashboard/customers/export",
+                          "https://dashboard.theceramicstudio.in/api/dashboard/customers/export",
                       fileName: "Customer_Register",
                     ),
                     _analyticsCard(
                       keyName: "quotation",
                       title: "Quotation Data",
                       url:
-                          "https://dashboarduat.theceramicstudio.in/api/dashboard/quotations/export",
+                          "https://dashboard.theceramicstudio.in/api/dashboard/quotations/export",
                       fileName: "Quotation_Data",
                     ),
                     _analyticsCard(
                       keyName: "purchase",
                       title: "Purchase Records",
                       url:
-                          "https://dashboarduat.theceramicstudio.in/api/dashboard/purchases/export",
+                          "https://dashboard.theceramicstudio.in/api/dashboard/purchases/export",
                       fileName: "Purchase_Records",
                     ),
                     _analyticsCard(
                       keyName: "payment",
                       title: "Payment Report",
                       url:
-                          "https://dashboarduat.theceramicstudio.in/api/dashboard/api/payments/export",
+                          "https://dashboard.theceramicstudio.in/api/dashboard/api/payments/export",
                       fileName: "Payment_Report",
                     ),
                   ],

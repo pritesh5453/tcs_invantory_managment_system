@@ -41,7 +41,7 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
 
     try {
       final response = await dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/employees/list',
+        'https://dashboard.theceramicstudio.in/api/employees/list',
       );
 
       if (response.data['success'] == true) {
@@ -69,7 +69,7 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
 
     try {
       final response = await dio.post(
-        'https://dashboarduat.theceramicstudio.in/api/tasks/assign',
+        'https://dashboard.theceramicstudio.in/api/tasks/assign',
         data: {
           "employeeId": selectedEmployeeId.toString(),
           "title": taskTitleController.text,
@@ -99,7 +99,7 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
 
     try {
       final response = await dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/tasks/all',
+        'https://dashboard.theceramicstudio.in/api/tasks/all',
       );
 
       if (response.data['success'] == true) {
@@ -116,6 +116,77 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
 
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// ================= REMARKS DIALOG =================
+  void _showRemarksDialog(BuildContext context, String empName, List remarks) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text('Remarks for $empName'),
+          content: Container(
+            width: double.maxFinite,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: remarks.length,
+              separatorBuilder: (_, __) => const Divider(),
+              itemBuilder: (ctx, index) {
+                final r = remarks[index];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r['text'] ?? 'No text',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          r['status'] ?? 'Unknown',
+                          style: TextStyle(
+                            color:
+                                r['status']?.toLowerCase() == 'done'
+                                    ? Colors.green
+                                    : Colors.orange,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          _formatDateTime(r['at']),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _formatDateTime(String? dateStr) {
+    if (dateStr == null) return '';
+    try {
+      final date = DateTime.parse(dateStr).toLocal();
+      return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute}';
+    } catch (_) {
+      return dateStr;
+    }
   }
 
   /// ================= UI =================
@@ -304,14 +375,44 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
   /// ================= TASK UI =================
 
   Widget _taskRow(task) {
+    final remarks = task['remark'];
+    final hasRemarks = remarks != null && remarks is List && remarks.isNotEmpty;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
-          Expanded(flex: 2, child: Text(task['empName'])),
-          Expanded(flex: 2, child: Text(task['title'])),
-          Expanded(child: _statusChip(task['status'])),
-          Expanded(child: Text(task['remark'] == null ? 'No remark' : 'View')),
+          Expanded(flex: 2, child: Text(task['empName'] ?? '')),
+          Expanded(flex: 2, child: Text(task['title'] ?? '')),
+          Expanded(child: _statusChip(task['status'] ?? 'pending')),
+          Expanded(
+            child: GestureDetector(
+              onTap:
+                  hasRemarks
+                      ? () =>
+                          _showRemarksDialog(context, task['empName'], remarks)
+                      : null,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                decoration: BoxDecoration(
+                  color:
+                      hasRemarks
+                          ? Colors.orange.withOpacity(0.1)
+                          : Colors.grey.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  hasRemarks ? 'View (${remarks.length})' : 'No remark',
+                  style: TextStyle(
+                    color: hasRemarks ? Colors.orange : Colors.grey,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 12,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
           const Icon(Icons.delete_outline, color: Colors.grey),
         ],
       ),
@@ -319,6 +420,9 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
   }
 
   Widget _mobileTaskCard(task) {
+    final remarks = task['remark'];
+    final hasRemarks = remarks != null && remarks is List && remarks.isNotEmpty;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -327,17 +431,46 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            task['empName'],
+            task['empName'] ?? '',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 6),
-          Text(task['title']),
+          Text(task['title'] ?? ''),
           const SizedBox(height: 8),
           Row(
             children: [
-              _statusChip(task['status']),
+              _statusChip(task['status'] ?? 'pending'),
               const Spacer(),
-              Text(task['remark'] == null ? 'No remark' : 'View'),
+              GestureDetector(
+                onTap:
+                    hasRemarks
+                        ? () => _showRemarksDialog(
+                          context,
+                          task['empName'],
+                          remarks,
+                        )
+                        : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        hasRemarks
+                            ? Colors.orange.withOpacity(0.1)
+                            : Colors.grey.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    hasRemarks ? 'View (${remarks.length})' : 'No remark',
+                    style: TextStyle(
+                      color: hasRemarks ? Colors.orange : Colors.grey,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ],

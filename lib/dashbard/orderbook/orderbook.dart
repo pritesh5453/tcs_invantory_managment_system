@@ -168,7 +168,7 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
       debugPrint('Fetching orders with params: $queryParams');
 
       final response = await _dio.get(
-        "https://dashboarduat.theceramicstudio.in/api/orderBook/list",
+        "https://dashboard.theceramicstudio.in/api/orderBook/list",
         queryParameters: queryParams,
       );
 
@@ -273,7 +273,7 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
   Future<void> _deleteOrder(int id) async {
     try {
       await _dio.delete(
-        "https://dashboarduat.theceramicstudio.in/api/orderBook/delete/$id",
+        "https://dashboard.theceramicstudio.in/api/orderBook/delete/$id",
       );
 
       ScaffoldMessenger.of(context).showSnackBar(

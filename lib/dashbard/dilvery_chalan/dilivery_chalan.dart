@@ -274,7 +274,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
       print('Fetching delivery challans with query: $queryParams');
 
       final res = await dio.get(
-        "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan/list",
+        "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan/list",
         queryParameters: queryParams,
       );
 
@@ -375,7 +375,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
   Future<void> deleteChallan(int id) async {
     try {
       final res = await dio.delete(
-        "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan/delete/$id",
+        "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan/delete/$id",
       );
 
       if (res.data['success'] == true) {
@@ -403,7 +403,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
       final Dio pdfDio = Dio(
         BaseOptions(
           baseUrl:
-              "https://dashboarduat.theceramicstudio.in/api/Quotation/delivery-challan",
+              "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan",
           responseType: ResponseType.bytes,
         ),
       );

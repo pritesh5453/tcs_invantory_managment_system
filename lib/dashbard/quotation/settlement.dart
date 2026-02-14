@@ -19,7 +19,7 @@ class SettlementScreen extends StatefulWidget {
 class _SettlementScreenState extends State<SettlementScreen> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );

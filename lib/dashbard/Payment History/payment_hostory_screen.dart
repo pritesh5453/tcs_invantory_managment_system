@@ -29,7 +29,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   Future<void> fetchPaymentHistory() async {
     try {
       final response = await _dio.get(
-        "https://dashboarduat.theceramicstudio.in/api/payment/history",
+        "https://dashboard.theceramicstudio.in/api/payment/history",
         options: Options(headers: {"Accept": "application/json"}),
       );
 

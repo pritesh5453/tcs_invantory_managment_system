@@ -21,7 +21,7 @@ class Quontation_home_screen extends StatefulWidget {
 class _Quontation_home_screenState extends State<Quontation_home_screen> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
       headers: {"Accept": "application/json"},
     ),
   );

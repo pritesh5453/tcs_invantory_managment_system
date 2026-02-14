@@ -122,7 +122,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
 
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api/suppliers",
+      baseUrl: "https://dashboard.theceramicstudio.in/api/suppliers",
       headers: {"Content-Type": "application/json"},
     ),
   );

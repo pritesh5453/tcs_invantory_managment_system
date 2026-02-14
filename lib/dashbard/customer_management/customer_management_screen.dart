@@ -8,25 +8,37 @@ import 'package:tcs_invantory_managment_system/dashbard/customer_management/edit
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/history.dart';
 
 /// =====================
-/// MODEL
+/// MODEL (with all fields)
 /// =====================
 class Customer {
   final int id;
   final String name;
   final String lastName;
   final String phone;
+  final String email;
   final String? assignedEmployee;
   final String? assignedEmployeeId;
+  final String? assignedArchitect;
   final String? siteType;
+  final String? projectName;
+  final String? siteName;
+  final String? notes;
+  final String? priority;
 
   Customer({
     required this.id,
     required this.name,
     required this.lastName,
     required this.phone,
+    required this.email,
     this.assignedEmployee,
     this.assignedEmployeeId,
+    this.assignedArchitect,
     this.siteType,
+    this.projectName,
+    this.siteName,
+    this.notes,
+    this.priority,
   });
 
   factory Customer.fromJson(Map<String, dynamic> json) {
@@ -35,9 +47,15 @@ class Customer {
       name: json['name'] ?? '',
       lastName: json['Last_Name'] ?? '',
       phone: json['phone'] ?? '',
+      email: json['email'] ?? '',
       assignedEmployee: json['assignedEmployee'],
       assignedEmployeeId: json['assignedEmployeeId']?.toString(),
+      assignedArchitect: json['assignedArchitect']?.toString(),
       siteType: json['siteType'],
+      projectName: json['projectName'],
+      siteName: json['siteName'],
+      notes: json['notes'],
+      priority: json['priority'],
     );
   }
 }
@@ -59,19 +77,15 @@ class CustomerResponse {
   });
 }
 
-/// =====================
-/// API
-/// =====================
 class CustomerApi {
   static final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in",
+      baseUrl: "https://dashboard.theceramicstudio.in",
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
     ),
   );
 
-  // ✅ ADMIN/Superadmin ke liye (with pagination and search)
   static Future<CustomerResponse> fetchAllCustomers({
     int page = 1,
     int limit = 10,
@@ -79,21 +93,16 @@ class CustomerApi {
   }) async {
     try {
       final Map<String, dynamic> queryParams = {'page': page, 'limit': limit};
-
-      if (search != null && search.isNotEmpty) {
-        queryParams['search'] = search;
-      }
+      if (search != null && search.isNotEmpty) queryParams['search'] = search;
 
       final response = await _dio.get(
         "/api/users/list",
         queryParameters: queryParams,
       );
-
       final List list = response.data['customers'] ?? [];
       final customers = list.map((e) => Customer.fromJson(e)).toList();
       customers.sort((a, b) => b.id.compareTo(a.id));
 
-      // Pagination data extract karein
       final pagination = response.data['pagination'] ?? {};
       final currentPage = pagination['page'] ?? 1;
       final totalPages = pagination['totalPages'] ?? 1;
@@ -117,7 +126,6 @@ class CustomerApi {
     }
   }
 
-  // ✅ EMPLOYEE ke liye (assigned customers with pagination and search)
   static Future<CustomerResponse> fetchEmployeeCustomers({
     required int employeeId,
     int page = 1,
@@ -130,16 +138,12 @@ class CustomerApi {
         'limit': limit,
         'employeeId': employeeId,
       };
-
-      if (search != null && search.isNotEmpty) {
-        queryParams['search'] = search;
-      }
+      if (search != null && search.isNotEmpty) queryParams['search'] = search;
 
       final response = await _dio.get(
         "/api/users/list/employee",
         queryParameters: queryParams,
       );
-
       final List list = response.data['customers'] ?? [];
       final customers = list.map((e) => Customer.fromJson(e)).toList();
       customers.sort((a, b) => b.id.compareTo(a.id));
@@ -167,33 +171,11 @@ class CustomerApi {
     }
   }
 
-  // ✅ SMART FETCH METHOD - role aur employeeId ke hisab se API call karega
-  static Future<CustomerResponse> fetchCustomers({
-    required String userRole,
-    required int employeeId,
-    int page = 1,
-    int limit = 10,
-    String? search,
-  }) async {
-    if (userRole == "admin" || userRole == "superadmin") {
-      return await fetchAllCustomers(page: page, limit: limit, search: search);
-    } else {
-      return await fetchEmployeeCustomers(
-        employeeId: employeeId,
-        page: page,
-        limit: limit,
-        search: search,
-      );
-    }
-  }
-
-  // ✅ DELETE CUSTOMER METHOD
   static Future<bool> deleteCustomer(int customerId) async {
     try {
       final response = await _dio.delete("/api/users/delete/$customerId");
-      if (response.statusCode == 200 && response.data['success'] == true) {
+      if (response.statusCode == 200 && response.data['success'] == true)
         return true;
-      }
       return false;
     } catch (e) {
       debugPrint("Delete customer error: $e");
@@ -225,25 +207,44 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
   late bool canEditCustomer;
   late bool canDeleteCustomer;
 
-  List<Customer> _allCustomers = [];
+  bool get isEmployee => widget.userRole == "employee";
+  bool get isAdmin =>
+      widget.userRole == "admin" || widget.userRole == "superadmin";
+
+  // --------------------- ADMIN VIEW (EXISTING - UNCHANGED) ---------------------
+  List<Customer> _adminCustomers = [];
+  int _adminCurrentPage = 1;
+  bool _adminIsLoading = true;
+  bool _adminIsLoadingMore = false;
+  bool _adminHasMoreData = true;
+  int _adminTotalItems = 0;
+  final ScrollController _adminScrollController = ScrollController();
+  final int _limit = 10;
+
+  // --------------------- EMPLOYEE VIEW (TABS) ---------------------
+  List<Customer> _employeeAssignedCustomers = [];
+  List<Customer> _employeeAllCustomers = [];
+  bool _isLoadingAssigned = true;
+  bool _isLoadingAll = true;
+  String _selectedTab = "assigned"; // "assigned" or "all"
+
+  List<Customer> get _displayedCustomers =>
+      _selectedTab == "assigned"
+          ? _employeeAssignedCustomers
+          : _employeeAllCustomers;
+
+  bool get _isLoadingCurrentTab =>
+      _selectedTab == "assigned" ? _isLoadingAssigned : _isLoadingAll;
+
+  // --------------------- COMMON SEARCH ---------------------
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounceTimer;
-
-  // ✅ PAGINATION VARIABLES
-  int _currentPage = 1;
-  bool _isLoading = true;
-  bool _isLoadingMore = false;
-  bool _hasMoreData = true;
-  int _totalItems = 0;
-  final ScrollController _scrollController = ScrollController();
-  final int _limit = 10;
 
   @override
   void initState() {
     super.initState();
 
-    // Permissions
     canAddCustomer = PermissionManager.hasPermission("Customer Management_Add");
     canEditCustomer = PermissionManager.hasPermission(
       "Customer Management_Edit",
@@ -252,102 +253,132 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
       "Customer Management_Delete",
     );
 
-    // Load initial data
-    _loadCustomers();
-
-    // Add scroll listener for pagination
-    _scrollController.addListener(_scrollListener);
+    if (isAdmin) {
+      _loadAdminCustomers();
+      _adminScrollController.addListener(_adminScrollListener);
+    } else {
+      _loadEmployeeData();
+    }
   }
 
-  /// 🔄 Load customers (initial or refresh)
-  Future<void> _loadCustomers({
+  // --------------------- ADMIN: PAGINATED ALL CUSTOMERS (EXISTING - UNCHANGED) ---------------------
+  Future<void> _loadAdminCustomers({
     bool isRefresh = false,
     bool isLoadMore = false,
     String? search,
   }) async {
     if (isRefresh) {
       setState(() {
-        _currentPage = 1;
-        _hasMoreData = true;
-        _allCustomers = [];
-        _isLoading = true;
-        _totalItems = 0;
+        _adminCurrentPage = 1;
+        _adminHasMoreData = true;
+        _adminCustomers = [];
+        _adminIsLoading = true;
+        _adminTotalItems = 0;
       });
     } else if (isLoadMore) {
-      setState(() {
-        _isLoadingMore = true;
-      });
+      setState(() => _adminIsLoadingMore = true);
     } else if (!isLoadMore) {
-      setState(() {
-        _isLoading = true;
-      });
+      setState(() => _adminIsLoading = true);
     }
 
     try {
-      final response = await CustomerApi.fetchCustomers(
-        userRole: widget.userRole,
-        employeeId: widget.employeeId,
-        page: _currentPage,
+      final response = await CustomerApi.fetchAllCustomers(
+        page: _adminCurrentPage,
         limit: _limit,
         search: search ?? _searchQuery,
       );
 
       setState(() {
         if (isLoadMore) {
-          _allCustomers.addAll(response.customers);
+          _adminCustomers.addAll(response.customers);
         } else {
-          _allCustomers = response.customers;
+          _adminCustomers = response.customers;
         }
-
-        _hasMoreData = response.hasMore;
-        _totalItems = response.totalItems;
-        _isLoading = false;
-        _isLoadingMore = false;
+        _adminHasMoreData = response.hasMore;
+        _adminTotalItems = response.totalItems;
+        _adminIsLoading = false;
+        _adminIsLoadingMore = false;
       });
     } catch (e) {
-      debugPrint("Error loading customers: $e");
+      debugPrint("Error loading admin customers: $e");
       setState(() {
-        _isLoading = false;
-        _isLoadingMore = false;
+        _adminIsLoading = false;
+        _adminIsLoadingMore = false;
       });
     }
   }
 
-  /// 📜 Scroll listener for pagination
-  void _scrollListener() {
-    if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 100 &&
-        !_isLoadingMore &&
-        !_isLoading &&
-        _hasMoreData) {
-      _loadMoreData();
+  void _adminScrollListener() {
+    if (_adminScrollController.position.pixels >=
+            _adminScrollController.position.maxScrollExtent - 100 &&
+        !_adminIsLoadingMore &&
+        !_adminIsLoading &&
+        _adminHasMoreData) {
+      _loadMoreAdminData();
     }
   }
 
-  /// 🔽 Load more data for pagination
-  Future<void> _loadMoreData() async {
-    if (!_hasMoreData || _isLoadingMore || _isLoading) return;
-
-    setState(() {
-      _isLoadingMore = true;
-    });
-
-    _currentPage++;
-    await _loadCustomers(isLoadMore: true);
+  Future<void> _loadMoreAdminData() async {
+    if (!_adminHasMoreData || _adminIsLoadingMore || _adminIsLoading) return;
+    setState(() => _adminIsLoadingMore = true);
+    _adminCurrentPage++;
+    await _loadAdminCustomers(isLoadMore: true);
   }
 
-  /// 🔍 API-based Search functionality with debounce
-  void _searchCustomers(String query) {
+  // --------------------- EMPLOYEE: LOAD BOTH LISTS ---------------------
+  Future<void> _loadEmployeeData({String? search}) async {
     setState(() {
-      _searchQuery = query;
+      _isLoadingAssigned = true;
+      _isLoadingAll = true;
     });
 
-    // Cancel previous timer
-    _searchDebounceTimer?.cancel();
+    try {
+      final assignedResponse = await CustomerApi.fetchEmployeeCustomers(
+        employeeId: widget.employeeId,
+        page: 1,
+        limit: 50,
+        search: search,
+      );
 
-    // Set new timer for debounce
+      final allResponse = await CustomerApi.fetchAllCustomers(
+        page: 1,
+        limit: 50,
+        search: search,
+      );
+
+      setState(() {
+        _employeeAssignedCustomers = assignedResponse.customers;
+        _employeeAllCustomers = allResponse.customers;
+        _isLoadingAssigned = false;
+        _isLoadingAll = false;
+      });
+    } catch (e) {
+      debugPrint("Error loading employee data: $e");
+      setState(() {
+        _isLoadingAssigned = false;
+        _isLoadingAll = false;
+      });
+    }
+  }
+
+  // --------------------- TAB SWITCH ---------------------
+  void _switchTab(String tab) {
+    if (_selectedTab == tab) return;
+    setState(() {
+      _selectedTab = tab;
+    });
+  }
+
+  // --------------------- SEARCH (DEBOUNCED) ---------------------
+  void _searchCustomers(String query) {
+    setState(() => _searchQuery = query);
+    _searchDebounceTimer?.cancel();
     _searchDebounceTimer = Timer(const Duration(milliseconds: 500), () {
-      _loadCustomers(isRefresh: true, search: query);
+      if (isAdmin) {
+        _loadAdminCustomers(isRefresh: true, search: query);
+      } else {
+        _loadEmployeeData(search: query);
+      }
     });
   }
 
@@ -356,17 +387,26 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
       _searchQuery = '';
       _searchController.clear();
     });
-    _loadCustomers(isRefresh: true);
+    if (isAdmin) {
+      _loadAdminCustomers(isRefresh: true);
+    } else {
+      _loadEmployeeData();
+    }
   }
 
-  /// 🔄 Pull to refresh handler
   Future<void> _onRefresh() async {
-    await _loadCustomers(isRefresh: true);
+    if (isAdmin) {
+      await _loadAdminCustomers(isRefresh: true);
+    } else {
+      await _loadEmployeeData(
+        search: _searchQuery.isNotEmpty ? _searchQuery : null,
+      );
+    }
   }
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _adminScrollController.dispose();
     _searchController.dispose();
     _searchDebounceTimer?.cancel();
     super.dispose();
@@ -379,232 +419,333 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            /// ================= APP BAR =================
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFA54A),
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(28),
-                  bottomRight: Radius.circular(28),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      height: 42,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.search,
-                            size: 20,
-                            color: Colors.grey,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              decoration: const InputDecoration(
-                                hintText: "Search by name or phone...",
-                                border: InputBorder.none,
-                                hintStyle: TextStyle(color: Colors.grey),
-                              ),
-                              onChanged: _searchCustomers,
-                              style: const TextStyle(color: Colors.black),
-                            ),
-                          ),
-                          if (_searchQuery.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(
-                                Icons.clear,
-                                size: 18,
-                                color: Colors.grey,
-                              ),
-                              onPressed: _clearSearch,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  InkWell(
-                    onTap:
-                        canAddCustomer
-                            ? () async {
-                              final result = await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const AddCustomerScreen(),
-                                ),
-                              );
-                              if (result == true) {
-                                _loadCustomers(isRefresh: true);
-                              }
-                            }
-                            : () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    "You don't have permission to add customer.",
-                                  ),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            },
-                    child: Opacity(
-                      opacity: canAddCustomer ? 1 : 0.4,
-                      child: Container(
-                        height: 42,
-                        width: 42,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.add, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            /// ================= LIST =================
+            _buildAppBar(),
             Expanded(
               child: RefreshIndicator(
                 color: Colors.orange,
                 onRefresh: _onRefresh,
-                child:
-                    _isLoading && _allCustomers.isEmpty
-                        ? const Center(child: CircularProgressIndicator())
-                        : CustomScrollView(
-                          controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          slivers: [
-                            /// CUSTOMER COUNT
-                            if (_allCustomers.isNotEmpty)
-                              SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Text(
-                                    "Customers (${_allCustomers.length} of $_totalItems)",
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                            /// CUSTOMER LIST
-                            SliverList(
-                              delegate: SliverChildBuilderDelegate((
-                                context,
-                                index,
-                              ) {
-                                if (index < _allCustomers.length) {
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 8,
-                                    ),
-                                    child: CustomerCard(
-                                      customer: _allCustomers[index],
-                                      onRefresh:
-                                          () => _loadCustomers(isRefresh: true),
-                                      canEditCustomer: canEditCustomer,
-                                      canDeleteCustomer: canDeleteCustomer,
-                                      userRole: widget.userRole,
-                                      employeeId: widget.employeeId,
-                                    ),
-                                  );
-                                }
-                                return null;
-                              }, childCount: _allCustomers.length),
-                            ),
-
-                            /// EMPTY STATE
-                            if (_allCustomers.isEmpty && !_isLoading)
-                              SliverFillRemaining(
-                                child: Center(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          _searchQuery.isNotEmpty
-                                              ? Icons.search_off
-                                              : Icons.people_outline,
-                                          size: 60,
-                                          color: Colors.grey,
-                                        ),
-                                        const SizedBox(height: 16),
-                                        Text(
-                                          _searchQuery.isNotEmpty
-                                              ? "No customers found for '$_searchQuery'"
-                                              : "No customers found",
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                        if (_searchQuery.isNotEmpty)
-                                          const SizedBox(height: 8),
-                                        if (_searchQuery.isNotEmpty)
-                                          ElevatedButton(
-                                            onPressed: _clearSearch,
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: const Color(
-                                                0xFFFFA54A,
-                                              ),
-                                            ),
-                                            child: const Text("Clear Search"),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                            /// LOAD MORE INDICATOR
-                            if (_isLoadingMore)
-                              SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                ),
-                              ),
-
-                            /// NO MORE CUSTOMERS MESSAGE
-                            if (!_hasMoreData && _allCustomers.isNotEmpty)
-                              SliverToBoxAdapter(
-                                child: const Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: Center(
-                                    child: Text(
-                                      "No more customers",
-                                      style: TextStyle(color: Colors.grey),
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                            /// EXTRA SPACE AT BOTTOM
-                            SliverToBoxAdapter(child: Container(height: 50)),
-                          ],
-                        ),
+                child: isAdmin ? _buildAdminView() : _buildEmployeeView(),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --------------------- APP BAR (WITH EMPLOYEE TABS) ---------------------
+  Widget _buildAppBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFFA54A),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(28),
+          bottomRight: Radius.circular(28),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 42,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.search, size: 20, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: const InputDecoration(
+                            hintText: "Search by name or phone...",
+                            border: InputBorder.none,
+                            hintStyle: TextStyle(color: Colors.grey),
+                          ),
+                          onChanged: _searchCustomers,
+                          style: const TextStyle(color: Colors.black),
+                        ),
+                      ),
+                      if (_searchQuery.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(
+                            Icons.clear,
+                            size: 18,
+                            color: Colors.grey,
+                          ),
+                          onPressed: _clearSearch,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              InkWell(
+                onTap:
+                    canAddCustomer
+                        ? () async {
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AddCustomerScreen(),
+                            ),
+                          );
+                          if (result == true) {
+                            if (isAdmin) {
+                              _loadAdminCustomers(isRefresh: true);
+                            } else {
+                              _loadEmployeeData(
+                                search:
+                                    _searchQuery.isNotEmpty
+                                        ? _searchQuery
+                                        : null,
+                              );
+                            }
+                          }
+                        }
+                        : () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                "You don't have permission to add customer.",
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        },
+                child: Opacity(
+                  opacity: canAddCustomer ? 1 : 0.4,
+                  child: Container(
+                    height: 42,
+                    width: 42,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.white),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.add, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          // 👇 EMPLOYEE TABS – ONLY FOR EMPLOYEE, BELOW SEARCH BAR
+          if (isEmployee) ...[const SizedBox(height: 16), _buildTabSelector()],
+        ],
+      ),
+    );
+  }
+
+  // --------------------- EMPLOYEE TAB SELECTOR ---------------------
+  Widget _buildTabSelector() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(30),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          _buildTabButton(
+            title: "My Customers",
+            isSelected: _selectedTab == "assigned",
+            onTap: () => _switchTab("assigned"),
+          ),
+          const SizedBox(width: 4),
+          _buildTabButton(
+            title: "All Customers",
+            isSelected: _selectedTab == "all",
+            onTap: () => _switchTab("all"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabButton({
+    required String title,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(26),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(26),
+          ),
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: isSelected ? const Color(0xFFFFA54A) : Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --------------------- ADMIN VIEW (EXISTING - UNCHANGED) ---------------------
+  Widget _buildAdminView() {
+    return _adminIsLoading && _adminCustomers.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : CustomScrollView(
+          controller: _adminScrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            if (_adminCustomers.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    "Customers (${_adminCustomers.length} of $_adminTotalItems)",
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+              ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate((context, index) {
+                if (index < _adminCustomers.length) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: CustomerCard(
+                      customer: _adminCustomers[index],
+                      onRefresh: () => _loadAdminCustomers(isRefresh: true),
+                      canEditCustomer: canEditCustomer,
+                      canDeleteCustomer: canDeleteCustomer,
+                      userRole: widget.userRole,
+                      employeeId: widget.employeeId,
+                    ),
+                  );
+                }
+                return null;
+              }, childCount: _adminCustomers.length),
+            ),
+            if (_adminCustomers.isEmpty && !_adminIsLoading)
+              _buildEmptyState(isAdmin: true),
+            if (_adminIsLoadingMore)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ),
+            if (!_adminHasMoreData && _adminCustomers.isNotEmpty)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(
+                    child: Text(
+                      "No more customers",
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                ),
+              ),
+            const SliverToBoxAdapter(child: SizedBox(height: 50)),
+          ],
+        );
+  }
+
+  // --------------------- EMPLOYEE VIEW (SINGLE LIST WITH TABS) ---------------------
+  Widget _buildEmployeeView() {
+    return _isLoadingCurrentTab && _displayedCustomers.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : _displayedCustomers.isEmpty
+        ? _buildEmptyState(
+          isAdmin: false,
+          isAssignedSection: _selectedTab == "assigned",
+        )
+        : ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          itemCount: _displayedCustomers.length,
+          itemBuilder: (context, index) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: CustomerCard(
+                customer: _displayedCustomers[index],
+                onRefresh: () => _loadEmployeeData(search: _searchQuery),
+                canEditCustomer: canEditCustomer,
+                canDeleteCustomer: canDeleteCustomer,
+                userRole: widget.userRole,
+                employeeId: widget.employeeId,
+              ),
+            );
+          },
+        );
+  }
+
+  // --------------------- EMPTY STATE ---------------------
+  Widget _buildEmptyState({
+    required bool isAdmin,
+    bool isAssignedSection = false,
+  }) {
+    String message;
+    if (isAdmin) {
+      message =
+          _searchQuery.isNotEmpty
+              ? "No customers found for '$_searchQuery'"
+              : "No customers found";
+    } else {
+      if (isAssignedSection) {
+        message =
+            _searchQuery.isNotEmpty
+                ? "No assigned customers found for '$_searchQuery'"
+                : "No assigned customers found";
+      } else {
+        message =
+            _searchQuery.isNotEmpty
+                ? "No customers found for '$_searchQuery'"
+                : "No customers found";
+      }
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              _searchQuery.isNotEmpty ? Icons.search_off : Icons.people_outline,
+              size: 60,
+              color: Colors.grey,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+            if (_searchQuery.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: ElevatedButton(
+                  onPressed: _clearSearch,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFFA54A),
+                  ),
+                  child: const Text("Clear Search"),
+                ),
+              ),
           ],
         ),
       ),
@@ -613,6 +754,8 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
 }
 
 /// ================= CUSTOMER CARD =================
+/// 👇 Ye card bilkul pehle jaisa hai – kuch bhi delete nahi kiya
+/// Sirf delete button employee ke liye completely hide kiya hai
 class CustomerCard extends StatelessWidget {
   final Customer customer;
   final VoidCallback onRefresh;
@@ -636,17 +779,6 @@ class CustomerCard extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("You don't have permission to delete customer."),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    if (userRole == "employee" &&
-        customer.assignedEmployeeId != employeeId.toString()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("You can only delete your assigned customers."),
           backgroundColor: Colors.red,
         ),
       );
@@ -677,7 +809,6 @@ class CustomerCard extends StatelessWidget {
 
     if (confirm == true) {
       final success = await CustomerApi.deleteCustomer(customer.id);
-
       if (context.mounted) {
         if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -701,14 +832,15 @@ class CustomerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    bool canEditThisCustomer = canEditCustomer;
-    bool canDeleteThisCustomer = canDeleteCustomer;
+    final bool isAdmin = userRole == "admin" || userRole == "superadmin";
+    final bool isEmployee = userRole == "employee";
 
-    if (userRole == "employee" &&
-        customer.assignedEmployeeId != employeeId.toString()) {
-      canEditThisCustomer = false;
-      canDeleteThisCustomer = false;
-    }
+    // 👇 Edit permission – employee agar canEditCustomer true hai to kisi bhi customer ko edit kar sakta hai
+    bool canEditThisCustomer =
+        isAdmin ? canEditCustomer : (isEmployee && canEditCustomer);
+
+    // 👇 Delete permission – sirf admin ko dikhega, employee ke liye pure hide
+    bool canDeleteThisCustomer = isAdmin && canDeleteCustomer;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -726,9 +858,9 @@ class CustomerCard extends StatelessWidget {
                 "Customer Info",
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
-              Opacity(
-                opacity: canDeleteThisCustomer ? 1 : 0.4,
-                child: PopupMenuButton<String>(
+              // 🚫 DELETE – SIRF ADMIN KO DIKHEGA, EMPLOYEE KE LIYE COMPLETELY HIDDEN
+              if (isAdmin && canDeleteThisCustomer)
+                PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert, size: 20),
                   onSelected: (value) {
                     if (value == "delete") {
@@ -747,13 +879,10 @@ class CustomerCard extends StatelessWidget {
                                 size: 18,
                               ),
                               const SizedBox(width: 8),
-                              Text(
+                              const Text(
                                 "Delete",
                                 style: TextStyle(
-                                  color:
-                                      canDeleteThisCustomer
-                                          ? Colors.red
-                                          : Colors.grey,
+                                  color: Colors.red,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
@@ -761,19 +890,22 @@ class CustomerCard extends StatelessWidget {
                           ),
                         ),
                       ],
-                ),
-              ),
+                )
+              else
+                const SizedBox.shrink(),
             ],
           ),
           const SizedBox(height: 10),
           _infoRow("Customer Name:", "${customer.name} ${customer.lastName}"),
           _infoRow("Mobile No.", customer.phone),
+          // 👇 Ye dono fields hamesha dikhenge – koi condition nahi hatai
           _infoRow("Employee:", customer.assignedEmployee ?? "-"),
           _infoRow("Employee ID:", customer.assignedEmployeeId ?? "-"),
           _infoRow("Site Type:", customer.siteType ?? "-"),
           const SizedBox(height: 14),
           Row(
             children: [
+              // EDIT BUTTON
               Expanded(
                 child: Opacity(
                   opacity: canEditThisCustomer ? 1 : 0.4,
@@ -781,27 +913,46 @@ class CustomerCard extends StatelessWidget {
                     onTap:
                         canEditThisCustomer
                             ? () async {
+                              // ✅ PASS FULL CUSTOMER DATA – ab project, site, notes, priority bhi pass honge
                               await showDialog(
                                 context: context,
                                 barrierDismissible: false,
                                 builder:
                                     (_) => EditCustomerPopup(
+                                      customerData: {
+                                        'id': customer.id,
+                                        'name': customer.name,
+                                        'Last_Name': customer.lastName,
+                                        'phone': customer.phone,
+                                        'email': customer.email,
+                                        'assignedEmployee':
+                                            customer.assignedEmployee,
+                                        'assignedEmployeeId':
+                                            customer.assignedEmployeeId,
+                                        'assignedArchitect':
+                                            customer.assignedArchitect,
+                                        'siteType': customer.siteType,
+                                        'projectName': customer.projectName,
+                                        'siteName': customer.siteName,
+                                        'notes': customer.notes,
+                                        'priority': customer.priority ?? 'Low',
+                                      },
                                       customerId: customer.id,
                                     ),
                               );
                               onRefresh();
                             }
                             : () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    userRole == "employee"
-                                        ? "You can only edit your assigned customers."
-                                        : "You don't have permission to edit customer.",
+                              if (isEmployee && !canEditCustomer) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "You don't have permission to edit customer.",
+                                    ),
+                                    backgroundColor: Colors.red,
                                   ),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
+                                );
+                              }
                             },
                     borderRadius: BorderRadius.circular(18),
                     child: Container(
@@ -826,6 +977,7 @@ class CustomerCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
+              // HISTORY BUTTON
               _actionBtn(
                 icon: Icons.history,
                 text: "History",
@@ -840,6 +992,7 @@ class CustomerCard extends StatelessWidget {
                 },
               ),
               const SizedBox(width: 10),
+              // FOLLOW UP BUTTON
               _actionBtn(
                 icon: Icons.phone,
                 text: "Follow UP",
@@ -879,6 +1032,7 @@ class CustomerCard extends StatelessWidget {
   }
 }
 
+// --------------------- ACTION BUTTON (History/FollowUp) ---------------------
 Widget _actionBtn({
   required IconData icon,
   required String text,

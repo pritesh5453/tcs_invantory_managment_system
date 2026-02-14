@@ -16,7 +16,7 @@ class _AddNewSupplierScreenState extends State<AddNewSupplierScreen> {
 
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api/suppliers",
+      baseUrl: "https://dashboard.theceramicstudio.in/api/suppliers",
       headers: {"Content-Type": "application/json"},
     ),
   );

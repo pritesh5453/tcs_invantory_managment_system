@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart'; // ADDED
+import 'dart:io'; // ADDED
 
 /// ================= BATCH FORM MODEL =================
 class BatchForm {
@@ -24,10 +26,10 @@ class AddProductSheet extends StatefulWidget {
 class _AddProductSheetState extends State<AddProductSheet> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api",
+      baseUrl: "https://dashboard.theceramicstudio.in/api", // UPDATED
       headers: {
         "Accept": "application/json",
-        "Content-Type": "application/json",
+        // "Content-Type": "application/json", // REMOVED – will be set automatically for multipart
       },
     ),
   );
@@ -51,11 +53,15 @@ class _AddProductSheetState extends State<AddProductSheet> {
   bool dropdownLoading = true;
   bool loading = false;
 
-  /// GODOWN - Fixed: Should be a String, not separate booleans
+  /// GODOWN
   List<String> selectedGodowns = [];
 
   /// BATCHES
   List<BatchForm> batchForms = [BatchForm()];
+
+  /// IMAGE PICKER
+  File? _imageFile; // ADDED
+  final ImagePicker _picker = ImagePicker(); // ADDED
 
   @override
   void initState() {
@@ -65,14 +71,11 @@ class _AddProductSheetState extends State<AddProductSheet> {
 
   @override
   void dispose() {
-    // Dispose all controllers
     productNameCtrl.dispose();
     sizeCtrl.dispose();
     rateCtrl.dispose();
     coverageCtrl.dispose();
     descriptionCtrl.dispose();
-
-    // Dispose batch controllers
     for (var batch in batchForms) {
       batch.batchNo.dispose();
       batch.qty.dispose();
@@ -123,6 +126,27 @@ class _AddProductSheetState extends State<AddProductSheet> {
     }
 
     setState(() => dropdownLoading = false);
+  }
+
+  /// ================= IMAGE PICKER METHODS =================
+  Future<void> _pickImage() async {
+    // ADDED
+    final XFile? pickedFile = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70, // optional compression
+    );
+    if (pickedFile != null) {
+      setState(() {
+        _imageFile = File(pickedFile.path);
+      });
+    }
+  }
+
+  void _removeImage() {
+    // ADDED
+    setState(() {
+      _imageFile = null;
+    });
   }
 
   /// ================= VALIDATE FORM =================
@@ -189,7 +213,7 @@ class _AddProductSheetState extends State<AddProductSheet> {
 
     setState(() => loading = true);
 
-    // Prepare batches - only include if batchNo is provided
+    // Prepare batches
     final List<Map<String, dynamic>> batches = [];
     for (var batch in batchForms) {
       final batchNo = batch.batchNo.text.trim();
@@ -198,33 +222,56 @@ class _AddProductSheetState extends State<AddProductSheet> {
 
       if (batchNo.isNotEmpty) {
         batches.add({
-          "batch_no": batchNo,
+          "batchNo": batchNo,
           "qty": int.tryParse(qty) ?? 0,
           "location": location,
         });
       }
     }
 
-    final body = {
+    // Build FormData
+    final formData = FormData.fromMap({
       "name": productNameCtrl.text.trim(),
       "size": sizeCtrl.text.trim(),
-      "brand": selectedBrandId,
+      "brand": selectedBrandId.toString(),
       "category": selectedCategory,
       "quality": selectedQuality,
       "rate": rateCtrl.text.trim(),
       "cov": coverageCtrl.text.trim(),
-      "godown": selectedGodowns,
+      "godown": selectedGodowns, // will be sent as repeated fields
       "description": descriptionCtrl.text.trim(),
-      "batches": batches,
-    };
+      "batches": batches, // will be sent as JSON string? Dio handles lists/maps
+      // "availQty": 0, // optional, API might default
+      // "status": "", // optional
+      // "link": "", // optional
+      // "image_url": "", // not needed when sending file; field name might be "image"
+    });
 
-    debugPrint("Sending data: $body");
+    // Attach image if selected – using field name "image" (adjust if API expects "image_url")
+    if (_imageFile != null) {
+      formData.files.add(
+        MapEntry(
+          "image", // CHANGE to "image_url" if API expects that field name for file
+          await MultipartFile.fromFile(
+            _imageFile!.path,
+            filename: _imageFile!.path.split('/').last,
+          ),
+        ),
+      );
+    }
+
+    debugPrint("Sending multipart data");
 
     try {
       final res = await dio.post(
         "/product/add",
-        data: body,
-        options: Options(headers: {"Content-Type": "application/json"}),
+        data: formData,
+        options: Options(
+          headers: {
+            "Accept": "application/json",
+            // Content-Type will be set automatically with boundary
+          },
+        ),
       );
 
       debugPrint("Response: ${res.data}");
@@ -299,6 +346,72 @@ class _AddProductSheetState extends State<AddProductSheet> {
                     ),
 
                     const SizedBox(height: 10),
+
+                    /// PRODUCT IMAGE SECTION (ADDED)
+                    _label("Product Image"),
+                    Row(
+                      children: [
+                        if (_imageFile != null)
+                          Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.file(
+                                  _imageFile!,
+                                  width: 80,
+                                  height: 80,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                top: 0,
+                                right: 0,
+                                child: GestureDetector(
+                                  onTap: _removeImage,
+                                  child: Container(
+                                    decoration: const BoxDecoration(
+                                      color: Colors.red,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    padding: const EdgeInsets.all(4),
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.image, color: Colors.grey),
+                          ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextButton.icon(
+                            onPressed: _pickImage,
+                            icon: const Icon(Icons.photo_library),
+                            label: const Text("Select Image"),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.orange,
+                              side: const BorderSide(color: Colors.orange),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
 
                     _label("Product Name *"),
                     _textField(productNameCtrl, hint: "Enter product name"),

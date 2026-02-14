@@ -34,7 +34,7 @@ class Category {
 class CategoryApi {
   static final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboarduat.theceramicstudio.in/api/categories",
+      baseUrl: "https://dashboard.theceramicstudio.in/api/categories",
       headers: {"Content-Type": "application/json"},
     ),
   );

@@ -119,7 +119,7 @@ class _EditEmployeePopupState extends State<EditEmployeePopup> {
     setState(() => isUpdating = true);
 
     final url =
-        "https://dashboarduat.theceramicstudio.in/api/employees/update/${widget.employee.id}";
+        "https://dashboard.theceramicstudio.in/api/employees/update/${widget.employee.id}";
 
     String? formattedDob;
     if (dobCtrl.text.trim().isNotEmpty) {

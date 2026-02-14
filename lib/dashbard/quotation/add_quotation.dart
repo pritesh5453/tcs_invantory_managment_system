@@ -40,6 +40,11 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
   String? _selectedArchitectId;
   String? _selectedArchitectName;
 
+  List<dynamic> _customers = [];
+  List<dynamic> _filteredCustomers = [];
+  bool _showCustomerDropdown = false;
+  Timer? _customerSearchDebounce;
+
   // Attended By Data
   List<dynamic> _employees = [];
   String? _selectedEmployeeId;
@@ -98,7 +103,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
     try {
       final response = await _dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/architects/list',
+        'https://dashboard.theceramicstudio.in/api/architects/list',
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
@@ -115,6 +120,33 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     }
   }
 
+  Future<void> _fetchCustomers(String search) async {
+    if (search.trim().isEmpty) {
+      setState(() {
+        _filteredCustomers = [];
+        _showCustomerDropdown = false;
+      });
+      return;
+    }
+
+    try {
+      final response = await _dio.get(
+        'https://dashboard.theceramicstudio.in/api/users/list',
+        queryParameters: {'search': search},
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        setState(() {
+          _customers = response.data['customers'];
+          _filteredCustomers = _customers;
+          _showCustomerDropdown = true;
+        });
+      }
+    } catch (e) {
+      debugPrint("Customer fetch error: $e");
+    }
+  }
+
   Future<void> _fetchEmployees(String search) async {
     setState(() {
       _isLoadingEmployees = true;
@@ -122,7 +154,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
     try {
       final response = await _dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/employees/list',
+        'https://dashboard.theceramicstudio.in/api/employees/list',
         queryParameters: {'search': search},
       );
 
@@ -150,7 +182,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
     try {
       final response = await _dio.get(
-        'https://dashboarduat.theceramicstudio.in/api/product/list',
+        'https://dashboard.theceramicstudio.in/api/product/list',
         queryParameters: {'search': search},
       );
 
@@ -377,7 +409,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
           "quality": row.quality,
           "rate": double.tryParse(row.rateController.text) ?? 0,
           "box": int.tryParse(row.quantityController.text) ?? 0,
-          "area": "", // This field seems to be empty in your example
+          "area":
+              row.areaController.text.trim().toString(), // 👈 AREA FIELD ADDED
           "Weight": row.weightController.text,
           "TWgt": row.twgtController.text,
           "Coverage": row.covController.text,
@@ -404,17 +437,21 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
       // Prepare request body
       final requestBody = {
-        "additionalDiscount": _additionalDiscountController.text.trim(),
+        "additionalDiscount":
+            double.tryParse(_additionalDiscountController.text) ?? 0,
+
         "clientDetails": clientDetails,
+
         "rows": rowsData,
-        "grandTotal": _calculateGrandTotal(),
+
+        "grandTotal": double.parse(_calculateGrandTotal().toStringAsFixed(2)),
       };
 
       debugPrint('Request Body: ${requestBody.toString()}');
 
       // Make API call
       final response = await _dio.post(
-        'https://dashboarduat.theceramicstudio.in/api/Quotation/saveQuotation',
+        'https://dashboard.theceramicstudio.in/api/Quotation/saveQuotation', // Updated API
         data: requestBody,
         options: Options(headers: {'Content-Type': 'application/json'}),
       );
@@ -564,10 +601,166 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                 // Client Full Name
                                 _buildClientLabel('CLIENT FULL NAME'),
                                 const SizedBox(height: 4),
-                                _buildClientTextField(
-                                  _clientNameController,
-                                  'Type here...',
+                                Container(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: Colors.grey.shade300,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        child: TextField(
+                                          controller: _clientNameController,
+                                          onChanged: (value) {
+                                            if (_customerSearchDebounce
+                                                    ?.isActive ??
+                                                false) {
+                                              _customerSearchDebounce!.cancel();
+                                            }
+
+                                            _customerSearchDebounce = Timer(
+                                              const Duration(milliseconds: 400),
+                                              () {
+                                                _fetchCustomers(value);
+                                              },
+                                            );
+
+                                            setState(() {});
+                                          },
+                                          onTap: () {
+                                            if (_clientNameController
+                                                .text
+                                                .isNotEmpty) {
+                                              _showCustomerDropdown = true;
+                                            }
+                                          },
+                                          decoration: const InputDecoration(
+                                            hintText: "Search customer...",
+                                            border: InputBorder.none,
+                                            isDense: true,
+                                          ),
+                                        ),
+                                      ),
+
+                                      /// DROPDOWN
+                                      if (_showCustomerDropdown &&
+                                          _filteredCustomers.isNotEmpty)
+                                        Container(
+                                          height: 150,
+                                          decoration: BoxDecoration(
+                                            border: Border.all(
+                                              color: Colors.grey.shade200,
+                                            ),
+                                            borderRadius:
+                                                const BorderRadius.only(
+                                                  bottomLeft: Radius.circular(
+                                                    8,
+                                                  ),
+                                                  bottomRight: Radius.circular(
+                                                    8,
+                                                  ),
+                                                ),
+                                          ),
+                                          child: ListView.builder(
+                                            itemCount:
+                                                _filteredCustomers.length,
+                                            itemBuilder: (context, index) {
+                                              final customer =
+                                                  _filteredCustomers[index];
+                                              final fullName =
+                                                  "${customer['name']} ${customer['Last_Name'] ?? ''}";
+
+                                              return ListTile(
+                                                title: Text(fullName),
+                                                subtitle: Text(
+                                                  customer['phone'] ?? '',
+                                                ),
+                                                onTap: () {
+                                                  setState(() {
+                                                    _clientNameController.text =
+                                                        fullName;
+                                                    _contactNumberController
+                                                            .text =
+                                                        customer['phone'] ?? '';
+                                                    _altNumberController.text =
+                                                        customer['altphone'] ??
+                                                        '';
+                                                    _emailController.text =
+                                                        customer['email'] ?? '';
+                                                    _siteAddressController
+                                                            .text =
+                                                        customer['siteName'] ??
+                                                        '';
+
+                                                    _showCustomerDropdown =
+                                                        false;
+
+                                                    /// Optional: Architect & Employee Auto Assign
+                                                    // Architect Auto Select
+                                                    final architectName =
+                                                        customer['assignedArchitect'];
+                                                    if (architectName != null) {
+                                                      final architect =
+                                                          _architects.firstWhere(
+                                                            (a) =>
+                                                                "${a['firstname']} ${a['lastname']}"
+                                                                    .toLowerCase()
+                                                                    .trim() ==
+                                                                architectName
+                                                                    .toLowerCase()
+                                                                    .trim(),
+                                                            orElse: () => null,
+                                                          );
+
+                                                      if (architect != null) {
+                                                        _selectedArchitectId =
+                                                            architect['id']
+                                                                .toString();
+                                                      }
+                                                    }
+
+                                                    // Employee Auto Select
+                                                    final employeeName =
+                                                        customer['assignedEmployee'];
+                                                    if (employeeName != null) {
+                                                      final employee =
+                                                          _employees.firstWhere(
+                                                            (e) =>
+                                                                (e['name'] ??
+                                                                        '')
+                                                                    .toLowerCase()
+                                                                    .trim() ==
+                                                                employeeName
+                                                                    .toLowerCase()
+                                                                    .trim(),
+                                                            orElse: () => null,
+                                                          );
+
+                                                      if (employee != null) {
+                                                        _selectedEmployeeId =
+                                                            employee['id']
+                                                                .toString();
+                                                      }
+                                                    }
+                                                  });
+
+                                                  FocusScope.of(
+                                                    context,
+                                                  ).unfocus();
+                                                },
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ),
+
                                 const SizedBox(height: 12),
 
                                 // Client GST Number
@@ -1424,9 +1617,10 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
           const SizedBox(height: 12),
 
-          // Rate and COV
+          // Rate, COV, and AREA
           Row(
             children: [
+              // Rate
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1441,7 +1635,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
+              // COV
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1456,13 +1651,32 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              // AREA (NEW FIELD)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('AREA'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.areaController, // 👈 NEW CONTROLLER
+                      '0',
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => row.updateTotal(),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
 
           const SizedBox(height: 12),
 
+          // BOX, DISCOUNT, WEIGHT
           Row(
             children: [
+              // BOX
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1478,7 +1692,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
+              // DISCOUNT
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1494,13 +1709,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                   ],
                 ),
               ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-          // Weight and TWGT
-          Row(
-            children: [
+              const SizedBox(width: 8),
+              // WEIGHT
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1516,7 +1726,15 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // TWGT, AMOUNT, GODOWN
+          Row(
+            children: [
+              // TWGT
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1527,16 +1745,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                   ],
                 ),
               ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // Quantity and Discount
-
-          // Amount and Godown
-          Row(
-            children: [
+              const SizedBox(width: 8),
+              // AMOUNT
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1547,7 +1757,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
+              // GODOWN
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1693,6 +1904,8 @@ class ProductRow {
   final TextEditingController productSearchController = TextEditingController();
   final TextEditingController rateController = TextEditingController();
   final TextEditingController covController = TextEditingController();
+  final TextEditingController areaController =
+      TextEditingController(); // 👈 NEW
   final TextEditingController weightController = TextEditingController();
   final TextEditingController twgtController = TextEditingController();
   final TextEditingController quantityController = TextEditingController();
@@ -1748,6 +1961,7 @@ class ProductRow {
     productSearchController.dispose();
     rateController.dispose();
     covController.dispose();
+    areaController.dispose(); // 👈 NEW
     weightController.dispose();
     twgtController.dispose();
     quantityController.dispose();

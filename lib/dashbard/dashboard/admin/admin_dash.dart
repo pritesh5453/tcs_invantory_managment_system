@@ -21,7 +21,7 @@ class _DashboardPageState extends State<DashboardPage> {
   // Dio instance
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: 'https://dashboarduat.theceramicstudio.in/api',
+      baseUrl: 'https://dashboard.theceramicstudio.in/api',
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
       headers: {'Accept': 'application/json'},
