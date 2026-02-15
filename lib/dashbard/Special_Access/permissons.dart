@@ -24,7 +24,6 @@ class _EmployeeRolePermissionScreenState
       headers: {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        // "Authorization": "Bearer YOUR_TOKEN",
       },
     ),
   );
@@ -32,7 +31,6 @@ class _EmployeeRolePermissionScreenState
   bool isLoading = false;
   bool isSaving = false;
 
-  /// All permissions map (dynamic)
   Map<String, bool> permissions = {};
 
   @override
@@ -46,21 +44,38 @@ class _EmployeeRolePermissionScreenState
     setState(() => isLoading = true);
 
     try {
+      print("============ FETCH PERMISSIONS API ============");
+      print("Employee ID: ${widget.employeeId}");
+
       final response = await dio.get(
         "/roles/get-employee-roles/${widget.employeeId}",
         options: Options(validateStatus: (s) => true),
       );
 
+      print("Status Code: ${response.statusCode}");
+      print("Full Response: ${response.data}");
+
       if (response.statusCode == 200 && response.data['success'] == true) {
         final Map<String, dynamic> perms = response.data['permissions'] ?? {};
 
+        print("Permissions Map: $perms");
+
         final sortedKeys = perms.keys.toList()..sort();
 
-        permissions = {for (var key in sortedKeys) key: perms[key] == true};
+        setState(() {
+          permissions = {for (var key in sortedKeys) key: perms[key] == true};
+        });
+
+        print("Final Sorted Permissions: $permissions");
+      } else {
+        print("API Error: ${response.data}");
       }
-    } catch (_) {
+    } catch (e, stacktrace) {
+      print("Fetch Error: $e");
+      print("Stacktrace: $stacktrace");
     } finally {
       setState(() => isLoading = false);
+      print("============ FETCH COMPLETE ============");
     }
   }
 
@@ -74,21 +89,30 @@ class _EmployeeRolePermissionScreenState
         "permissions": permissions,
       };
 
+      print("============ SAVE PERMISSIONS API ============");
+      print("Request Body: $body");
+
       final response = await dio.post(
         "/roles/save-employee-roles",
         data: body,
         options: Options(validateStatus: (s) => true),
       );
 
+      print("Status Code: ${response.statusCode}");
+      print("Response Data: ${response.data}");
+
       if (response.statusCode == 200 && response.data['success'] == true) {
         _showSnackbar("Permissions updated successfully", isError: false);
       } else {
         _showSnackbar(response.data['message'] ?? "Failed to save permissions");
       }
-    } catch (_) {
+    } catch (e, stacktrace) {
+      print("Save Error: $e");
+      print("Stacktrace: $stacktrace");
       _showSnackbar("Network error");
     } finally {
       setState(() => isSaving = false);
+      print("============ SAVE COMPLETE ============");
     }
   }
 

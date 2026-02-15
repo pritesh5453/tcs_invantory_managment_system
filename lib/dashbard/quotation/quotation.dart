@@ -201,8 +201,15 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
       final filePath =
           '${tempDir.path}/quotation_${quotationId}_${pdfType.toLowerCase()}_${DateTime.now().millisecondsSinceEpoch}.pdf';
 
+      // ✅ DIFFERENT URL BASED ON TYPE
+      String url = "/Quotation/print/$quotationId";
+
+      if (pdfType == "Name") {
+        url = "/Quotation/print/$quotationId?mode=qname";
+      }
+
       final response = await dio.get(
-        "/Quotation/print/$quotationId",
+        url,
         options: Options(
           responseType: ResponseType.bytes,
           headers: {'Accept': 'application/pdf'},
