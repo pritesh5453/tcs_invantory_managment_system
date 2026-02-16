@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tcs_invantory_managment_system/dashbard/architect_managment/architect_commision.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/admin_dash.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 import 'add_architect.dart';
 import 'edit_architect.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
@@ -521,154 +524,165 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
-        children: [
-          /// TOP BAR WITH SEARCH
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-            decoration: const BoxDecoration(
-              color: Color(0xFFFFA54A),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(24),
-                bottomRight: Radius.circular(24),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Column(
+          children: [
+            /// TOP BAR WITH SEARCH
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFA54A),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(24),
+                  bottomRight: Radius.circular(24),
+                ),
               ),
-            ),
-            child: SafeArea(
-              bottom: false,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ArchitectSearchBarWidget(
-                      onSearchChanged: _onSearchChanged,
-                      initialValue: _searchQuery,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  InkWell(
-                    onTap:
-                        canAddArchitect
-                            ? () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const AddArchitectScreen(),
-                                ),
-                              ).then((_) => fetchArchitects());
-                            }
-                            : () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    "You don't have permission to add architect.",
-                                  ),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            },
-                    child: Opacity(
-                      opacity: canAddArchitect ? 1 : 0.4,
-                      child: Container(
-                        height: 44,
-                        width: 44,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.add, color: Colors.white),
+              child: SafeArea(
+                bottom: false,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ArchitectSearchBarWidget(
+                        onSearchChanged: _onSearchChanged,
+                        initialValue: _searchQuery,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    InkWell(
+                      onTap:
+                          canAddArchitect
+                              ? () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const AddArchitectScreen(),
+                                  ),
+                                ).then((_) => fetchArchitects());
+                              }
+                              : () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "You don't have permission to add architect.",
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              },
+                      child: Opacity(
+                        opacity: canAddArchitect ? 1 : 0.4,
+                        child: Container(
+                          height: 44,
+                          width: 44,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.white),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.add, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
 
-          const SizedBox(height: 10),
+            const SizedBox(height: 10),
 
-          /// LIST WITH SEARCH RESULTS AND PAGINATION
-          Expanded(
-            child:
-                loading && architects.isEmpty
-                    ? const Center(child: CircularProgressIndicator())
-                    : RefreshIndicator(
-                      onRefresh: () async {
-                        await fetchArchitects();
-                      },
-                      child:
-                          architects.isEmpty
-                              ? _buildEmptyState()
-                              : ListView.builder(
-                                controller: _scrollController,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                itemCount:
-                                    architects.length + (loadingMore ? 1 : 0),
-                                itemBuilder: (context, index) {
-                                  // Loading more indicator
-                                  if (index == architects.length) {
-                                    return Padding(
-                                      padding: const EdgeInsets.all(16),
-                                      child: Center(
-                                        child:
-                                            loadingMore
-                                                ? const CircularProgressIndicator()
-                                                : !_hasMoreData
-                                                ? const Text(
-                                                  "No more architects",
-                                                  style: TextStyle(
-                                                    color: Colors.grey,
-                                                  ),
-                                                )
-                                                : const SizedBox(),
-                                      ),
-                                    );
-                                  }
-
-                                  final a = architects[index];
-
-                                  return InkWell(
-                                    borderRadius: BorderRadius.circular(8),
-                                    onTap: () {
-                                      if (!canViewCommission) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              "Commission panel is accessible only to Super Admin.",
-                                            ),
-                                            backgroundColor: Colors.red,
-                                          ),
-                                        );
-                                        return;
-                                      }
-
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder:
-                                              (_) => CommissionPage(
-                                                architectId: a.id,
-                                              ),
+            /// LIST WITH SEARCH RESULTS AND PAGINATION
+            Expanded(
+              child:
+                  loading && architects.isEmpty
+                      ? const Center(child: CircularProgressIndicator())
+                      : RefreshIndicator(
+                        onRefresh: () async {
+                          await fetchArchitects();
+                        },
+                        child:
+                            architects.isEmpty
+                                ? _buildEmptyState()
+                                : ListView.builder(
+                                  controller: _scrollController,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  itemCount:
+                                      architects.length + (loadingMore ? 1 : 0),
+                                  itemBuilder: (context, index) {
+                                    // Loading more indicator
+                                    if (index == architects.length) {
+                                      return Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Center(
+                                          child:
+                                              loadingMore
+                                                  ? const CircularProgressIndicator()
+                                                  : !_hasMoreData
+                                                  ? const Text(
+                                                    "No more architects",
+                                                    style: TextStyle(
+                                                      color: Colors.grey,
+                                                    ),
+                                                  )
+                                                  : const SizedBox(),
                                         ),
                                       );
-                                    },
-                                    child: ArchitectCard(
-                                      architect: a,
-                                      canEdit: canEditArchitect,
-                                      canDelete: canDeleteArchitect,
-                                      onDelete: () => confirmDelete(a.id),
-                                      onClients: () => showClientPopup(a.id),
-                                    ),
-                                  );
-                                },
-                              ),
-                    ),
-          ),
-        ],
+                                    }
+
+                                    final a = architects[index];
+
+                                    return InkWell(
+                                      borderRadius: BorderRadius.circular(8),
+                                      onTap: () {
+                                        if (!canViewCommission) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                "Commission panel is accessible only to Super Admin.",
+                                              ),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                          return;
+                                        }
+
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder:
+                                                (_) => CommissionPage(
+                                                  architectId: a.id,
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                      child: ArchitectCard(
+                                        architect: a,
+                                        canEdit: canEditArchitect,
+                                        canDelete: canDeleteArchitect,
+                                        onDelete: () => confirmDelete(a.id),
+                                        onClients: () => showClientPopup(a.id),
+                                      ),
+                                    );
+                                  },
+                                ),
+                      ),
+            ),
+          ],
+        ),
       ),
     );
   }

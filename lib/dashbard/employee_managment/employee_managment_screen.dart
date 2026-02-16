@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tcs_invantory_managment_system/dashbard/employee_managment/add_employee.dart';
 import 'package:tcs_invantory_managment_system/dashbard/employee_managment/edit_employee.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 class EmployeeManagmentScreen extends StatefulWidget {
   const EmployeeManagmentScreen({super.key});
@@ -193,154 +195,166 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      body: SafeArea(
-        child: Column(
-          children: [
-            /// ---------------- APP BAR WITH SEARCH ----------------
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFA54A),
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(28),
-                  bottomRight: Radius.circular(28),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey.shade100,
+        body: SafeArea(
+          child: Column(
+            children: [
+              /// ---------------- APP BAR WITH SEARCH ----------------
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFA54A),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(28),
+                    bottomRight: Radius.circular(28),
+                  ),
                 ),
-              ),
-              child: Column(
-                children: [
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          height: 42,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.search,
-                                size: 20,
-                                color: Colors.grey,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  controller: _searchController,
-                                  onChanged: _onSearchChanged,
-                                  decoration: InputDecoration(
-                                    hintText: "Search by name or phone...",
-                                    hintStyle: const TextStyle(
-                                      color: Colors.grey,
-                                    ),
-                                    border: InputBorder.none,
-                                    suffixIcon:
-                                        _searchQuery.isNotEmpty
-                                            ? IconButton(
-                                              icon: const Icon(
-                                                Icons.clear,
-                                                size: 16,
-                                              ),
-                                              onPressed: _clearSearch,
-                                            )
-                                            : null,
-                                  ),
-                                  style: const TextStyle(color: Colors.black),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      InkWell(
-                        onTap:
-                            canAddEmployee
-                                ? () async {
-                                  final result = await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const AddEmployeeScreen(),
-                                    ),
-                                  );
-                                  if (result == true) {
-                                    await fetchEmployees(
-                                      search:
-                                          _searchQuery.isNotEmpty
-                                              ? _searchQuery
-                                              : null,
-                                    );
-                                  }
-                                }
-                                : () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        "You don't have permission to add employee. Please contact support.",
-                                      ),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                },
-                        child: Opacity(
-                          opacity: canAddEmployee ? 1 : 0.4,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
                           child: Container(
                             height: 42,
-                            width: 42,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
                             decoration: BoxDecoration(
-                              border: Border.all(color: Colors.white),
-                              borderRadius: BorderRadius.circular(12),
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(24),
                             ),
-                            child: const Icon(Icons.add, color: Colors.white),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.search,
+                                  size: 20,
+                                  color: Colors.grey,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _searchController,
+                                    onChanged: _onSearchChanged,
+                                    decoration: InputDecoration(
+                                      hintText: "Search by name or phone...",
+                                      hintStyle: const TextStyle(
+                                        color: Colors.grey,
+                                      ),
+                                      border: InputBorder.none,
+                                      suffixIcon:
+                                          _searchQuery.isNotEmpty
+                                              ? IconButton(
+                                                icon: const Icon(
+                                                  Icons.clear,
+                                                  size: 16,
+                                                ),
+                                                onPressed: _clearSearch,
+                                              )
+                                              : null,
+                                    ),
+                                    style: const TextStyle(color: Colors.black),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            /// ---------------- LIST ----------------
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: () async {
-                  debugPrint("🔄 PULL TO REFRESH TRIGGERED");
-                  setState(() => isLoading = true);
-                  await fetchEmployees(
-                    search: _searchQuery.isNotEmpty ? _searchQuery : null,
-                  );
-                },
-                child:
-                    isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : employees.isEmpty
-                        ? _emptyState()
-                        : ListView.builder(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.all(16),
-                          itemCount: employees.length,
-                          itemBuilder: (_, index) {
-                            return EmployeeCard(
-                              employee: employees[index],
-                              onDelete:
-                                  () => showDeleteDialog(
-                                    context,
-                                    employees[index].id,
-                                  ),
-                              canEditEmployee: canEditEmployee,
-                              canDeleteEmployee: canDeleteEmployee,
-                            );
-                          },
+                        const SizedBox(width: 12),
+                        InkWell(
+                          onTap:
+                              canAddEmployee
+                                  ? () async {
+                                    final result = await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (_) => const AddEmployeeScreen(),
+                                      ),
+                                    );
+                                    if (result == true) {
+                                      await fetchEmployees(
+                                        search:
+                                            _searchQuery.isNotEmpty
+                                                ? _searchQuery
+                                                : null,
+                                      );
+                                    }
+                                  }
+                                  : () {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          "You don't have permission to add employee. Please contact support.",
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  },
+                          child: Opacity(
+                            opacity: canAddEmployee ? 1 : 0.4,
+                            child: Container(
+                              height: 42,
+                              width: 42,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.white),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.add, color: Colors.white),
+                            ),
+                          ),
                         ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+
+              /// ---------------- LIST ----------------
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    debugPrint("🔄 PULL TO REFRESH TRIGGERED");
+                    setState(() => isLoading = true);
+                    await fetchEmployees(
+                      search: _searchQuery.isNotEmpty ? _searchQuery : null,
+                    );
+                  },
+                  child:
+                      isLoading
+                          ? const Center(child: CircularProgressIndicator())
+                          : employees.isEmpty
+                          ? _emptyState()
+                          : ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(16),
+                            itemCount: employees.length,
+                            itemBuilder: (_, index) {
+                              return EmployeeCard(
+                                employee: employees[index],
+                                onDelete:
+                                    () => showDeleteDialog(
+                                      context,
+                                      employees[index].id,
+                                    ),
+                                canEditEmployee: canEditEmployee,
+                                canDeleteEmployee: canDeleteEmployee,
+                              );
+                            },
+                          ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

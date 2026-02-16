@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/orderbook/add_order_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/orderbook/edit_order.dart';
 
@@ -335,154 +336,167 @@ class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xffF6F6F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            /// ================= TOP BAR WITH SEARCH =================
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFA54A),
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(26),
-                  bottomRight: Radius.circular(26),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xffF6F6F6),
+        body: SafeArea(
+          child: Column(
+            children: [
+              /// ================= TOP BAR WITH SEARCH =================
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFA54A),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(26),
+                    bottomRight: Radius.circular(26),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OrderBookSearchBarWidget(
+                        onSearchChanged: _searchOrders,
+                        initialValue: searchQuery,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AddOrderScreen(),
+                          ),
+                        ).then((_) {
+                          _refreshOrders();
+                        });
+                      },
+                      child: Container(
+                        height: 42,
+                        width: 42,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.add, color: Colors.white),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OrderBookSearchBarWidget(
-                      onSearchChanged: _searchOrders,
-                      initialValue: searchQuery,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const AddOrderScreen(),
-                        ),
-                      ).then((_) {
-                        _refreshOrders();
-                      });
-                    },
-                    child: Container(
-                      height: 42,
-                      width: 42,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.add, color: Colors.white),
-                    ),
-                  ),
-                ],
-              ),
-            ),
 
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-            /// ================= ORDER LIST =================
-            Expanded(
-              child:
-                  isLoading && orders.isEmpty
-                      ? const Center(child: CircularProgressIndicator())
-                      : RefreshIndicator(
-                        onRefresh: _refreshOrders,
-                        child: CustomScrollView(
-                          controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          slivers: [
-                            /// ORDER COUNT HEADER
-                            if (orders.isNotEmpty)
-                              SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Text(
-                                    "Orders (${orders.length} of $_totalItems)",
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                            /// ORDERS LIST
-                            SliverList(
-                              delegate: SliverChildBuilderDelegate((
-                                context,
-                                index,
-                              ) {
-                                final order = orders[index];
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  child: OrderCard(
-                                    order: order,
-                                    onEdit: () async {
-                                      final refresh = await Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder:
-                                              (_) =>
-                                                  EditOrderScreen(order: order),
-                                        ),
-                                      );
-
-                                      if (refresh == true) {
-                                        _fetchOrders();
-                                      }
-                                    },
-                                    onDelete: () => _confirmDelete(order["id"]),
-                                  ),
-                                );
-                              }, childCount: orders.length),
-                            ),
-
-                            /// EMPTY STATE
-                            if (orders.isEmpty && !isLoading)
-                              SliverFillRemaining(child: _buildEmptyState()),
-
-                            /// LOAD MORE INDICATOR
-                            if (loadingMore)
-                              SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                ),
-                              ),
-
-                            /// NO MORE ORDERS MESSAGE
-                            if (!_hasMoreData && orders.isNotEmpty)
-                              SliverToBoxAdapter(
-                                child: const Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: Center(
+              /// ================= ORDER LIST =================
+              Expanded(
+                child:
+                    isLoading && orders.isEmpty
+                        ? const Center(child: CircularProgressIndicator())
+                        : RefreshIndicator(
+                          onRefresh: _refreshOrders,
+                          child: CustomScrollView(
+                            controller: _scrollController,
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            slivers: [
+                              /// ORDER COUNT HEADER
+                              if (orders.isNotEmpty)
+                                SliverToBoxAdapter(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
                                     child: Text(
-                                      "No more orders",
-                                      style: TextStyle(color: Colors.grey),
+                                      "Orders (${orders.length} of $_totalItems)",
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
                                     ),
                                   ),
                                 ),
+
+                              /// ORDERS LIST
+                              SliverList(
+                                delegate: SliverChildBuilderDelegate((
+                                  context,
+                                  index,
+                                ) {
+                                  final order = orders[index];
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    child: OrderCard(
+                                      order: order,
+                                      onEdit: () async {
+                                        final refresh = await Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder:
+                                                (_) => EditOrderScreen(
+                                                  order: order,
+                                                ),
+                                          ),
+                                        );
+
+                                        if (refresh == true) {
+                                          _fetchOrders();
+                                        }
+                                      },
+                                      onDelete:
+                                          () => _confirmDelete(order["id"]),
+                                    ),
+                                  );
+                                }, childCount: orders.length),
                               ),
 
-                            /// EXTRA SPACE AT BOTTOM FOR BETTER SCROLLING
-                            SliverToBoxAdapter(child: Container(height: 50)),
-                          ],
+                              /// EMPTY STATE
+                              if (orders.isEmpty && !isLoading)
+                                SliverFillRemaining(child: _buildEmptyState()),
+
+                              /// LOAD MORE INDICATOR
+                              if (loadingMore)
+                                SliverToBoxAdapter(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  ),
+                                ),
+
+                              /// NO MORE ORDERS MESSAGE
+                              if (!_hasMoreData && orders.isNotEmpty)
+                                SliverToBoxAdapter(
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Center(
+                                      child: Text(
+                                        "No more orders",
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                              /// EXTRA SPACE AT BOTTOM FOR BETTER SCROLLING
+                              SliverToBoxAdapter(child: Container(height: 50)),
+                            ],
+                          ),
                         ),
-                      ),
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );

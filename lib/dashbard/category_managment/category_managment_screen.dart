@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 /// ================= MODEL =================
 class Category {
@@ -401,197 +402,208 @@ class _CategoryManagementScreenState
     final pagination = ref.watch(paginationProvider);
     final allCategories = ref.watch(categoryProvider);
 
-    return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      body: Column(
-        children: [
-          /// TOP BAR WITH ENABLED SEARCH
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
-            decoration: const BoxDecoration(
-              color: Color(0xFFFFA54A),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(24),
-                bottomRight: Radius.circular(24),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(child: SearchBarWidget()),
-                const SizedBox(width: 10),
-                InkWell(
-                  onTap:
-                      canAdd
-                          ? () {
-                            showDialog(
-                              context: context,
-                              builder: (_) => const CategoryPopup(),
-                            );
-                          }
-                          : () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  "You don't have permission to add category.",
-                                ),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          },
-                  child: Opacity(
-                    opacity: canAdd ? 1 : 0.4,
-                    child: Container(
-                      height: 44,
-                      width: 44,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.add, color: Colors.white),
-                    ),
-                  ),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey.shade100,
+        body: Column(
+          children: [
+            /// TOP BAR WITH ENABLED SEARCH
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFA54A),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(24),
+                  bottomRight: Radius.circular(24),
                 ),
-              ],
-            ),
-          ),
-
-          /// LIST WITH SEARCH RESULTS
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: () async {
-                await notifier.load();
-                ref.read(searchQueryProvider.notifier).state = '';
-              },
-              child: CustomScrollView(
-                controller: _scrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  /// CATEGORY COUNT
-                  if (allCategories.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          "Categories (${allCategories.length} of ${pagination.totalItems})",
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(child: SearchBarWidget()),
+                  const SizedBox(width: 10),
+                  InkWell(
+                    onTap:
+                        canAdd
+                            ? () {
+                              showDialog(
+                                context: context,
+                                builder: (_) => const CategoryPopup(),
+                              );
+                            }
+                            : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "You don't have permission to add category.",
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            },
+                    child: Opacity(
+                      opacity: canAdd ? 1 : 0.4,
+                      child: Container(
+                        height: 44,
+                        width: 44,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white),
+                          borderRadius: BorderRadius.circular(12),
                         ),
+                        child: const Icon(Icons.add, color: Colors.white),
                       ),
                     ),
-
-                  /// CATEGORY LIST
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      if (index < filteredList.length) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          child: CategoryCard(
-                            cat: filteredList[index],
-                            canEdit: canEdit,
-                            canDelete: canDelete,
-                          ),
-                        );
-                      }
-                      return null;
-                    }, childCount: filteredList.length),
                   ),
-
-                  /// EMPTY STATE
-                  if (filteredList.isEmpty &&
-                      searchQuery.isEmpty &&
-                      allCategories.isEmpty)
-                    SliverFillRemaining(
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.category,
-                              size: 60,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              "No categories found",
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                  /// SEARCH EMPTY STATE
-                  if (filteredList.isEmpty && searchQuery.isNotEmpty)
-                    SliverFillRemaining(
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.search_off,
-                              size: 60,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              "No results found for '$searchQuery'",
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              "Try searching with different keywords",
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[500],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                  /// LOAD MORE INDICATOR
-                  if (pagination.isLoadingMore)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      ),
-                    ),
-
-                  /// NO MORE DATA MESSAGE
-                  if (!pagination.hasMoreData && allCategories.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(
-                          child: Text(
-                            "No more categories",
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  /// EXTRA SPACE AT BOTTOM
-                  SliverToBoxAdapter(child: Container(height: 50)),
                 ],
               ),
             ),
-          ),
-        ],
+
+            /// LIST WITH SEARCH RESULTS
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  await notifier.load();
+                  ref.read(searchQueryProvider.notifier).state = '';
+                },
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    /// CATEGORY COUNT
+                    if (allCategories.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            "Categories (${allCategories.length} of ${pagination.totalItems})",
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    /// CATEGORY LIST
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        if (index < filteredList.length) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: CategoryCard(
+                              cat: filteredList[index],
+                              canEdit: canEdit,
+                              canDelete: canDelete,
+                            ),
+                          );
+                        }
+                        return null;
+                      }, childCount: filteredList.length),
+                    ),
+
+                    /// EMPTY STATE
+                    if (filteredList.isEmpty &&
+                        searchQuery.isEmpty &&
+                        allCategories.isEmpty)
+                      SliverFillRemaining(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.category,
+                                size: 60,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                "No categories found",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    /// SEARCH EMPTY STATE
+                    if (filteredList.isEmpty && searchQuery.isNotEmpty)
+                      SliverFillRemaining(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.search_off,
+                                size: 60,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                "No results found for '$searchQuery'",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                "Try searching with different keywords",
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    /// LOAD MORE INDICATOR
+                    if (pagination.isLoadingMore)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                      ),
+
+                    /// NO MORE DATA MESSAGE
+                    if (!pagination.hasMoreData && allCategories.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(
+                            child: Text(
+                              "No more categories",
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    /// EXTRA SPACE AT BOTTOM
+                    SliverToBoxAdapter(child: Container(height: 50)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -687,9 +699,57 @@ class CategoryCard extends ConsumerWidget {
                     onPressed:
                         canDelete
                             ? () {
-                              ref
-                                  .read(categoryProvider.notifier)
-                                  .delete(cat.id);
+                              showDialog(
+                                context: context,
+                                builder:
+                                    (context) => AlertDialog(
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      title: const Text("Delete Category"),
+                                      content: Text(
+                                        "Are you sure you want to delete '${cat.name}'?",
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed:
+                                              () => Navigator.pop(context),
+                                          child: const Text("Cancel"),
+                                        ),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red,
+                                          ),
+                                          onPressed: () async {
+                                            Navigator.pop(
+                                              context,
+                                            ); // close dialog
+
+                                            await ref
+                                                .read(categoryProvider.notifier)
+                                                .delete(cat.id);
+
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  "Category deleted successfully",
+                                                ),
+                                                backgroundColor: Colors.green,
+                                              ),
+                                            );
+                                          },
+                                          child: const Text(
+                                            "Yes",
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                              );
                             }
                             : () {
                               ScaffoldMessenger.of(context).showSnackBar(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 import 'add_new_supplier.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
@@ -226,148 +227,159 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            /// 🔶 HEADER WITH SEARCH
-            Container(
-              height: 120,
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              decoration: const BoxDecoration(
-                color: Color(0xffFFA54A),
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(26),
-                  bottomRight: Radius.circular(26),
-                ),
-              ),
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      /// 🔍 SEARCH BAR (ENABLED)
-                      Expanded(
-                        child: SupplierSearchBarWidget(
-                          onSearchChanged: _onSearchChanged,
-                          initialValue: searchQuery,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
 
-                      /// ➕ ADD BUTTON (UNCHANGED)
-                      InkWell(
-                        onTap:
-                            canAddSupplier
-                                ? () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder:
-                                          (_) => const AddNewSupplierScreen(),
-                                    ),
-                                  ).then((_) => fetchSuppliers());
-                                }
-                                : () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        "You don't have permission to add supplier.",
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Column(
+            children: [
+              /// 🔶 HEADER WITH SEARCH
+              Container(
+                height: 120,
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                decoration: const BoxDecoration(
+                  color: Color(0xffFFA54A),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(26),
+                    bottomRight: Radius.circular(26),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        /// 🔍 SEARCH BAR (ENABLED)
+                        Expanded(
+                          child: SupplierSearchBarWidget(
+                            onSearchChanged: _onSearchChanged,
+                            initialValue: searchQuery,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+
+                        /// ➕ ADD BUTTON (UNCHANGED)
+                        InkWell(
+                          onTap:
+                              canAddSupplier
+                                  ? () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (_) => const AddNewSupplierScreen(),
                                       ),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                },
-                        borderRadius: BorderRadius.circular(14),
-                        child: Opacity(
-                          opacity: canAddSupplier ? 1 : 0.4,
-                          child: Container(
-                            height: 46,
-                            width: 46,
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 1.5,
+                                    ).then((_) => fetchSuppliers());
+                                  }
+                                  : () {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          "You don't have permission to add supplier.",
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  },
+                          borderRadius: BorderRadius.circular(14),
+                          child: Opacity(
+                            opacity: canAddSupplier ? 1 : 0.4,
+                            child: Container(
+                              height: 46,
+                              width: 46,
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 1.5,
+                                ),
+                                borderRadius: BorderRadius.circular(14),
                               ),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: const Icon(
-                              Icons.add,
-                              color: Colors.white,
-                              size: 26,
+                              child: const Icon(
+                                Icons.add,
+                                color: Colors.white,
+                                size: 26,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
 
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-            /// 📋 SUPPLIER LIST WITH SEARCH
-            Expanded(
-              child:
-                  loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : RefreshIndicator(
-                        onRefresh: () async {
-                          await fetchSuppliers();
-                          setState(() {
-                            searchQuery = '';
-                          });
-                        },
-                        child:
-                            filteredSuppliers.isEmpty
-                                ? _buildEmptyState()
-                                : ListView.builder(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                  ),
-                                  itemCount: filteredSuppliers.length,
-                                  itemBuilder: (context, index) {
-                                    final supplier = filteredSuppliers[index];
-                                    return SupplierCard(
-                                      index: index + 1,
-                                      name: supplier.name,
-                                      mobile: supplier.mobile,
-                                      canEdit: canEditSupplier,
-                                      canDelete: canDeleteSupplier,
-                                      onEdit: () async {
-                                        final updatedSupplier =
-                                            await Navigator.push<
-                                              Map<String, String>
-                                            >(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder:
-                                                    (_) => EditSupplierScreen(
-                                                      id: supplier.id,
-                                                      name: supplier.name,
-                                                      mobile: supplier.mobile,
-                                                    ),
-                                              ),
+              /// 📋 SUPPLIER LIST WITH SEARCH
+              Expanded(
+                child:
+                    loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : RefreshIndicator(
+                          onRefresh: () async {
+                            await fetchSuppliers();
+                            setState(() {
+                              searchQuery = '';
+                            });
+                          },
+                          child:
+                              filteredSuppliers.isEmpty
+                                  ? _buildEmptyState()
+                                  : ListView.builder(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                    ),
+                                    itemCount: filteredSuppliers.length,
+                                    itemBuilder: (context, index) {
+                                      final supplier = filteredSuppliers[index];
+                                      return SupplierCard(
+                                        index: index + 1,
+                                        name: supplier.name,
+                                        mobile: supplier.mobile,
+                                        canEdit: canEditSupplier,
+                                        canDelete: canDeleteSupplier,
+                                        onEdit: () async {
+                                          final updatedSupplier =
+                                              await Navigator.push<
+                                                Map<String, String>
+                                              >(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder:
+                                                      (_) => EditSupplierScreen(
+                                                        id: supplier.id,
+                                                        name: supplier.name,
+                                                        mobile: supplier.mobile,
+                                                      ),
+                                                ),
+                                              );
+
+                                          if (updatedSupplier != null) {
+                                            await updateSupplier(
+                                              supplier.id,
+                                              updatedSupplier["name"]!,
+                                              updatedSupplier["mobile"]!,
                                             );
-
-                                        if (updatedSupplier != null) {
-                                          await updateSupplier(
-                                            supplier.id,
-                                            updatedSupplier["name"]!,
-                                            updatedSupplier["mobile"]!,
-                                          );
-                                        }
-                                      },
-                                      onDelete:
-                                          () => deleteSupplier(supplier.id),
-                                    );
-                                  },
-                                ),
-                      ),
-            ),
-          ],
+                                          }
+                                        },
+                                        onDelete:
+                                            () => deleteSupplier(supplier.id),
+                                      );
+                                    },
+                                  ),
+                        ),
+              ),
+            ],
+          ),
         ),
       ),
     );

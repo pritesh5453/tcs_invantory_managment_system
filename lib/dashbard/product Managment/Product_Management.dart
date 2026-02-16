@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/add%20product.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/edit_product.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/product_view_screen.dart';
@@ -422,134 +423,147 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xffF6F6F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            /// TOP BAR WITH SEARCH
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              decoration: const BoxDecoration(
-                color: Color(0xffFFA54A),
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(26),
-                  bottomRight: Radius.circular(26),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xffF6F6F6),
+        body: SafeArea(
+          child: Column(
+            children: [
+              /// TOP BAR WITH SEARCH
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                decoration: const BoxDecoration(
+                  color: Color(0xffFFA54A),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(26),
+                    bottomRight: Radius.circular(26),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ProductSearchBarWidget(
+                        onSearchChanged: onSearchChanged,
+                        initialValue: searchQuery,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    InkWell(
+                      onTap:
+                          canAddProduct
+                              ? () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  builder: (_) => const AddProductSheet(),
+                                );
+                              }
+                              : () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "You don't have permission to add product.",
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              },
+                      child: Opacity(
+                        opacity: canAddProduct ? 1 : 0.4,
+                        child: Container(
+                          height: 42,
+                          width: 42,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.white),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.add, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ProductSearchBarWidget(
-                      onSearchChanged: onSearchChanged,
-                      initialValue: searchQuery,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  InkWell(
-                    onTap:
-                        canAddProduct
-                            ? () {
-                              showModalBottomSheet(
-                                context: context,
-                                isScrollControlled: true,
-                                builder: (_) => const AddProductSheet(),
-                              );
-                            }
-                            : () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    "You don't have permission to add product.",
-                                  ),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            },
-                    child: Opacity(
-                      opacity: canAddProduct ? 1 : 0.4,
-                      child: Container(
-                        height: 42,
-                        width: 42,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.add, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
 
-            /// LIST
-            Expanded(
-              child:
-                  loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : RefreshIndicator(
-                        onRefresh: () async {
-                          await fetchProducts();
-                        },
-                        child:
-                            products.isEmpty
-                                ? _buildEmptyState()
-                                : ListView.builder(
-                                  controller: _scrollController,
-                                  padding: const EdgeInsets.all(16),
-                                  itemCount:
-                                      products.length + (hasMore ? 1 : 0),
-                                  itemBuilder: (_, i) {
-                                    if (i < products.length) {
-                                      return ProductCard(
-                                        product: products[i],
-                                        canEdit: canEditProduct,
-                                        canDelete: canDeleteProduct,
-                                        onDelete:
-                                            (id) =>
-                                                _showDeleteDialog(context, id),
-                                        onEdit: () {
-                                          showModalBottomSheet(
-                                            context: context,
-                                            isScrollControlled: true,
-                                            builder:
-                                                (_) => EditProductSheet(
-                                                  productId: products[i].id,
-                                                  product: products[i],
-                                                ),
-                                          );
-                                        },
-                                        onView: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
+              /// LIST
+              Expanded(
+                child:
+                    loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : RefreshIndicator(
+                          onRefresh: () async {
+                            await fetchProducts();
+                          },
+                          child:
+                              products.isEmpty
+                                  ? _buildEmptyState()
+                                  : ListView.builder(
+                                    controller: _scrollController,
+                                    padding: const EdgeInsets.all(16),
+                                    itemCount:
+                                        products.length + (hasMore ? 1 : 0),
+                                    itemBuilder: (_, i) {
+                                      if (i < products.length) {
+                                        return ProductCard(
+                                          product: products[i],
+                                          canEdit: canEditProduct,
+                                          canDelete: canDeleteProduct,
+                                          onDelete:
+                                              (id) => _showDeleteDialog(
+                                                context,
+                                                id,
+                                              ),
+                                          onEdit: () {
+                                            showModalBottomSheet(
+                                              context: context,
+                                              isScrollControlled: true,
                                               builder:
-                                                  (_) => ProductViewScreen(
+                                                  (_) => EditProductSheet(
                                                     productId: products[i].id,
+                                                    product: products[i],
                                                   ),
-                                            ),
-                                          );
-                                        },
-                                      );
-                                    } else {
-                                      return Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 16,
-                                        ),
-                                        child: Center(
-                                          child:
-                                              loadingMore
-                                                  ? const CircularProgressIndicator()
-                                                  : const SizedBox(),
-                                        ),
-                                      );
-                                    }
-                                  },
-                                ),
-                      ),
-            ),
-          ],
+                                            );
+                                          },
+                                          onView: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) => ProductViewScreen(
+                                                      productId: products[i].id,
+                                                    ),
+                                              ),
+                                            );
+                                          },
+                                        );
+                                      } else {
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 16,
+                                          ),
+                                          child: Center(
+                                            child:
+                                                loadingMore
+                                                    ? const CircularProgressIndicator()
+                                                    : const SizedBox(),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                        ),
+              ),
+            ],
+          ),
         ),
       ),
     );

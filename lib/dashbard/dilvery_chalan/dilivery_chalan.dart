@@ -8,6 +8,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/add_delivery_challan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/update_timeline.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 /// ================= DEBOUNCER FOR SEARCH =================
 class Debouncer {
@@ -522,85 +523,99 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
         ),
       );
     }
-    return Scaffold(
-      backgroundColor: const Color(0xFFF6F7F9),
-      body: Column(
-        children: [
-          /// ================= TOP SEARCH BAR =================
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-            decoration: const BoxDecoration(
-              color: Color(0xFFFA9C42),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(24),
-                bottomRight: Radius.circular(24),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF6F7F9),
+        body: Column(
+          children: [
+            /// ================= TOP SEARCH BAR =================
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFA9C42),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(24),
+                  bottomRight: Radius.circular(24),
+                ),
               ),
-            ),
-            child: SafeArea(
-              bottom: false,
-              child: Column(
-                children: [
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DeliveryChallanSearchBarWidget(
-                          onSearchChanged: _searchChallans,
-                          initialValue: searchQuery,
-                          onAddPressed: _onAddPressed,
-                          canAdd: canAddChallan,
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DeliveryChallanSearchBarWidget(
+                            onSearchChanged: _searchChallans,
+                            initialValue: searchQuery,
+                            onAddPressed: _onAddPressed,
+                            canAdd: canAddChallan,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
 
-          /// ================= LIST WITH PAGINATION =================
-          Expanded(
-            child:
-                loading && challans.isEmpty
-                    ? const Center(child: CircularProgressIndicator())
-                    : RefreshIndicator(
-                      onRefresh: _refreshChallans,
-                      child: ListView(
-                        controller: _scrollController,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        children: [
-                          /// EMPTY STATE
-                          if (challans.isEmpty && !loading)
-                            SizedBox(
-                              height: MediaQuery.of(context).size.height * 0.7,
-                              child: _buildEmptyState(),
-                            )
-                          /// CHALLAN LIST
-                          else if (challans.isNotEmpty)
-                            ..._buildChallanList(),
+            /// ================= LIST WITH PAGINATION =================
+            Expanded(
+              child:
+                  loading && challans.isEmpty
+                      ? const Center(child: CircularProgressIndicator())
+                      : RefreshIndicator(
+                        onRefresh: _refreshChallans,
+                        child: ListView(
+                          controller: _scrollController,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: [
+                            /// EMPTY STATE
+                            if (challans.isEmpty && !loading)
+                              SizedBox(
+                                height:
+                                    MediaQuery.of(context).size.height * 0.7,
+                                child: _buildEmptyState(),
+                              )
+                            /// CHALLAN LIST
+                            else if (challans.isNotEmpty)
+                              ..._buildChallanList(),
 
-                          /// LOAD MORE INDICATOR
-                          if (loadingMore)
-                            const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(child: CircularProgressIndicator()),
-                            ),
-
-                          if (!_hasMoreData && challans.isNotEmpty)
-                            const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(
-                                child: Text(
-                                  "No more delivery challans",
-                                  style: TextStyle(color: Colors.grey),
+                            /// LOAD MORE INDICATOR
+                            if (loadingMore)
+                              const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
                                 ),
                               ),
-                            ),
-                        ],
+
+                            if (!_hasMoreData && challans.isNotEmpty)
+                              const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: Text(
+                                    "No more delivery challans",
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

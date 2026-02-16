@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/add_quotation.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/dispatch_challan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/edit_quotation.dart';
@@ -286,217 +287,230 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        bottom: false,
-        child: RefreshIndicator(
-          onRefresh: _refreshQuotations,
-          child: Stack(
-            children: [
-              // ✅ YAHAN PAR SINGLE CHILD SCROLL VIEW KI JAGAH LISTVIEW USE KARENGE
-              ListView(
-                controller: _scrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
-                children: [
-                  /// HEADER WITH SEARCH
-                  _buildHeader(),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
 
-                  const SizedBox(height: 20),
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          bottom: false,
+          child: RefreshIndicator(
+            onRefresh: _refreshQuotations,
+            child: Stack(
+              children: [
+                // ✅ YAHAN PAR SINGLE CHILD SCROLL VIEW KI JAGAH LISTVIEW USE KARENGE
+                ListView(
+                  controller: _scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    /// HEADER WITH SEARCH
+                    _buildHeader(),
 
-                  /// LOADING INDICATOR
-                  if (loading && quotations.isEmpty)
-                    Container(
-                      height: MediaQuery.of(context).size.height * 0.6,
-                      child: const Center(child: CircularProgressIndicator()),
-                    )
-                  /// EMPTY STATE
-                  else if (quotations.isEmpty && !loading)
-                    Container(
-                      height: MediaQuery.of(context).size.height * 0.6,
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              searchQuery.isEmpty
-                                  ? Icons.receipt_long_outlined
-                                  : Icons.search_off,
-                              size: 60,
-                              color: Colors.grey.shade400,
+                    const SizedBox(height: 20),
+
+                    /// LOADING INDICATOR
+                    if (loading && quotations.isEmpty)
+                      Container(
+                        height: MediaQuery.of(context).size.height * 0.6,
+                        child: const Center(child: CircularProgressIndicator()),
+                      )
+                    /// EMPTY STATE
+                    else if (quotations.isEmpty && !loading)
+                      Container(
+                        height: MediaQuery.of(context).size.height * 0.6,
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                searchQuery.isEmpty
+                                    ? Icons.receipt_long_outlined
+                                    : Icons.search_off,
+                                size: 60,
+                                color: Colors.grey.shade400,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                searchQuery.isEmpty
+                                    ? "No quotations found"
+                                    : "No results for '$searchQuery'",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              if (searchQuery.isEmpty) ...[
+                                const SizedBox(height: 8),
+                                TextButton.icon(
+                                  onPressed: _refreshQuotations,
+                                  icon: const Icon(Icons.refresh),
+                                  label: const Text("Refresh"),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      )
+                    /// QUOTATION LIST
+                    else
+                      Column(
+                        children: [
+                          /// QUOTATION COUNT
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  "Quotations (${quotations.length})",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: _refreshQuotations,
+                                  icon: const Icon(Icons.refresh, size: 18),
+                                  label: const Text("Refresh"),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.orange,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 16),
+                          ),
+
+                          /// QUOTATION CARDS - ListView.builder se replace karein
+                          ...quotations
+                              .asMap()
+                              .entries
+                              .map(
+                                (entry) => InvoiceCard(
+                                  quotation: entry.value,
+                                  onEdit: () {
+                                    _openEditQuotation(entry.value['id']);
+                                  },
+                                  onPay: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (context) => SettlementScreen(
+                                              quotationId: entry.value['id'],
+                                              dueAmount:
+                                                  double.tryParse(
+                                                    entry.value['due_amount']
+                                                            ?.toString() ??
+                                                        '0',
+                                                  ) ??
+                                                  0,
+                                              quotationData: {},
+                                            ),
+                                      ),
+                                    );
+                                  },
+                                  onDispatch: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (context) => DispatchChallanScreen(
+                                              quotationId: entry.value['id'],
+                                              quotationData: entry.value,
+                                            ),
+                                      ),
+                                    );
+                                  },
+                                  onFollowUp: () {
+                                    showDialog(
+                                      context: context,
+                                      builder:
+                                          (context) => FollowUpScreen(
+                                            quotationId: entry.value['id'],
+                                            onFollowUpSaved: () {
+                                              _refreshQuotations();
+                                              _showSnackbar(
+                                                "Follow-up saved successfully!",
+                                                isError: false,
+                                              );
+                                            },
+                                          ),
+                                    );
+                                  },
+                                  onDownloadPdf: (pdfType) {
+                                    _downloadAndOpenPdf(
+                                      pdfType,
+                                      entry.value['id'],
+                                    );
+                                  },
+                                ),
+                              )
+                              .toList(),
+
+                          /// LOAD MORE INDICATOR
+                          if (loadingMore)
+                            const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
+
+                          if (!_hasMoreData && quotations.isNotEmpty)
+                            const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(
+                                child: Text(
+                                  "No more quotations",
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              ),
+                            ),
+
+                          const SizedBox(height: 20),
+                        ],
+                      ),
+                  ],
+                ),
+
+                // PDF Downloading Overlay
+                if (_isDownloadingPdf)
+                  Container(
+                    color: Colors.black.withOpacity(0.5),
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(
+                              color: Colors.orange,
+                            ),
+                            const SizedBox(height: 20),
                             Text(
-                              searchQuery.isEmpty
-                                  ? "No quotations found"
-                                  : "No results for '$searchQuery'",
+                              'Downloading PDF...',
                               style: TextStyle(
                                 fontSize: 16,
-                                color: Colors.grey.shade600,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[700],
                               ),
                             ),
-                            if (searchQuery.isEmpty) ...[
-                              const SizedBox(height: 8),
-                              TextButton.icon(
-                                onPressed: _refreshQuotations,
-                                icon: const Icon(Icons.refresh),
-                                label: const Text("Refresh"),
-                              ),
-                            ],
                           ],
                         ),
                       ),
-                    )
-                  /// QUOTATION LIST
-                  else
-                    Column(
-                      children: [
-                        /// QUOTATION COUNT
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                "Quotations (${quotations.length})",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey.shade700,
-                                ),
-                              ),
-                              TextButton.icon(
-                                onPressed: _refreshQuotations,
-                                icon: const Icon(Icons.refresh, size: 18),
-                                label: const Text("Refresh"),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.orange,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        /// QUOTATION CARDS - ListView.builder se replace karein
-                        ...quotations
-                            .asMap()
-                            .entries
-                            .map(
-                              (entry) => InvoiceCard(
-                                quotation: entry.value,
-                                onEdit: () {
-                                  _openEditQuotation(entry.value['id']);
-                                },
-                                onPay: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder:
-                                          (context) => SettlementScreen(
-                                            quotationId: entry.value['id'],
-                                            dueAmount:
-                                                double.tryParse(
-                                                  entry.value['due_amount']
-                                                          ?.toString() ??
-                                                      '0',
-                                                ) ??
-                                                0,
-                                            quotationData: {},
-                                          ),
-                                    ),
-                                  );
-                                },
-                                onDispatch: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder:
-                                          (context) => DispatchChallanScreen(
-                                            quotationId: entry.value['id'],
-                                            quotationData: entry.value,
-                                          ),
-                                    ),
-                                  );
-                                },
-                                onFollowUp: () {
-                                  showDialog(
-                                    context: context,
-                                    builder:
-                                        (context) => FollowUpScreen(
-                                          quotationId: entry.value['id'],
-                                          onFollowUpSaved: () {
-                                            _refreshQuotations();
-                                            _showSnackbar(
-                                              "Follow-up saved successfully!",
-                                              isError: false,
-                                            );
-                                          },
-                                        ),
-                                  );
-                                },
-                                onDownloadPdf: (pdfType) {
-                                  _downloadAndOpenPdf(
-                                    pdfType,
-                                    entry.value['id'],
-                                  );
-                                },
-                              ),
-                            )
-                            .toList(),
-
-                        /// LOAD MORE INDICATOR
-                        if (loadingMore)
-                          const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: CircularProgressIndicator()),
-                          ),
-
-                        if (!_hasMoreData && quotations.isNotEmpty)
-                          const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(
-                              child: Text(
-                                "No more quotations",
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            ),
-                          ),
-
-                        const SizedBox(height: 20),
-                      ],
-                    ),
-                ],
-              ),
-
-              // PDF Downloading Overlay
-              if (_isDownloadingPdf)
-                Container(
-                  color: Colors.black.withOpacity(0.5),
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const CircularProgressIndicator(color: Colors.orange),
-                          const SizedBox(height: 20),
-                          Text(
-                            'Downloading PDF...',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

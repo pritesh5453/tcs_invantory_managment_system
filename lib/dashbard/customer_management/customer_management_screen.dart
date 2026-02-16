@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/add_customer.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/add_followUp.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/edit_customer.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/history.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 /// =====================
 /// MODEL (with all fields)
@@ -414,20 +416,31 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildAppBar(),
-            Expanded(
-              child: RefreshIndicator(
-                color: Colors.orange,
-                onRefresh: _onRefresh,
-                child: isAdmin ? _buildAdminView() : _buildEmployeeView(),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildAppBar(),
+              Expanded(
+                child: RefreshIndicator(
+                  color: Colors.orange,
+                  onRefresh: _onRefresh,
+                  child: isAdmin ? _buildAdminView() : _buildEmployeeView(),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

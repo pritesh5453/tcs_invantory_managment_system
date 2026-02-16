@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 class EmployeeAttendanceScreen extends StatefulWidget {
   const EmployeeAttendanceScreen({super.key});
@@ -102,157 +103,171 @@ class _EmployeeAttendanceScreenState extends State<EmployeeAttendanceScreen> {
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          "Attendance • ${DateFormat("MMMM yyyy").format(selectedMonth)}",
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+
+        return false;
+      },
+
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            "Attendance • ${DateFormat("MMMM yyyy").format(selectedMonth)}",
+          ),
         ),
-      ),
-      body:
-          isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Column(
-                children: [
-                  /// TOP CONTROLS
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
-                            value: selectedEmployeeId,
-                            items:
-                                employees
-                                    .map<DropdownMenuItem<int>>(
-                                      (e) => DropdownMenuItem(
-                                        value: e['id'],
-                                        child: Text(e['name']),
-                                      ),
-                                    )
-                                    .toList(),
-                            onChanged: (val) {
-                              final emp = employees.firstWhere(
-                                (e) => e['id'] == val,
-                              );
-                              setState(() {
-                                selectedEmployeeId = val;
-                                selectedEmployeeName = emp['name'];
-                              });
-                              _loadAttendance();
-                            },
-                            decoration: const InputDecoration(
-                              labelText: "Employee",
-                              border: OutlineInputBorder(),
-                              isDense: true,
+        body:
+            isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : Column(
+                  children: [
+                    /// TOP CONTROLS
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              value: selectedEmployeeId,
+                              items:
+                                  employees
+                                      .map<DropdownMenuItem<int>>(
+                                        (e) => DropdownMenuItem(
+                                          value: e['id'],
+                                          child: Text(e['name']),
+                                        ),
+                                      )
+                                      .toList(),
+                              onChanged: (val) {
+                                final emp = employees.firstWhere(
+                                  (e) => e['id'] == val,
+                                );
+                                setState(() {
+                                  selectedEmployeeId = val;
+                                  selectedEmployeeName = emp['name'];
+                                });
+                                _loadAttendance();
+                              },
+                              decoration: const InputDecoration(
+                                labelText: "Employee",
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.calendar_month),
-                          onPressed: _pickMonth,
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(Icons.calendar_month),
+                            onPressed: _pickMonth,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
 
-                  /// SUMMARY CARDS (HORIZONTAL)
-                  SizedBox(
-                    height: 130,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      children: [
-                        _summaryCard(
-                          title: "Days Present",
-                          value: daysPresent.toString(),
-                          icon: Icons.event_available,
-                          color: Colors.green,
-                        ),
-                        _summaryCard(
-                          title: "Avg Hours",
-                          value:
-                              "${double.tryParse(avgHours)?.toStringAsFixed(1) ?? "0.0"} h",
-                          icon: Icons.schedule,
-                          color: Colors.orange,
-                        ),
-                        _summaryCard(
-                          title: "Employee",
-                          value: selectedEmployeeName,
-                          icon: Icons.person,
-                          color: Colors.blue,
-                        ),
-                      ],
+                    /// SUMMARY CARDS (HORIZONTAL)
+                    SizedBox(
+                      height: 130,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        children: [
+                          _summaryCard(
+                            title: "Days Present",
+                            value: daysPresent.toString(),
+                            icon: Icons.event_available,
+                            color: Colors.green,
+                          ),
+                          _summaryCard(
+                            title: "Avg Hours",
+                            value:
+                                "${double.tryParse(avgHours)?.toStringAsFixed(1) ?? "0.0"} h",
+                            icon: Icons.schedule,
+                            color: Colors.orange,
+                          ),
+                          _summaryCard(
+                            title: "Employee",
+                            value: selectedEmployeeName,
+                            icon: Icons.person,
+                            color: Colors.blue,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 8),
 
-                  /// ATTENDANCE LIST
-                  Expanded(
-                    child:
-                        records.isEmpty
-                            ? const Center(child: Text("No attendance records"))
-                            : ListView.builder(
-                              padding: const EdgeInsets.all(12),
-                              itemCount: records.length,
-                              itemBuilder: (_, i) {
-                                final r = records[i];
-                                return Card(
-                                  elevation: 2,
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: ListTile(
-                                    title: Text(
-                                      DateFormat(
-                                        "dd MMM yyyy",
-                                      ).format(DateTime.parse(r['date'])),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
+                    /// ATTENDANCE LIST
+                    Expanded(
+                      child:
+                          records.isEmpty
+                              ? const Center(
+                                child: Text("No attendance records"),
+                              )
+                              : ListView.builder(
+                                padding: const EdgeInsets.all(12),
+                                itemCount: records.length,
+                                itemBuilder: (_, i) {
+                                  final r = records[i];
+                                  return Card(
+                                    elevation: 2,
+                                    margin: const EdgeInsets.only(bottom: 10),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: ListTile(
+                                      title: Text(
+                                        DateFormat(
+                                          "dd MMM yyyy",
+                                        ).format(DateTime.parse(r['date'])),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      subtitle: Padding(
+                                        padding: const EdgeInsets.only(top: 6),
+                                        child: Row(
+                                          children: [
+                                            /// PUNCH IN (LEFT)
+                                            Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.login,
+                                                  size: 16,
+                                                  color: Colors.green,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(r['punchIn'] ?? "--"),
+                                              ],
+                                            ),
+
+                                            const Spacer(), // 🔥 pushes punch-out to right
+                                            /// PUNCH OUT (RIGHT)
+                                            Row(
+                                              children: [
+                                                Text(r['punchOut'] ?? "--"),
+                                                const SizedBox(width: 4),
+                                                const Icon(
+                                                  Icons.logout,
+                                                  size: 16,
+                                                  color: Colors.red,
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                    subtitle: Padding(
-                                      padding: const EdgeInsets.only(top: 6),
-                                      child: Row(
-                                        children: [
-                                          /// PUNCH IN (LEFT)
-                                          Row(
-                                            children: [
-                                              const Icon(
-                                                Icons.login,
-                                                size: 16,
-                                                color: Colors.green,
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(r['punchIn'] ?? "--"),
-                                            ],
-                                          ),
-
-                                          const Spacer(), // 🔥 pushes punch-out to right
-                                          /// PUNCH OUT (RIGHT)
-                                          Row(
-                                            children: [
-                                              Text(r['punchOut'] ?? "--"),
-                                              const SizedBox(width: 4),
-                                              const Icon(
-                                                Icons.logout,
-                                                size: 16,
-                                                color: Colors.red,
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                  ),
-                ],
-              ),
+                                  );
+                                },
+                              ),
+                    ),
+                  ],
+                ),
+      ),
     );
   }
 

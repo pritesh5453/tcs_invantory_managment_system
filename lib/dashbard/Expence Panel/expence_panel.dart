@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Expence%20Panel/employee_spend.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Expence%20Panel/new_entry_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Expence%20Panel/spend_list.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 class ExpenseStockManagementScreen extends StatefulWidget {
   const ExpenseStockManagementScreen({super.key});
@@ -223,76 +224,87 @@ class _ExpenseStockManagementScreenState
       decimalDigits: 0,
     );
 
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refreshData,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.attach_money_rounded,
-                        color: Colors.blue,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Expense & Stock Management',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey.shade50,
+        body: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: _refreshData,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.attach_money_rounded,
+                          color: Colors.blue,
+                          size: 24,
                         ),
-                      ),
-                      const Spacer(),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Expense & Stock Management',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
 
-                  // Balance Cards (API Data)
-                  if (_isLoading)
-                    _buildLoadingBalanceCards()
-                  else
-                    _buildBalanceCards(formatCurrency),
-                  const SizedBox(height: 24),
+                    // Balance Cards (API Data)
+                    if (_isLoading)
+                      _buildLoadingBalanceCards()
+                    else
+                      _buildBalanceCards(formatCurrency),
+                    const SizedBox(height: 24),
 
-                  // Check Individual Employee Spend List Section
-                  const EmployeeTransactionList(),
-                  const SizedBox(height: 24),
+                    // Check Individual Employee Spend List Section
+                    const EmployeeTransactionList(),
+                    const SizedBox(height: 24),
 
-                  // New Entry Section
-                  NewEntrySection(
-                    selectedEntryType: _selectedEntryType,
-                    onEntryTypeChanged: (val) {
-                      setState(() {
-                        _selectedEntryType = val!;
-                      });
-                    },
-                    onSavePressed: _saveTransaction,
-                    onTransactionData: _updateTransactionData,
-                  ),
+                    // New Entry Section
+                    NewEntrySection(
+                      selectedEntryType: _selectedEntryType,
+                      onEntryTypeChanged: (val) {
+                        setState(() {
+                          _selectedEntryType = val!;
+                        });
+                      },
+                      onSavePressed: _saveTransaction,
+                      onTransactionData: _updateTransactionData,
+                    ),
 
-                  const SizedBox(height: 24),
+                    const SizedBox(height: 24),
 
-                  // Admin Ledger (API Data)
-                  _buildAdminLedgerSection(formatCurrency),
-                  const SizedBox(height: 16),
+                    // Admin Ledger (API Data)
+                    _buildAdminLedgerSection(formatCurrency),
+                    const SizedBox(height: 16),
 
-                  // Pagination
-                  _buildPagination(),
-                  const SizedBox(height: 24),
+                    // Pagination
+                    _buildPagination(),
+                    const SizedBox(height: 24),
 
-                  // Employee Transaction Records Section
-                  const EmployeeTransactionRecordsSection(employeeList: []),
-                  const SizedBox(height: 40),
-                ],
+                    // Employee Transaction Records Section
+                    const EmployeeTransactionRecordsSection(employeeList: []),
+                    const SizedBox(height: 40),
+                  ],
+                ),
               ),
             ),
           ),

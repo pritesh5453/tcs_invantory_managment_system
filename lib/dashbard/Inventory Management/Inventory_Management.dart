@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Inventory%20Management/add_Inventory.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Inventory%20Management/edit_inventory.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 class InventoryManagementScreen extends StatefulWidget {
   const InventoryManagementScreen({super.key});
@@ -191,201 +192,212 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xffF6F6F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top Bar
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              decoration: const BoxDecoration(
-                color: Color(0xffFFA54A),
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(26),
-                  bottomRight: Radius.circular(26),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      height: 46,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.search, color: Colors.grey),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              onChanged: filterPurchases,
-                              decoration: const InputDecoration(
-                                hintText: "Search by bill no, name, phone...",
-                                hintStyle: TextStyle(color: Colors.grey),
-                                border: InputBorder.none,
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          if (searchQuery.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 18),
-                              onPressed: () {
-                                _searchController.clear();
-                                filterPurchases('');
-                              },
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  InkWell(
-                    onTap:
-                        canAddInventory
-                            ? () {
-                              AddInventorySheet.show(context).then((_) {
-                                fetchPurchases();
-                              });
-                            }
-                            : () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    "You don't have permission to add inventory.",
-                                  ),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            },
-                    child: Opacity(
-                      opacity: canAddInventory ? 1 : 0.4,
-                      child: Container(
-                        height: 40,
-                        width: 40,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.add, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
 
-            // List
-            Expanded(
-              child:
-                  isLoading && purchases.isEmpty
-                      ? const Center(
-                        child: CircularProgressIndicator(
-                          color: Color(0xffFFA54A),
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xffF6F6F6),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Top Bar
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                decoration: const BoxDecoration(
+                  color: Color(0xffFFA54A),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(26),
+                    bottomRight: Radius.circular(26),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        height: 46,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
                         ),
-                      )
-                      : filteredPurchases.isEmpty
-                      ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        child: Row(
                           children: [
-                            const Icon(
-                              Icons.inventory,
-                              size: 64,
-                              color: Colors.grey,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              searchQuery.isEmpty
-                                  ? 'No purchases found'
-                                  : 'No results for "$searchQuery"',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey,
+                            const Icon(Icons.search, color: Colors.grey),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: _searchController,
+                                onChanged: filterPurchases,
+                                decoration: const InputDecoration(
+                                  hintText: "Search by bill no, name, phone...",
+                                  hintStyle: TextStyle(color: Colors.grey),
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                ),
                               ),
                             ),
                             if (searchQuery.isNotEmpty)
-                              TextButton(
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 18),
                                 onPressed: () {
                                   _searchController.clear();
                                   filterPurchases('');
                                 },
-                                child: const Text('Clear search'),
                               ),
                           ],
                         ),
-                      )
-                      : RefreshIndicator(
-                        color: const Color(0xffFFA54A),
-                        onRefresh: fetchPurchases,
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.all(16),
-                          itemCount:
-                              filteredPurchases.length +
-                              (loadingMore ? 1 : 0) +
-                              (_hasMoreData && !loadingMore ? 1 : 0),
-                          itemBuilder: (_, index) {
-                            // Loading more indicator
-                            if (index >= filteredPurchases.length) {
-                              if (loadingMore) {
-                                return const Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: Center(
-                                    child: CircularProgressIndicator(
-                                      color: Color(0xffFFA54A),
-                                    ),
-                                  ),
-                                );
-                              } else if (!_hasMoreData) {
-                                return const Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: Center(
-                                    child: Text(
-                                      "No more purchases",
-                                      style: TextStyle(color: Colors.grey),
-                                    ),
-                                  ),
-                                );
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    InkWell(
+                      onTap:
+                          canAddInventory
+                              ? () {
+                                AddInventorySheet.show(context).then((_) {
+                                  fetchPurchases();
+                                });
                               }
-                              return const SizedBox(); // For hasMore but not loading
-                            }
-
-                            final purchase = filteredPurchases[index];
-                            return InventoryCard(
-                              purchase: purchase,
-                              canDelete: canDeleteInventory,
-                              onEdit: () {
-                                _openEditInventorySheet(context, purchase);
-                              },
-                              onDelete: () {
-                                if (!canDeleteInventory) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        "You don't have permission to delete inventory.",
-                                      ),
-                                      backgroundColor: Colors.red,
+                              : () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "You don't have permission to add inventory.",
                                     ),
-                                  );
-                                  return;
-                                }
-                                showDeleteDialog(context, purchase);
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
                               },
-                              onView: () {
-                                openInventoryView(context, purchase);
-                              },
-                            );
-                          },
+                      child: Opacity(
+                        opacity: canAddInventory ? 1 : 0.4,
+                        child: Container(
+                          height: 40,
+                          width: 40,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.white),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.add, color: Colors.white),
                         ),
                       ),
-            ),
-          ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // List
+              Expanded(
+                child:
+                    isLoading && purchases.isEmpty
+                        ? const Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xffFFA54A),
+                          ),
+                        )
+                        : filteredPurchases.isEmpty
+                        ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.inventory,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                searchQuery.isEmpty
+                                    ? 'No purchases found'
+                                    : 'No results for "$searchQuery"',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              if (searchQuery.isNotEmpty)
+                                TextButton(
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    filterPurchases('');
+                                  },
+                                  child: const Text('Clear search'),
+                                ),
+                            ],
+                          ),
+                        )
+                        : RefreshIndicator(
+                          color: const Color(0xffFFA54A),
+                          onRefresh: fetchPurchases,
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(16),
+                            itemCount:
+                                filteredPurchases.length +
+                                (loadingMore ? 1 : 0) +
+                                (_hasMoreData && !loadingMore ? 1 : 0),
+                            itemBuilder: (_, index) {
+                              // Loading more indicator
+                              if (index >= filteredPurchases.length) {
+                                if (loadingMore) {
+                                  return const Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Center(
+                                      child: CircularProgressIndicator(
+                                        color: Color(0xffFFA54A),
+                                      ),
+                                    ),
+                                  );
+                                } else if (!_hasMoreData) {
+                                  return const Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Center(
+                                      child: Text(
+                                        "No more purchases",
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return const SizedBox(); // For hasMore but not loading
+                              }
+
+                              final purchase = filteredPurchases[index];
+                              return InventoryCard(
+                                purchase: purchase,
+                                canDelete: canDeleteInventory,
+                                onEdit: () {
+                                  _openEditInventorySheet(context, purchase);
+                                },
+                                onDelete: () {
+                                  if (!canDeleteInventory) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          "You don't have permission to delete inventory.",
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  showDeleteDialog(context, purchase);
+                                },
+                                onView: () {
+                                  openInventoryView(context, purchase);
+                                },
+                              );
+                            },
+                          ),
+                        ),
+              ),
+            ],
+          ),
         ),
       ),
     );

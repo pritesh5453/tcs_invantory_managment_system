@@ -59,9 +59,8 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
   @override
   void initState() {
     super.initState();
-    _initializeData();
     _setupFocusNodes();
-    _prefillData();
+    _initializeData();
   }
 
   void _setupFocusNodes() {
@@ -138,11 +137,16 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
   }
 
   Future<void> _initializeData() async {
+    setState(() => _isLoading = true);
+
     await _fetchSuppliers();
     await _fetchProducts();
-    setState(() {
-      _isLoading = false;
-    });
+
+    _productRows.clear(); // 🔥 IMPORTANT
+    _prefillData(); // rows create
+    _prefillProductsFromApi(); // product details set
+
+    setState(() => _isLoading = false);
   }
 
   void _prefillProductsFromApi() {
@@ -233,50 +237,50 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
         _filteredProducts = _products;
 
         // 🔥 IMPORTANT: product prefill for edit
-        for (var row in _productRows) {
-          if (row.productName.isEmpty) continue;
+        // for (var row in _productRows) {
+        //   if (row.productName.isEmpty) continue;
 
-          final product = _products.firstWhere(
-            (p) =>
-                p['name'] == row.productName &&
-                p['size'] == row.size &&
-                p['quality'] == row.quality,
-            orElse: () => {},
-          );
+        //   final product = _products.firstWhere(
+        //     (p) =>
+        //         p['name'] == row.productName &&
+        //         p['size'] == row.size &&
+        //         p['quality'] == row.quality,
+        //     orElse: () => {},
+        //   );
 
-          if (product.isEmpty) continue;
+        //   if (product.isEmpty) continue;
 
-          // ✅ Product name textbox (search field)
-          row.productSearchController.text =
-              product['name']?.toString() ?? row.productName;
+        //   // ✅ Product name textbox (search field)
+        //   row.productSearchController.text =
+        //       product['name']?.toString() ?? row.productName;
 
-          // ✅ Rate
-          row.rateController.text =
-              product['rate']?.toString() ?? row.rateController.text;
+        //   // ✅ Rate
+        //   row.rateController.text =
+        //       product['rate']?.toString() ?? row.rateController.text;
 
-          // ✅ COV
-          row.covController.text =
-              product['cov']?.toString() ?? row.covController.text;
+        //   // ✅ COV
+        //   row.covController.text =
+        //       product['cov']?.toString() ?? row.covController.text;
 
-          // ✅ Batches
-          row.batches = List<Map<String, dynamic>>.from(
-            product['batches'] ?? [],
-          );
+        //   // ✅ Batches
+        //   row.batches = List<Map<String, dynamic>>.from(
+        //     product['batches'] ?? [],
+        //   );
 
-          // ✅ Batch + Stock preselect
-          if (row.batches.isNotEmpty) {
-            final batch = row.batches.firstWhere(
-              (b) => b['batch_no'] == row.selectedBatch,
-              orElse: () => row.batches.first,
-            );
+        //   // ✅ Batch + Stock preselect
+        //   if (row.batches.isNotEmpty) {
+        //     final batch = row.batches.firstWhere(
+        //       (b) => b['batch_no'] == row.selectedBatch,
+        //       orElse: () => row.batches.first,
+        //     );
 
-            row.selectedBatch = batch['batch_no'];
-            row.stockController.text = batch['qty'].toString();
-          }
+        //     row.selectedBatch = batch['batch_no'];
+        //     row.stockController.text = batch['qty'].toString();
+        //   }
 
-          // ✅ Final amount calculate
-          row.updateTotal();
-        }
+        //   // ✅ Final amount calculate
+        //   row.updateTotal();
+        // }
 
         setState(() {}); // UI refresh
       }

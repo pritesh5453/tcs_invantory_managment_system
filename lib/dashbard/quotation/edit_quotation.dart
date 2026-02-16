@@ -1453,7 +1453,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                     _buildTextField(
                       row.areaController, // 👈 NEW CONTROLLER
                       '0',
-                      keyboardType: TextInputType.number,
+                      keyboardType: TextInputType.text,
                       onChanged: (_) => row.updateTotal(),
                     ),
                   ],

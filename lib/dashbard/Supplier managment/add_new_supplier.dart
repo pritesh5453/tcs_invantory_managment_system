@@ -89,7 +89,7 @@ class _AddNewSupplierScreenState extends State<AddNewSupplierScreen> {
               TextField(
                 controller: nameController,
                 decoration: InputDecoration(
-                  hintText: "enter brand name..",
+                  hintText: "Enter Supplier name..",
                   hintStyle: TextStyle(color: Colors.grey.shade500),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 14,

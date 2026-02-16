@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:open_filex/open_filex.dart'; // <-- Add this for opening files
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 class AdvanceAnalyticsScreen extends StatefulWidget {
   const AdvanceAnalyticsScreen({super.key});
@@ -117,6 +119,32 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     }
   }
 
+  /// ================= OPEN DOWNLOADED FILE =================
+  Future<void> _openFile(String path) async {
+    try {
+      final result = await OpenFilex.open(path);
+      if (result.type != ResultType.done) {
+        // Show a message if opening fails but file is downloaded
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "File downloaded but could not open: ${result.message}",
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("OPEN FILE ERROR: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error opening file: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   /// ================= DOWNLOAD EMPLOYEE ATTENDANCE =================
   Future<void> _downloadEmployeeAttendance() async {
     if (selectedEmployeeId == null || fromDate == null || toDate == null) {
@@ -160,6 +188,9 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
           backgroundColor: Colors.green,
         ),
       );
+
+      // Automatically open the downloaded file
+      await _openFile(path);
     } catch (e) {
       debugPrint("ATTENDANCE DOWNLOAD ERROR: $e");
       ScaffoldMessenger.of(context).showSnackBar(
@@ -212,6 +243,9 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
           backgroundColor: Colors.green,
         ),
       );
+
+      // Automatically open the downloaded file
+      await _openFile(path);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -225,54 +259,65 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xffF5F5F5),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _topBar(),
-            const SizedBox(height: 12),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  children: [
-                    _employeeAttendanceCard(),
-                    const SizedBox(height: 12),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
 
-                    _analyticsCard(
-                      keyName: "customer",
-                      title: "Customer Register",
-                      url:
-                          "https://dashboard.theceramicstudio.in/api/dashboard/customers/export",
-                      fileName: "Customer_Register",
-                    ),
-                    _analyticsCard(
-                      keyName: "quotation",
-                      title: "Quotation Data",
-                      url:
-                          "https://dashboard.theceramicstudio.in/api/dashboard/quotations/export",
-                      fileName: "Quotation_Data",
-                    ),
-                    _analyticsCard(
-                      keyName: "purchase",
-                      title: "Purchase Records",
-                      url:
-                          "https://dashboard.theceramicstudio.in/api/dashboard/purchases/export",
-                      fileName: "Purchase_Records",
-                    ),
-                    _analyticsCard(
-                      keyName: "payment",
-                      title: "Payment Report",
-                      url:
-                          "https://dashboard.theceramicstudio.in/api/dashboard/api/payments/export",
-                      fileName: "Payment_Report",
-                    ),
-                  ],
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xffF5F5F5),
+        body: SafeArea(
+          child: Column(
+            children: [
+              _topBar(),
+              const SizedBox(height: 12),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: [
+                      _employeeAttendanceCard(),
+                      const SizedBox(height: 12),
+
+                      _analyticsCard(
+                        keyName: "customer",
+                        title: "Customer Register",
+                        url:
+                            "https://dashboard.theceramicstudio.in/api/dashboard/customers/export",
+                        fileName: "Customer_Register",
+                      ),
+                      _analyticsCard(
+                        keyName: "quotation",
+                        title: "Quotation Data",
+                        url:
+                            "https://dashboard.theceramicstudio.in/api/dashboard/quotations/export",
+                        fileName: "Quotation_Data",
+                      ),
+                      _analyticsCard(
+                        keyName: "purchase",
+                        title: "Purchase Records",
+                        url:
+                            "https://dashboard.theceramicstudio.in/api/dashboard/purchases/export",
+                        fileName: "Purchase_Records",
+                      ),
+                      _analyticsCard(
+                        keyName: "payment",
+                        title: "Payment Report",
+                        url:
+                            "https://dashboard.theceramicstudio.in/api/dashboard/api/payments/export",
+                        fileName: "Payment_Report",
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

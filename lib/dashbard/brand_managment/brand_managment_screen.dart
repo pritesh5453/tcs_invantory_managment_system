@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 /// ================= MODEL =================
 class Brand {
@@ -447,151 +449,163 @@ class _BrandManagementScreenState extends State<BrandManagementScreen> {
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xffF6F6F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            /// TOP BAR
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: Color(0xffFFA54A),
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(26),
-                  bottomRight: Radius.circular(26),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+
+        return false;
+      },
+
+      child: Scaffold(
+        backgroundColor: const Color(0xffF6F6F6),
+        body: SafeArea(
+          child: Column(
+            children: [
+              /// TOP BAR
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Color(0xffFFA54A),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(26),
+                    bottomRight: Radius.circular(26),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SearchBarWidget(
+                        onSearchChanged: _onSearchChanged,
+                        initialValue: searchQuery,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    InkWell(
+                      onTap:
+                          canAddBrand
+                              ? () => openBrandSheet()
+                              : () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "You don't have permission to add brand.",
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              },
+                      child: Opacity(
+                        opacity: canAddBrand ? 1 : 0.4,
+                        child: Container(
+                          height: 44,
+                          width: 44,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.white),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.add, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: SearchBarWidget(
-                      onSearchChanged: _onSearchChanged,
-                      initialValue: searchQuery,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  InkWell(
-                    onTap:
-                        canAddBrand
-                            ? () => openBrandSheet()
-                            : () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    "You don't have permission to add brand.",
-                                  ),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            },
-                    child: Opacity(
-                      opacity: canAddBrand ? 1 : 0.4,
-                      child: Container(
-                        height: 44,
-                        width: 44,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.add, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
 
-            /// LIST WITH PAGINATION
-            Expanded(
-              child:
-                  loading && brands.isEmpty
-                      ? const Center(child: CircularProgressIndicator())
-                      : RefreshIndicator(
-                        onRefresh: _refreshBrands,
-                        child: CustomScrollView(
-                          controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          slivers: [
-                            /// BRAND COUNT
-                            if (brands.isNotEmpty)
-                              SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Text(
-                                    "Brands (${brands.length} of $_totalItems)",
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                            /// BRAND LIST
-                            SliverList(
-                              delegate: SliverChildBuilderDelegate((
-                                context,
-                                index,
-                              ) {
-                                if (index < brands.length) {
-                                  final brand = brands[index];
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 8,
-                                    ),
-                                    child: BrandCard(
-                                      brand: brand,
-                                      canEdit: canEditBrand,
-                                      canDelete: canDeleteBrand,
-                                      onEdit:
-                                          () => openBrandSheet(brand: brand),
-                                      onDelete: () => deleteBrand(brand.id),
-                                    ),
-                                  );
-                                }
-                                return null;
-                              }, childCount: brands.length),
-                            ),
-
-                            /// EMPTY STATE
-                            if (brands.isEmpty && !loading)
-                              SliverFillRemaining(child: _buildEmptyState()),
-
-                            /// LOAD MORE INDICATOR
-                            if (loadingMore)
-                              SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                ),
-                              ),
-
-                            /// NO MORE BRANDS MESSAGE
-                            if (!_hasMoreData && brands.isNotEmpty)
-                              SliverToBoxAdapter(
-                                child: const Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: Center(
+              /// LIST WITH PAGINATION
+              Expanded(
+                child:
+                    loading && brands.isEmpty
+                        ? const Center(child: CircularProgressIndicator())
+                        : RefreshIndicator(
+                          onRefresh: _refreshBrands,
+                          child: CustomScrollView(
+                            controller: _scrollController,
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            slivers: [
+                              /// BRAND COUNT
+                              if (brands.isNotEmpty)
+                                SliverToBoxAdapter(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
                                     child: Text(
-                                      "No more brands",
-                                      style: TextStyle(color: Colors.grey),
+                                      "Brands (${brands.length} of $_totalItems)",
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
                                     ),
                                   ),
                                 ),
+
+                              /// BRAND LIST
+                              SliverList(
+                                delegate: SliverChildBuilderDelegate((
+                                  context,
+                                  index,
+                                ) {
+                                  if (index < brands.length) {
+                                    final brand = brands[index];
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      child: BrandCard(
+                                        brand: brand,
+                                        canEdit: canEditBrand,
+                                        canDelete: canDeleteBrand,
+                                        onEdit:
+                                            () => openBrandSheet(brand: brand),
+                                        onDelete: () => deleteBrand(brand.id),
+                                      ),
+                                    );
+                                  }
+                                  return null;
+                                }, childCount: brands.length),
                               ),
 
-                            /// EXTRA SPACE AT BOTTOM
-                            SliverToBoxAdapter(child: Container(height: 50)),
-                          ],
+                              /// EMPTY STATE
+                              if (brands.isEmpty && !loading)
+                                SliverFillRemaining(child: _buildEmptyState()),
+
+                              /// LOAD MORE INDICATOR
+                              if (loadingMore)
+                                SliverToBoxAdapter(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  ),
+                                ),
+
+                              /// NO MORE BRANDS MESSAGE
+                              if (!_hasMoreData && brands.isNotEmpty)
+                                SliverToBoxAdapter(
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Center(
+                                      child: Text(
+                                        "No more brands",
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                              /// EXTRA SPACE AT BOTTOM
+                              SliverToBoxAdapter(child: Container(height: 50)),
+                            ],
+                          ),
                         ),
-                      ),
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );

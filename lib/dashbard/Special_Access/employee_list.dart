@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Special_Access/permissons.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 class EmployeesListScreen extends StatefulWidget {
   const EmployeesListScreen({super.key});
@@ -75,66 +76,79 @@ class _EmployeesListScreenState extends State<EmployeesListScreen> {
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Employees")),
-      body: Column(
-        children: [
-          /// 🔍 SEARCH BAR
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: searchCtrl,
-              onChanged: _onSearch,
-              decoration: InputDecoration(
-                hintText: "Search by name or email",
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+
+        return false;
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text("Employees")),
+        body: Column(
+          children: [
+            /// 🔍 SEARCH BAR
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: TextField(
+                controller: searchCtrl,
+                onChanged: _onSearch,
+                decoration: InputDecoration(
+                  hintText: "Search by name or email",
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
             ),
-          ),
 
-          /// LIST
-          Expanded(
-            child:
-                isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : filteredEmployees.isEmpty
-                    ? const Center(child: Text("No employees found"))
-                    : ListView.separated(
-                      itemCount: filteredEmployees.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final emp = filteredEmployees[index];
+            /// LIST
+            Expanded(
+              child:
+                  isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : filteredEmployees.isEmpty
+                      ? const Center(child: Text("No employees found"))
+                      : ListView.separated(
+                        itemCount: filteredEmployees.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final emp = filteredEmployees[index];
 
-                        return ListTile(
-                          title: Text(
-                            emp['name'] ?? "",
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Text(emp['email'] ?? ""),
-                          trailing: const Icon(
-                            Icons.arrow_forward_ios,
-                            size: 16,
-                          ),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => EmployeeRolePermissionScreen(
-                                      employeeId: emp['id'],
-                                      employeeName: emp['name'],
-                                    ),
+                          return ListTile(
+                            title: Text(
+                              emp['name'] ?? "",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
                               ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-          ),
-        ],
+                            ),
+                            subtitle: Text(emp['email'] ?? ""),
+                            trailing: const Icon(
+                              Icons.arrow_forward_ios,
+                              size: 16,
+                            ),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (_) => EmployeeRolePermissionScreen(
+                                        employeeId: emp['id'],
+                                        employeeName: emp['name'],
+                                      ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+            ),
+          ],
+        ),
       ),
     );
   }
