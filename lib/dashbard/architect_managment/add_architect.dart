@@ -13,7 +13,6 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
   final TextEditingController firstNameCtrl = TextEditingController();
   final TextEditingController lastNameCtrl = TextEditingController();
   final TextEditingController whatsappCtrl = TextEditingController();
-  final TextEditingController commissionCtrl = TextEditingController();
   final TextEditingController dobController = TextEditingController();
   final TextEditingController remarkCtrl = TextEditingController();
 
@@ -32,7 +31,6 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
     if (firstNameCtrl.text.isEmpty ||
         lastNameCtrl.text.isEmpty ||
         whatsappCtrl.text.isEmpty ||
-        commissionCtrl.text.isEmpty ||
         selectedDob == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please fill all required fields")),
@@ -49,7 +47,6 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
           "firstname": firstNameCtrl.text,
           "lastname": lastNameCtrl.text,
           "whatsapp": whatsappCtrl.text,
-          "commission": commissionCtrl.text,
           "birthdate":
               "${selectedDob!.year}-${selectedDob!.month.toString().padLeft(2, '0')}-${selectedDob!.day.toString().padLeft(2, '0')}",
           "remark": remarkCtrl.text,
@@ -136,13 +133,6 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
                       ),
 
                       const SizedBox(height: 14),
-
-                      _label("Commission (%)"),
-                      _textField(
-                        "%",
-                        commissionCtrl,
-                        type: TextInputType.number,
-                      ),
 
                       const SizedBox(height: 14),
 

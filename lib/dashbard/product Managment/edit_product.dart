@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart'; // ADDED
+import 'dart:io'; // ADDED
 import 'Product_Management.dart';
 
 /// ================= BATCH FORM MODEL =================
@@ -41,6 +43,7 @@ class _EditProductSheetState extends State<EditProductSheet> {
   late TextEditingController sizeCtrl;
   late TextEditingController rateCtrl;
   late TextEditingController coverageCtrl;
+  late TextEditingController descriptionCtrl; // ADDED - for description
 
   /// DROPDOWN DATA
   List<Map<String, dynamic>> brands = [];
@@ -64,10 +67,30 @@ class _EditProductSheetState extends State<EditProductSheet> {
 
   List<BatchForm> batchForms = [];
 
+  /// IMAGE PICKER - ADDED
+  File? _imageFile;
+  String? _existingImageUrl; // To store the current product image URL
+  final ImagePicker _picker = ImagePicker();
+
   @override
   void initState() {
     super.initState();
     _initData();
+  }
+
+  @override
+  void dispose() {
+    productNameCtrl.dispose();
+    sizeCtrl.dispose();
+    rateCtrl.dispose();
+    coverageCtrl.dispose();
+    descriptionCtrl.dispose(); // ADDED
+    for (var batch in batchForms) {
+      batch.batchNo.dispose();
+      batch.qty.dispose();
+      batch.location.dispose();
+    }
+    super.dispose();
   }
 
   /// ================= INITIALIZE DATA =================
@@ -151,6 +174,11 @@ class _EditProductSheetState extends State<EditProductSheet> {
     sizeCtrl = TextEditingController(text: widget.product.size);
     rateCtrl = TextEditingController(text: widget.product.rate);
     coverageCtrl = TextEditingController(text: widget.product.cov);
+    descriptionCtrl =
+        TextEditingController(); // ADDED - handle if description exists
+
+    // Store existing image URL if available - ADDED
+    _existingImageUrl = widget.product.imageUrl;
 
     // Store original values
     originalBrand = widget.product.brand;
@@ -213,6 +241,20 @@ class _EditProductSheetState extends State<EditProductSheet> {
     }
   }
 
+  /// ================= IMAGE PICKER METHODS - ADDED =================
+  Future<void> _pickImage() async {
+    final XFile? pickedFile = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70, // optional compression
+    );
+    if (pickedFile != null) {
+      setState(() {
+        _imageFile = File(pickedFile.path);
+        _existingImageUrl = null; // Clear existing URL when new image is picked
+      });
+    }
+  }
+
   /// ================= UPDATE API =================
   Future<void> updateProduct() async {
     setState(() => saving = true);
@@ -228,7 +270,24 @@ class _EditProductSheetState extends State<EditProductSheet> {
     final qualityToSend = selectedQuality ?? originalQuality;
     final categoryToSend = selectedCategory ?? originalCategory;
 
-    final body = {
+    // Prepare batches
+    final List<Map<String, dynamic>> batches = [];
+    for (var batch in batchForms) {
+      final batchNo = batch.batchNo.text.trim();
+      final qty = batch.qty.text.trim();
+      final location = batch.location.text.trim();
+
+      if (batchNo.isNotEmpty) {
+        batches.add({
+          "batchNo": batchNo,
+          "qty": int.tryParse(qty) ?? 0,
+          "location": location,
+        });
+      }
+    }
+
+    // Build FormData for multipart request - MODIFIED
+    final formData = FormData.fromMap({
       "name": productNameCtrl.text.trim(),
       "size": sizeCtrl.text.trim(),
       "brand": brandToSend,
@@ -239,39 +298,60 @@ class _EditProductSheetState extends State<EditProductSheet> {
       "link": "",
       "cov": coverageCtrl.text.trim(),
       "godown": godownList,
-      "description": "",
-      "batches":
-          batchForms
-              .map(
-                (b) => {
-                  "batchNo": b.batchNo.text.trim(),
-                  "qty": b.qty.text.trim(),
-                  "location": b.location.text.trim(),
-                },
-              )
-              .toList(),
-    };
+      "description": descriptionCtrl.text.trim(),
+      "batches": batches,
+    });
+
+    // Attach image if selected - ADDED
+    if (_imageFile != null) {
+      formData.files.add(
+        MapEntry(
+          "image", // Field name for the image
+          await MultipartFile.fromFile(
+            _imageFile!.path,
+            filename: _imageFile!.path.split('/').last,
+          ),
+        ),
+      );
+    }
+    // If no new image but we want to keep existing image, we don't send image field
+    // The API should preserve the existing image if no new image is sent
 
     try {
       final res = await dio.put(
         "/product/products/${widget.productId}",
-        data: body,
+        data: formData,
+        options: Options(
+          headers: {
+            "Accept": "application/json",
+            // Content-Type will be set automatically for multipart
+          },
+        ),
       );
 
       if (res.data['success'] == true) {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(res.data['message']),
+            content: Text(
+              res.data['message'] ?? "Product updated successfully",
+            ),
             backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.data['message'] ?? "Failed to update product"),
+            backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       debugPrint("UPDATE ERROR: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Update failed"),
+        SnackBar(
+          content: Text("Update failed: ${e.toString()}"),
           backgroundColor: Colors.red,
         ),
       );
@@ -323,6 +403,45 @@ class _EditProductSheetState extends State<EditProductSheet> {
                 ),
               ],
             ),
+
+            /// PRODUCT IMAGE SECTION - ADDED
+            _label("Product Image"),
+            Row(
+              children: [
+                // Image display
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: _buildImagePreview(),
+                ),
+                const SizedBox(width: 12),
+                // Image picker buttons
+                Expanded(
+                  child: Column(
+                    children: [
+                      TextButton.icon(
+                        onPressed: _pickImage,
+                        icon: const Icon(Icons.photo_library),
+                        label: const Text("Change Image"),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.orange,
+                          side: const BorderSide(color: Colors.orange),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
 
             _label("Product Name"),
             _textField(controller: productNameCtrl),
@@ -448,8 +567,15 @@ class _EditProductSheetState extends State<EditProductSheet> {
               ],
             ),
 
-            _label("Product Cov"),
+            _label("Coverage"),
             _textField(controller: coverageCtrl),
+
+            _label("Description"), // ADDED
+            _textField(
+              controller: descriptionCtrl,
+              hint: "Enter product description",
+              maxLines: 3,
+            ),
 
             const SizedBox(height: 12),
             const Text(
@@ -589,6 +715,55 @@ class _EditProductSheetState extends State<EditProductSheet> {
       ),
     );
   }
+
+  /// Helper method to build image preview - ADDED
+  Widget _buildImagePreview() {
+    if (_imageFile != null) {
+      // Show newly picked image
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.file(
+          _imageFile!,
+          width: 80,
+          height: 80,
+          fit: BoxFit.cover,
+        ),
+      );
+    } else if (_existingImageUrl != null && _existingImageUrl!.isNotEmpty) {
+      // Show existing image from URL
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          _existingImageUrl!,
+          width: 80,
+          height: 80,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              color: Colors.grey.shade200,
+              child: const Icon(Icons.broken_image, color: Colors.grey),
+            );
+          },
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              color: Colors.grey.shade200,
+              child: const Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    } else {
+      // No image
+      return const Icon(Icons.image, color: Colors.grey, size: 40);
+    }
+  }
 }
 
 /// ================= HELPERS =================
@@ -604,9 +779,11 @@ Widget _textField({
   required TextEditingController controller,
   TextInputType type = TextInputType.text,
   String? hint,
+  int maxLines = 1, // ADDED maxLines parameter
 }) => TextField(
   controller: controller,
   keyboardType: type,
+  maxLines: maxLines,
   decoration: InputDecoration(
     hintText: hint,
     isDense: true,

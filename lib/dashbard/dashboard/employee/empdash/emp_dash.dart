@@ -64,7 +64,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   Future<void> _initializeData() async {
     try {
       await _loadEmployeeData();
-      if (employeeId == 0) {
+
+      if (employeeId == null) {
         setState(() => isLoading = false);
         return;
       }
@@ -78,23 +79,37 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     } catch (e) {
       print("💥 ERROR in initialization: $e");
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
   Future<void> _loadEmployeeData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final loadedId = prefs.getInt("userId") ?? 0;
-      final loadedName = prefs.getString("userName") ?? "Employee Name";
+
+      final loadedId = prefs.getInt("userId");
+      final loadedName = prefs.getString("userName");
+      final loadedEmail = prefs.getString("userEmail");
+      final loadedPhone = prefs.getString("userPhone");
+
+      if (loadedId == null || loadedId == 0) {
+        print("❌ USER ID NOT FOUND OR INVALID IN PREFS");
+        return;
+      }
+
+      if (!mounted) return;
 
       setState(() {
         employeeId = loadedId;
-        employeeName = loadedName;
-        employeeEmail = prefs.getString("userEmail") ?? "email@example.com";
-        employeePhone = prefs.getString("userPhone") ?? "0000000000";
+        employeeName = loadedName ?? "Employee Name";
+        employeeEmail = loadedEmail ?? "email@example.com";
+        employeePhone = loadedPhone ?? "0000000000";
         empId = loadedId.toString();
       });
+
+      print("✅ EMPLOYEE ID LOADED => $employeeId");
     } catch (e) {
       print("💥 Error loading employee data: $e");
     }
@@ -410,11 +425,20 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               ],
             ),
           ),
-          PunchAttendanceWidget(
-            employeeId: employeeId,
-            onPunchSuccess: _fetchAttendanceSummary,
-            showSnackBar: _showSnackBar,
-          ),
+
+          /// 🔥 ID LOAD HONE KE BAAD HI WIDGET
+          if (employeeId != null)
+            PunchAttendanceWidget(
+              employeeId: employeeId!,
+              onPunchSuccess: _fetchAttendanceSummary,
+              showSnackBar: _showSnackBar,
+            )
+          else
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
         ],
       ),
     );

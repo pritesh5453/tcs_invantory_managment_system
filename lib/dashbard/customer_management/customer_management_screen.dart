@@ -22,6 +22,7 @@ class Customer {
   final String? assignedEmployeeId;
   final String? assignedArchitect;
   final String? siteType;
+  final String? nextFollowupDate;
   final String? projectName;
   final String? siteName;
   final String? notes;
@@ -37,6 +38,7 @@ class Customer {
     this.assignedEmployeeId,
     this.assignedArchitect,
     this.siteType,
+    this.nextFollowupDate,
     this.projectName,
     this.siteName,
     this.notes,
@@ -56,6 +58,7 @@ class Customer {
       siteType: json['siteType'],
       projectName: json['projectName'],
       siteName: json['siteName'],
+      nextFollowupDate: json['nextFollowupDate'],
       notes: json['notes'],
       priority: json['priority'],
     );
@@ -915,6 +918,7 @@ class CustomerCard extends StatelessWidget {
           _infoRow("Employee:", customer.assignedEmployee ?? "-"),
           _infoRow("Employee ID:", customer.assignedEmployeeId ?? "-"),
           _infoRow("Site Type:", customer.siteType ?? "-"),
+          _infoRow("Next FollowUP Date:", customer.nextFollowupDate ?? "-"),
           const SizedBox(height: 14),
           Row(
             children: [

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/add_quotation.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/dispatch_challan.dart';
@@ -27,16 +28,39 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     ),
   );
 
-  List<Map<String, dynamic>> quotations = [];
-  bool loading = true;
-  bool loadingMore = false;
-  String searchQuery = '';
-  final TextEditingController _searchController = TextEditingController();
+  // User data from SharedPreferences
+  String? _userRole;
+  int? _userId;
+  bool _userDataLoaded = false;
 
-  // ✅ PAGINATION VARIABLES
-  int _currentPage = 1;
-  int _totalPages = 1;
-  bool _hasMoreData = true;
+  // Tab selection
+  String _selectedTab = "All"; // "All" or "My"
+
+  // Separate lists for each tab
+  List<Map<String, dynamic>> _allQuotations = [];
+  List<Map<String, dynamic>> _myQuotations = [];
+
+  // Pagination for All tab
+  int _allCurrentPage = 1;
+  int _allTotalPages = 1;
+  bool _allHasMore = true;
+  bool _allLoading = true;
+  bool _allLoadingMore = false;
+
+  // Pagination for My tab
+  int _myCurrentPage = 1;
+  int _myTotalPages = 1;
+  bool _myHasMore = true;
+  bool _myLoading = false;
+  bool _myLoadingMore = false;
+
+  // Search controllers
+  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _projectNameController = TextEditingController();
+
+  String searchQuery = '';
+  String projectNameQuery = '';
+
   final ScrollController _scrollController = ScrollController();
   Timer? _searchTimer;
   bool _isDownloadingPdf = false;
@@ -44,9 +68,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
   @override
   void initState() {
     super.initState();
-    _fetchQuotations();
-
-    // Add scroll listener for pagination
+    _loadUserData(); // Load user data first, then quotations
     _scrollController.addListener(_scrollListener);
   }
 
@@ -54,119 +76,202 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
   void dispose() {
     _scrollController.dispose();
     _searchTimer?.cancel();
+    _searchController.dispose();
+    _projectNameController.dispose();
     super.dispose();
   }
 
-  /// ================= FETCH QUOTATIONS API WITH PAGINATION =================
-  Future<Map<String, dynamic>> _fetchQuotationsAPI({
-    int page = 1,
-    String search = '',
-  }) async {
+  /// Load user role and ID from SharedPreferences
+  Future<void> _loadUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _userRole = prefs.getString('role');
+      _userId = prefs.getInt('userId');
+      _userDataLoaded = true;
+    });
+    // Now load the quotations
+    _loadAllQuotations();
+  }
+
+  bool _isEmployee() => _userRole == 'employee';
+  int _getEmployeeId() => _userId ?? 0;
+
+  /// Loads the appropriate tab data when tab changes
+  void _onTabSelected(String tab) {
+    if (_selectedTab == tab) return;
+    setState(() {
+      _selectedTab = tab;
+    });
+    // If the selected tab's list is empty, trigger loading
+    if (tab == "All" && _allQuotations.isEmpty) {
+      _loadAllQuotations();
+    } else if (tab == "My" && _myQuotations.isEmpty) {
+      _loadMyQuotations();
+    }
+  }
+
+  /// Fetch All Quotations (existing API)
+  Future<void> _loadAllQuotations({bool isLoadMore = false}) async {
+    if (!isLoadMore) {
+      setState(() {
+        _allLoading = true;
+        _allCurrentPage = 1;
+        _allQuotations = [];
+      });
+    } else {
+      setState(() {
+        _allLoadingMore = true;
+      });
+    }
+
     try {
+      final queryParams = <String, dynamic>{
+        'page': _allCurrentPage,
+        'limit': 10,
+      };
+      if (searchQuery.isNotEmpty) queryParams['search'] = searchQuery;
+      if (projectNameQuery.isNotEmpty)
+        queryParams['projectName'] = projectNameQuery;
+
       final response = await dio.get(
         "/Quotation/list",
-        queryParameters: {
-          'page': page,
-          'limit': 10,
-          if (search.isNotEmpty) 'search': search,
-        },
+        queryParameters: queryParams,
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         final data = response.data;
-        return {
-          'quotations':
-              (data['quotations'] as List).cast<Map<String, dynamic>>(),
-          'currentPage': data['pagination']['currentPage'] ?? 1,
-          'totalPages': data['pagination']['totalPages'] ?? 1,
-          'totalItems': data['pagination']['totalItems'] ?? 0,
-          'hasMore':
-              (data['pagination']['currentPage'] ?? 1) <
-              (data['pagination']['totalPages'] ?? 1),
-        };
+        final List<Map<String, dynamic>> newQuotations =
+            (data['quotations'] as List).cast<Map<String, dynamic>>();
+
+        setState(() {
+          if (isLoadMore) {
+            _allQuotations.addAll(newQuotations);
+          } else {
+            _allQuotations = newQuotations;
+          }
+          _allCurrentPage = data['pagination']['currentPage'] ?? 1;
+          _allTotalPages = data['pagination']['totalPages'] ?? 1;
+          _allHasMore = _allCurrentPage < _allTotalPages;
+          _allLoading = false;
+          _allLoadingMore = false;
+        });
       } else {
         throw Exception('Failed to load quotations');
       }
     } catch (e) {
-      debugPrint("Quotations fetch error: $e");
-      throw Exception('Network error: $e');
-    }
-  }
-
-  Future<void> _fetchQuotations({bool isLoadMore = false}) async {
-    if (!isLoadMore) {
+      debugPrint("All Quotations fetch error: $e");
       setState(() {
-        loading = true;
-        _currentPage = 1;
-        quotations = [];
-      });
-    } else {
-      setState(() {
-        loadingMore = true;
-      });
-    }
-
-    try {
-      final result = await _fetchQuotationsAPI(
-        page: _currentPage,
-        search: searchQuery,
-      );
-
-      setState(() {
-        if (isLoadMore) {
-          quotations.addAll(result['quotations']);
-        } else {
-          quotations = result['quotations'];
-        }
-
-        _currentPage = result['currentPage'];
-        _totalPages = result['totalPages'];
-        _hasMoreData = result['hasMore'];
-        loading = false;
-        loadingMore = false;
-      });
-    } catch (e) {
-      debugPrint("Error fetching quotations: $e");
-      setState(() {
-        loading = false;
-        loadingMore = false;
+        _allLoading = false;
+        _allLoadingMore = false;
       });
       _showSnackbar("Failed to load quotations", isError: true);
     }
   }
 
-  /// ================= SCROLL LISTENER FOR PAGINATION =================
-  void _scrollListener() {
-    if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 100 &&
-        !loadingMore &&
-        _hasMoreData) {
-      _loadMoreData();
+  /// Fetch My Quotations (new API with employeeId)
+  Future<void> _loadMyQuotations({bool isLoadMore = false}) async {
+    if (!isLoadMore) {
+      setState(() {
+        _myLoading = true;
+        _myCurrentPage = 1;
+        _myQuotations = [];
+      });
+    } else {
+      setState(() {
+        _myLoadingMore = true;
+      });
+    }
+
+    try {
+      final queryParams = <String, dynamic>{
+        'page': _myCurrentPage,
+        'limit': 10,
+        'employeeId': _getEmployeeId(),
+      };
+      if (searchQuery.isNotEmpty) queryParams['search'] = searchQuery;
+      if (projectNameQuery.isNotEmpty)
+        queryParams['projectName'] = projectNameQuery;
+
+      final response = await dio.get(
+        "/Quotation/Quatation",
+        queryParameters: queryParams,
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final data = response.data;
+        final List<Map<String, dynamic>> newQuotations =
+            (data['quotations'] as List).cast<Map<String, dynamic>>();
+
+        setState(() {
+          if (isLoadMore) {
+            _myQuotations.addAll(newQuotations);
+          } else {
+            _myQuotations = newQuotations;
+          }
+          _myCurrentPage = data['pagination']['currentPage'] ?? 1;
+          _myTotalPages = data['pagination']['totalPages'] ?? 1;
+          _myHasMore = _myCurrentPage < _myTotalPages;
+          _myLoading = false;
+          _myLoadingMore = false;
+        });
+      } else {
+        throw Exception('Failed to load my quotations');
+      }
+    } catch (e) {
+      debugPrint("My Quotations fetch error: $e");
+      setState(() {
+        _myLoading = false;
+        _myLoadingMore = false;
+      });
+      _showSnackbar("Failed to load my quotations", isError: true);
     }
   }
 
-  /// ================= LOAD MORE DATA =================
-  Future<void> _loadMoreData() async {
-    if (!_hasMoreData || loadingMore) return;
-
-    setState(() {
-      loadingMore = true;
-    });
-
-    _currentPage++;
-    await _fetchQuotations(isLoadMore: true);
+  /// Unified fetch based on current tab (used by search/pagination)
+  void _fetchCurrentTab({bool isLoadMore = false}) {
+    if (_selectedTab == "All") {
+      _loadAllQuotations(isLoadMore: isLoadMore);
+    } else {
+      _loadMyQuotations(isLoadMore: isLoadMore);
+    }
   }
 
-  /// ================= EDIT QUOTATION FUNCTION =================
+  /// Scroll listener for pagination
+  void _scrollListener() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 100) {
+      final bool loadingMore =
+          _selectedTab == "All" ? _allLoadingMore : _myLoadingMore;
+      final bool hasMore = _selectedTab == "All" ? _allHasMore : _myHasMore;
+      if (!loadingMore && hasMore) {
+        _loadMoreData();
+      }
+    }
+  }
+
+  void _loadMoreData() {
+    if (_selectedTab == "All") {
+      if (!_allHasMore || _allLoadingMore) return;
+      setState(() {
+        _allCurrentPage++;
+      });
+      _loadAllQuotations(isLoadMore: true);
+    } else {
+      if (!_myHasMore || _myLoadingMore) return;
+      setState(() {
+        _myCurrentPage++;
+      });
+      _loadMyQuotations(isLoadMore: true);
+    }
+  }
+
+  /// Edit quotation
   Future<void> _openEditQuotation(int quotationId) async {
     try {
       debugPrint("Fetching quotation details for ID: $quotationId");
-
       final response = await dio.get("/Quotation/list/$quotationId");
-
       if (response.statusCode == 200 && response.data['success'] == true) {
         final quotationData = response.data['quotation'];
-
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -186,29 +291,23 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
-  /// ================= DOWNLOAD AND OPEN PDF =================
+  /// Download PDF
   Future<void> _downloadAndOpenPdf(String pdfType, int quotationId) async {
     try {
       setState(() => _isDownloadingPdf = true);
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Downloading $pdfType PDF...'),
           backgroundColor: Colors.orange,
         ),
       );
-
       final tempDir = await getTemporaryDirectory();
       final filePath =
           '${tempDir.path}/quotation_${quotationId}_${pdfType.toLowerCase()}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-
-      // ✅ DIFFERENT URL BASED ON TYPE
       String url = "/Quotation/print/$quotationId";
-
       if (pdfType == "Name") {
         url = "/Quotation/print/$quotationId?mode=qname";
       }
-
       final response = await dio.get(
         url,
         options: Options(
@@ -216,13 +315,10 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
           headers: {'Accept': 'application/pdf'},
         ),
       );
-
       if (response.statusCode == 200) {
         final file = File(filePath);
         await file.writeAsBytes(response.data);
-
         final result = await OpenFilex.open(filePath);
-
         if (result.type == ResultType.done) {
           _showSnackbar('$pdfType PDF opened successfully!', isError: false);
         } else {
@@ -242,26 +338,55 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
-  /// ================= SEARCH FUNCTIONALITY (API-BASED) =================
-  void _searchQuotations(String query) {
+  /// Search handlers
+  void _onSearchChanged(String query) {
     _searchTimer?.cancel();
-
     setState(() {
       searchQuery = query;
     });
-
-    // Debounce search (500ms)
     _searchTimer = Timer(const Duration(milliseconds: 500), () {
-      _fetchQuotations();
+      // Reset to first page and reload current tab
+      if (_selectedTab == "All") {
+        _allCurrentPage = 1;
+        _loadAllQuotations();
+      } else {
+        _myCurrentPage = 1;
+        _loadMyQuotations();
+      }
+    });
+  }
+
+  void _onProjectNameChanged(String query) {
+    _searchTimer?.cancel();
+    setState(() {
+      projectNameQuery = query;
+    });
+    _searchTimer = Timer(const Duration(milliseconds: 500), () {
+      if (_selectedTab == "All") {
+        _allCurrentPage = 1;
+        _loadAllQuotations();
+      } else {
+        _myCurrentPage = 1;
+        _loadMyQuotations();
+      }
     });
   }
 
   void _clearSearch() {
     _searchController.clear();
+    _projectNameController.clear();
     setState(() {
       searchQuery = '';
+      projectNameQuery = '';
     });
-    _fetchQuotations();
+    // Refresh current tab
+    if (_selectedTab == "All") {
+      _allCurrentPage = 1;
+      _loadAllQuotations();
+    } else {
+      _myCurrentPage = 1;
+      _loadMyQuotations();
+    }
   }
 
   void _showSnackbar(String message, {bool isError = true}) {
@@ -274,19 +399,27 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     );
   }
 
-  /// ================= REFRESH FUNCTION =================
   Future<void> _refreshQuotations() async {
-    setState(() {
-      loading = true;
-      _currentPage = 1;
-      searchQuery = '';
-      _searchController.clear();
-    });
-    await _fetchQuotations();
+    // Refresh current tab
+    if (_selectedTab == "All") {
+      _allCurrentPage = 1;
+      await _loadAllQuotations();
+    } else {
+      _myCurrentPage = 1;
+      await _loadMyQuotations();
+    }
   }
 
+  // ================= UI BUILD =================
   @override
   Widget build(BuildContext context) {
+    // Wait for user data to load
+    if (!_userDataLoaded) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final bool isEmployee = _isEmployee();
+
     return WillPopScope(
       onWillPop: () async {
         Navigator.pushAndRemoveUntil(
@@ -294,7 +427,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
           MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
           (route) => false,
         );
-
         return false;
       },
       child: Scaffold(
@@ -305,180 +437,30 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
             onRefresh: _refreshQuotations,
             child: Stack(
               children: [
-                // ✅ YAHAN PAR SINGLE CHILD SCROLL VIEW KI JAGAH LISTVIEW USE KARENGE
                 ListView(
                   controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   children: [
-                    /// HEADER WITH SEARCH
                     _buildHeader(),
+
+                    // Tabs (only if employee)
+                    if (isEmployee) ...[
+                      const SizedBox(height: 16),
+                      _buildTabs(),
+                    ],
 
                     const SizedBox(height: 20),
 
-                    /// LOADING INDICATOR
-                    if (loading && quotations.isEmpty)
-                      Container(
-                        height: MediaQuery.of(context).size.height * 0.6,
-                        child: const Center(child: CircularProgressIndicator()),
-                      )
-                    /// EMPTY STATE
-                    else if (quotations.isEmpty && !loading)
-                      Container(
-                        height: MediaQuery.of(context).size.height * 0.6,
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                searchQuery.isEmpty
-                                    ? Icons.receipt_long_outlined
-                                    : Icons.search_off,
-                                size: 60,
-                                color: Colors.grey.shade400,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                searchQuery.isEmpty
-                                    ? "No quotations found"
-                                    : "No results for '$searchQuery'",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                              if (searchQuery.isEmpty) ...[
-                                const SizedBox(height: 8),
-                                TextButton.icon(
-                                  onPressed: _refreshQuotations,
-                                  icon: const Icon(Icons.refresh),
-                                  label: const Text("Refresh"),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      )
-                    /// QUOTATION LIST
+                    // Content based on selected tab
+                    if (_selectedTab == "All")
+                      _buildAllQuotationsList()
                     else
-                      Column(
-                        children: [
-                          /// QUOTATION COUNT
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  "Quotations (${quotations.length})",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey.shade700,
-                                  ),
-                                ),
-                                TextButton.icon(
-                                  onPressed: _refreshQuotations,
-                                  icon: const Icon(Icons.refresh, size: 18),
-                                  label: const Text("Refresh"),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: Colors.orange,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                      _buildMyQuotationsList(),
 
-                          /// QUOTATION CARDS - ListView.builder se replace karein
-                          ...quotations
-                              .asMap()
-                              .entries
-                              .map(
-                                (entry) => InvoiceCard(
-                                  quotation: entry.value,
-                                  onEdit: () {
-                                    _openEditQuotation(entry.value['id']);
-                                  },
-                                  onPay: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder:
-                                            (context) => SettlementScreen(
-                                              quotationId: entry.value['id'],
-                                              dueAmount:
-                                                  double.tryParse(
-                                                    entry.value['due_amount']
-                                                            ?.toString() ??
-                                                        '0',
-                                                  ) ??
-                                                  0,
-                                              quotationData: {},
-                                            ),
-                                      ),
-                                    );
-                                  },
-                                  onDispatch: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder:
-                                            (context) => DispatchChallanScreen(
-                                              quotationId: entry.value['id'],
-                                              quotationData: entry.value,
-                                            ),
-                                      ),
-                                    );
-                                  },
-                                  onFollowUp: () {
-                                    showDialog(
-                                      context: context,
-                                      builder:
-                                          (context) => FollowUpScreen(
-                                            quotationId: entry.value['id'],
-                                            onFollowUpSaved: () {
-                                              _refreshQuotations();
-                                              _showSnackbar(
-                                                "Follow-up saved successfully!",
-                                                isError: false,
-                                              );
-                                            },
-                                          ),
-                                    );
-                                  },
-                                  onDownloadPdf: (pdfType) {
-                                    _downloadAndOpenPdf(
-                                      pdfType,
-                                      entry.value['id'],
-                                    );
-                                  },
-                                ),
-                              )
-                              .toList(),
-
-                          /// LOAD MORE INDICATOR
-                          if (loadingMore)
-                            const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(child: CircularProgressIndicator()),
-                            ),
-
-                          if (!_hasMoreData && quotations.isNotEmpty)
-                            const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(
-                                child: Text(
-                                  "No more quotations",
-                                  style: TextStyle(color: Colors.grey),
-                                ),
-                              ),
-                            ),
-
-                          const SizedBox(height: 20),
-                        ],
-                      ),
+                    const SizedBox(height: 20),
                   ],
                 ),
 
-                // PDF Downloading Overlay
                 if (_isDownloadingPdf)
                   Container(
                     color: Colors.black.withOpacity(0.5),
@@ -517,7 +499,309 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     );
   }
 
-  /// ================= HEADER WIDGET =================
+  Widget _buildTabs() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          _buildTabButton("All", _selectedTab == "All"),
+          const SizedBox(width: 12),
+          _buildTabButton("My", _selectedTab == "My"),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabButton(String title, bool isActive) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _onTabSelected(title),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFFFFA54A) : Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(
+              color: isActive ? Colors.orange : Colors.transparent,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              title == "All" ? "All Quotations" : "My Quotations",
+              style: TextStyle(
+                color: isActive ? Colors.white : Colors.grey.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ================= PAYMENT HISTORY DIALOG HELPER =================
+  void _showPaymentHistory(int quotationId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => PaymentHistoryDialog(quotationId: quotationId),
+    );
+  }
+
+  Widget _buildAllQuotationsList() {
+    if (_allLoading && _allQuotations.isEmpty) {
+      return SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    } else if (_allQuotations.isEmpty && !_allLoading) {
+      return _buildEmptyState();
+    } else {
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Quotations (${_allQuotations.length})",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _refreshQuotations,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text("Refresh"),
+                  style: TextButton.styleFrom(foregroundColor: Colors.orange),
+                ),
+              ],
+            ),
+          ),
+          ..._allQuotations
+              .asMap()
+              .entries
+              .map(
+                (entry) => InvoiceCard(
+                  quotation: entry.value,
+                  onEdit: () => _openEditQuotation(entry.value['id']),
+                  onPay:
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder:
+                              (context) => SettlementScreen(
+                                quotationId: entry.value['id'],
+                                dueAmount:
+                                    double.tryParse(
+                                      entry.value['due_amount']?.toString() ??
+                                          '0',
+                                    ) ??
+                                    0,
+                                quotationData: {},
+                              ),
+                        ),
+                      ),
+                  onDispatch:
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder:
+                              (context) => DispatchChallanScreen(
+                                quotationId: entry.value['id'],
+                                quotationData: entry.value,
+                              ),
+                        ),
+                      ),
+                  onFollowUp: () {
+                    showDialog(
+                      context: context,
+                      builder:
+                          (context) => FollowUpScreen(
+                            quotationId: entry.value['id'],
+                            onFollowUpSaved: () {
+                              _refreshQuotations();
+                              _showSnackbar(
+                                "Follow-up saved successfully!",
+                                isError: false,
+                              );
+                            },
+                          ),
+                    );
+                  },
+                  onDownloadPdf:
+                      (pdfType) =>
+                          _downloadAndOpenPdf(pdfType, entry.value['id']),
+                  onPaymentHistory:
+                      () => _showPaymentHistory(entry.value['id']), // 👈 new
+                ),
+              )
+              .toList(),
+          if (_allLoadingMore)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          if (!_allHasMore && _allQuotations.isNotEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                child: Text(
+                  "No more quotations",
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+  }
+
+  Widget _buildMyQuotationsList() {
+    if (_myLoading && _myQuotations.isEmpty) {
+      return SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    } else if (_myQuotations.isEmpty && !_myLoading) {
+      return _buildEmptyState();
+    } else {
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "My Quotations (${_myQuotations.length})",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _refreshQuotations,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text("Refresh"),
+                  style: TextButton.styleFrom(foregroundColor: Colors.orange),
+                ),
+              ],
+            ),
+          ),
+          ..._myQuotations
+              .asMap()
+              .entries
+              .map(
+                (entry) => InvoiceCard(
+                  quotation: entry.value,
+                  onEdit: () => _openEditQuotation(entry.value['id']),
+                  onPay:
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder:
+                              (context) => SettlementScreen(
+                                quotationId: entry.value['id'],
+                                dueAmount:
+                                    double.tryParse(
+                                      entry.value['due_amount']?.toString() ??
+                                          '0',
+                                    ) ??
+                                    0,
+                                quotationData: {},
+                              ),
+                        ),
+                      ),
+                  onDispatch:
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder:
+                              (context) => DispatchChallanScreen(
+                                quotationId: entry.value['id'],
+                                quotationData: entry.value,
+                              ),
+                        ),
+                      ),
+                  onFollowUp: () {
+                    showDialog(
+                      context: context,
+                      builder:
+                          (context) => FollowUpScreen(
+                            quotationId: entry.value['id'],
+                            onFollowUpSaved: () {
+                              _refreshQuotations();
+                              _showSnackbar(
+                                "Follow-up saved successfully!",
+                                isError: false,
+                              );
+                            },
+                          ),
+                    );
+                  },
+                  onDownloadPdf:
+                      (pdfType) =>
+                          _downloadAndOpenPdf(pdfType, entry.value['id']),
+                  onPaymentHistory:
+                      () => _showPaymentHistory(entry.value['id']), // 👈 new
+                ),
+              )
+              .toList(),
+          if (_myLoadingMore)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          if (!_myHasMore && _myQuotations.isNotEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                child: Text(
+                  "No more quotations",
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+  }
+
+  Widget _buildEmptyState() {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.6,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              searchQuery.isEmpty && projectNameQuery.isEmpty
+                  ? Icons.receipt_long_outlined
+                  : Icons.search_off,
+              size: 60,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              searchQuery.isEmpty && projectNameQuery.isEmpty
+                  ? "No quotations found"
+                  : "No results for '$searchQuery'${projectNameQuery.isNotEmpty ? " in project '$projectNameQuery'" : ""}",
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+            ),
+            if (searchQuery.isEmpty && projectNameQuery.isEmpty)
+              TextButton.icon(
+                onPressed: _refreshQuotations,
+                icon: const Icon(Icons.refresh),
+                label: const Text("Refresh"),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeader() {
     return Container(
       padding: EdgeInsets.only(
@@ -538,7 +822,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
         children: [
           Row(
             children: [
-              /// SEARCH FIELD
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
@@ -547,26 +830,24 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                   ),
                   child: Row(
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.only(left: 12),
+                      const Padding(
+                        padding: EdgeInsets.only(left: 12),
                         child: Icon(Icons.search, color: Colors.grey),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: TextField(
                           controller: _searchController,
-                          onChanged: _searchQuotations,
-                          decoration: InputDecoration(
-                            hintText: "Search by client name, ID or contact...",
-                            hintStyle: const TextStyle(color: Colors.grey),
+                          onChanged: _onSearchChanged,
+                          decoration: const InputDecoration(
+                            hintText: "Search by client name...",
+                            hintStyle: TextStyle(color: Colors.grey),
                             border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: 12,
-                            ),
+                            contentPadding: EdgeInsets.symmetric(vertical: 12),
                           ),
                         ),
                       ),
-                      if (searchQuery.isNotEmpty)
+                      if (searchQuery.isNotEmpty || projectNameQuery.isNotEmpty)
                         IconButton(
                           icon: const Icon(Icons.close, size: 18),
                           onPressed: _clearSearch,
@@ -575,10 +856,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                   ),
                 ),
               ),
-
               const SizedBox(width: 12),
-
-              /// ADD BUTTON
               InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: () {
@@ -604,13 +882,41 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: Row(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(left: 12),
+                  child: Icon(Icons.folder, color: Colors.grey),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _projectNameController,
+                    onChanged: _onProjectNameChanged,
+                    decoration: const InputDecoration(
+                      hintText: "Filter by project name...",
+                      hintStyle: TextStyle(color: Colors.grey),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-/// ================= INVOICE CARD WIDGET =================
+// ================= INVOICE CARD WIDGET (with Payment History) =================
 class InvoiceCard extends StatelessWidget {
   final Map<String, dynamic> quotation;
   final VoidCallback onEdit;
@@ -618,6 +924,7 @@ class InvoiceCard extends StatelessWidget {
   final VoidCallback onDispatch;
   final VoidCallback? onFollowUp;
   final Function(String) onDownloadPdf;
+  final VoidCallback? onPaymentHistory; // 👈 new callback
 
   const InvoiceCard({
     super.key,
@@ -627,9 +934,9 @@ class InvoiceCard extends StatelessWidget {
     required this.onDispatch,
     this.onFollowUp,
     required this.onDownloadPdf,
+    this.onPaymentHistory, // 👈 new
   });
 
-  /// ================= FORMAT DATE =================
   String _formatDate(String dateString) {
     try {
       final date = DateTime.parse(dateString);
@@ -639,12 +946,10 @@ class InvoiceCard extends StatelessWidget {
     }
   }
 
-  /// ================= FORMAT AMOUNT =================
   String _formatAmount(String amount) {
     try {
       final value = double.tryParse(amount) ?? 0;
       if (value == 0) return "₹0";
-
       if (value >= 10000000) {
         return "₹${(value / 10000000).toStringAsFixed(2)}Cr";
       } else if (value >= 100000) {
@@ -652,17 +957,14 @@ class InvoiceCard extends StatelessWidget {
       } else if (value >= 1000) {
         return "₹${(value / 1000).toStringAsFixed(2)}K";
       }
-
       return "₹${value.toStringAsFixed(2)}";
     } catch (e) {
       return "₹$amount";
     }
   }
 
-  /// ================= GET STATUS =================
   Widget _buildStatus() {
     final isSettled = quotation['isSettled'] == 1;
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
@@ -699,7 +1001,6 @@ class InvoiceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          /// STATUS & QUOTATION ID
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -713,10 +1014,7 @@ class InvoiceCard extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 10),
-
-          /// CLIENT NAME & DATE
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -736,8 +1034,13 @@ class InvoiceCard extends StatelessWidget {
               ),
             ],
           ),
-
-          /// CONTACT
+          if (quotation['projectName'] != null &&
+              quotation['projectName'].toString().trim().isNotEmpty)
+            Text(
+              quotation['projectName'],
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
+            ),
           if (quotation['contactNo'] != null &&
               quotation['contactNo'].toString().isNotEmpty)
             Padding(
@@ -747,10 +1050,7 @@ class InvoiceCard extends StatelessWidget {
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
               ),
             ),
-
           const SizedBox(height: 14),
-
-          /// AMOUNT ROW
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -771,14 +1071,10 @@ class InvoiceCard extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 16),
-
-          /// ACTION BUTTONS
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              /// Edit Button
               OutlinedButton.icon(
                 icon: const Icon(Icons.edit, color: Colors.blue),
                 label: const Text("Edit", style: TextStyle(color: Colors.blue)),
@@ -787,10 +1083,7 @@ class InvoiceCard extends StatelessWidget {
                 ),
                 onPressed: onEdit,
               ),
-
               const Spacer(flex: 1),
-
-              /// Pay Button
               InkWell(
                 onTap: onPay,
                 child: Container(
@@ -811,10 +1104,7 @@ class InvoiceCard extends StatelessWidget {
                   ),
                 ),
               ),
-
               const Spacer(flex: 1),
-
-              /// More Options Button
               PopupMenuButton<String>(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -823,13 +1113,14 @@ class InvoiceCard extends StatelessWidget {
                   if (value == "delivery_chalan") {
                     onDispatch();
                   } else if (value == "follow_up") {
-                    if (onFollowUp != null) {
-                      onFollowUp!();
-                    }
+                    onFollowUp?.call();
                   } else if (value == "Code") {
                     onDownloadPdf("Code");
                   } else if (value == "Name") {
                     onDownloadPdf("Name");
+                  } else if (value == "payment_history") {
+                    // 👈 new case
+                    onPaymentHistory?.call();
                   }
                 },
                 itemBuilder:
@@ -874,6 +1165,17 @@ class InvoiceCard extends StatelessWidget {
                           ],
                         ),
                       ),
+                      const PopupMenuItem(
+                        // 👈 new menu item
+                        value: "payment_history",
+                        child: Row(
+                          children: [
+                            Icon(Icons.history, size: 18),
+                            SizedBox(width: 8),
+                            Text("Payment History"),
+                          ],
+                        ),
+                      ),
                     ],
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -900,7 +1202,6 @@ class InvoiceCard extends StatelessWidget {
     );
   }
 
-  /// ================= HELPER WIDGETS =================
   static Widget amountColumn(
     String title,
     String value, {
@@ -936,6 +1237,188 @@ class InvoiceCard extends StatelessWidget {
       width: 1,
       color: Colors.grey.shade300,
       margin: const EdgeInsets.symmetric(horizontal: 4),
+    );
+  }
+}
+
+/// ================= PAYMENT HISTORY DIALOG =================
+class PaymentHistoryDialog extends StatefulWidget {
+  final int quotationId;
+  const PaymentHistoryDialog({super.key, required this.quotationId});
+
+  @override
+  State<PaymentHistoryDialog> createState() => _PaymentHistoryDialogState();
+}
+
+class _PaymentHistoryDialogState extends State<PaymentHistoryDialog> {
+  final Dio _dio = Dio(
+    BaseOptions(
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
+      headers: {"Accept": "application/json"},
+    ),
+  );
+
+  List<dynamic> _payments = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPayments();
+  }
+
+  Future<void> _fetchPayments() async {
+    try {
+      final response = await _dio.get(
+        "/Quotation/payment-history/${widget.quotationId}",
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        setState(() {
+          _payments = response.data['data'] ?? [];
+          _loading = false;
+        });
+      } else {
+        setState(() => _loading = false);
+      }
+    } catch (e) {
+      debugPrint("Payment history error: $e");
+      setState(() => _loading = false);
+    }
+  }
+
+  String _formatDate(String dateStr) {
+    try {
+      final date = DateTime.parse(dateStr);
+      return "${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}";
+    } catch (_) {
+      return dateStr;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        width: double.maxFinite,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.7,
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  "Payment History",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const Divider(),
+            if (_loading)
+              const Expanded(child: Center(child: CircularProgressIndicator()))
+            else if (_payments.isEmpty)
+              const Expanded(
+                child: Center(child: Text("No payment history found")),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _payments.length,
+                  itemBuilder: (ctx, i) {
+                    final p = _payments[i];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  "₹${double.parse(p['amount'].toString()).toStringAsFixed(2)}",
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        p['status'] == 'approved'
+                                            ? Colors.green.shade100
+                                            : Colors.orange.shade100,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    p['status']?.toString().toUpperCase() ??
+                                        'UNKNOWN',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color:
+                                          p['status'] == 'approved'
+                                              ? Colors.green.shade800
+                                              : Colors.orange.shade800,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            _buildRow("Type", p['payment_type'] ?? '-'),
+                            _buildRow("Billing Type", p['billingType'] ?? '-'),
+                            _buildRow("Remark", p['remark'] ?? '-'),
+                            _buildRow(
+                              "Date",
+                              _formatDate(p['created_at'] ?? ''),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              "$label:",
+              style: const TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(color: Colors.black87)),
+          ),
+        ],
+      ),
     );
   }
 }

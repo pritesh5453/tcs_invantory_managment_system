@@ -227,14 +227,14 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
     super.initState();
 
     canView = PermissionManager.hasPermission("Delivery Challans_View");
-    canAddChallan = PermissionManager.hasPermission("Delivery Challans_Add");
+    canAddChallan = true; // Sabko Add ka access
     canUpdateTimeline = PermissionManager.hasPermission(
-      "Delivery Challans_Update",
+      "Delivery Challans_Update Timeline",
     );
     canDelete = PermissionManager.hasPermission("Delivery Challans_Delete");
-    canPrint = PermissionManager.hasPermission("Delivery Challans_Print");
+    canPrint = PermissionManager.hasPermission("Delivery Challans_Print DC");
     canReturnPrint = PermissionManager.hasPermission(
-      "Delivery Challans_ReturnPrint",
+      "Delivery Challans_Return DC",
     );
 
     fetchChallans();
@@ -354,18 +354,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
 
   /// ================= ADD CHALLAN FUNCTION =================
   void _onAddPressed() {
-    if (!canAddChallan) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "You don't have permission to add delivery challan. Please contact support.",
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const AddDeliveryChallanScreen()),

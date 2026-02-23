@@ -32,7 +32,6 @@ class _EditArchitectScreenState extends State<EditArchitectScreen> {
   late TextEditingController firstNameCtrl;
   late TextEditingController lastNameCtrl;
   late TextEditingController whatsappCtrl;
-  late TextEditingController commissionCtrl;
   late TextEditingController dobController;
   late TextEditingController remarkCtrl;
 
@@ -51,7 +50,6 @@ class _EditArchitectScreenState extends State<EditArchitectScreen> {
     firstNameCtrl = TextEditingController(text: widget.firstname);
     lastNameCtrl = TextEditingController(text: widget.lastname);
     whatsappCtrl = TextEditingController(text: widget.whatsapp);
-    commissionCtrl = TextEditingController(text: widget.commission.toString());
     dobController = TextEditingController(
       text: widget.birthdate.substring(0, 10),
     );
@@ -69,7 +67,7 @@ class _EditArchitectScreenState extends State<EditArchitectScreen> {
           "lastname": lastNameCtrl.text,
           "whatsapp": whatsappCtrl.text,
           "remark": remarkCtrl.text,
-          "commission": int.parse(commissionCtrl.text),
+
           "birthdate": widget.birthdate,
           "createdAt": DateTime.now().toIso8601String(),
         },
@@ -115,11 +113,7 @@ class _EditArchitectScreenState extends State<EditArchitectScreen> {
               _field("First Name", firstNameCtrl),
               _field("Last Name", lastNameCtrl),
               _field("Whatsapp", whatsappCtrl, type: TextInputType.phone),
-              _field(
-                "Commission (%)",
-                commissionCtrl,
-                type: TextInputType.number,
-              ),
+
               _field("Remarks", remarkCtrl, max: 3),
 
               const Spacer(),

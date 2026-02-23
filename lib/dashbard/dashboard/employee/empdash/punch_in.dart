@@ -28,14 +28,31 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
   @override
   void initState() {
     super.initState();
-    _fetchPunchStatus();
+    if (widget.employeeId != 0) {
+      _fetchPunchStatus();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant PunchAttendanceWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.employeeId != oldWidget.employeeId && widget.employeeId != 0) {
+      print("🔥 EMPLOYEE ID UPDATED => ${widget.employeeId}");
+      _fetchPunchStatus();
+    }
   }
 
   /// ================= FETCH STATUS =================
   Future<void> _fetchPunchStatus() async {
     final status = await _punchService.fetchPunchStatus(widget.employeeId);
+
+    debugPrint("🔥 API Punch Status: $status");
+
     if (mounted) {
-      setState(() => punchStatus = status);
+      setState(() {
+        punchStatus = status;
+      });
     }
   }
 
@@ -49,14 +66,12 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
         return false;
       }
 
-      // 🔥 Get device IPv4 address
       for (var interface in await NetworkInterface.list()) {
         for (var addr in interface.addresses) {
           if (addr.type == InternetAddressType.IPv4) {
             final ip = addr.address;
             debugPrint("Device IP: $ip");
 
-            // ✅ Office WiFi Range Check
             if (ip.startsWith("192.168.1.")) {
               return true;
             }
@@ -86,7 +101,7 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
       setState(() => isPunchLoading = false);
     }
 
-    widget.showSnackBar(result['message']);
+    widget.showSnackBar(result['message'] ?? "");
 
     await _fetchPunchStatus();
     widget.onPunchSuccess();
@@ -105,7 +120,7 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
       setState(() => isPunchLoading = false);
     }
 
-    widget.showSnackBar(result['message']);
+    widget.showSnackBar(result['message'] ?? "");
 
     await _fetchPunchStatus();
     widget.onPunchSuccess();
@@ -127,47 +142,51 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
 
     final status = punchStatus!.toUpperCase().trim();
 
-    if (status.contains("OUT") || status.contains("COMPLETE")) {
-      return _workFinishedBadge();
-    }
+    switch (status) {
+      case "IN":
+      case "PUNCHED_IN":
+        return Row(
+          children: [
+            _punchButton(
+              text: "Punch In",
+              color: Colors.grey,
+              onTap: null,
+              disabled: true,
+            ),
+            const SizedBox(width: 10),
+            _punchButton(
+              text: "Punch Out",
+              color: Colors.red,
+              onTap: _punchOut,
+              disabled: false,
+            ),
+          ],
+        );
 
-    if (status.contains("IN")) {
-      return Row(
-        children: [
-          _punchButton(
-            text: "Punch In",
-            color: Colors.grey,
-            onTap: null,
-            disabled: true,
-          ),
-          const SizedBox(width: 10),
-          _punchButton(
-            text: "Punch Out",
-            color: Colors.red,
-            onTap: _punchOut,
-            disabled: false,
-          ),
-        ],
-      );
-    }
+      case "OUT":
+      case "COMPLETE":
+      case "PUNCHED_OUT":
+        return _workFinishedBadge();
 
-    return Row(
-      children: [
-        _punchButton(
-          text: "Punch In",
-          color: Colors.green,
-          onTap: _punchIn,
-          disabled: false,
-        ),
-        const SizedBox(width: 10),
-        _punchButton(
-          text: "Punch Out",
-          color: Colors.grey,
-          onTap: null,
-          disabled: true,
-        ),
-      ],
-    );
+      default:
+        return Row(
+          children: [
+            _punchButton(
+              text: "Punch In",
+              color: Colors.green,
+              onTap: _punchIn,
+              disabled: false,
+            ),
+            const SizedBox(width: 10),
+            _punchButton(
+              text: "Punch Out",
+              color: Colors.grey,
+              onTap: null,
+              disabled: true,
+            ),
+          ],
+        );
+    }
   }
 
   /// ================= UI HELPERS =================

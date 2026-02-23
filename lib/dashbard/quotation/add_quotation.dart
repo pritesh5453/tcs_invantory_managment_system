@@ -44,13 +44,14 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
   List<dynamic> _filteredCustomers = [];
   bool _showCustomerDropdown = false;
   Timer? _customerSearchDebounce;
+  int? _selectedClientId; // 👈 new variable to store selected client ID
 
   // Attended By Data
   List<dynamic> _employees = [];
   String? _selectedEmployeeId;
   String? _selectedEmployeeName;
 
-  // Products data
+  // Products data (global search results, used for dropdowns and finding details)
   List<dynamic> _products = [];
   List<dynamic> _filteredProducts = [];
 
@@ -198,7 +199,26 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     }
   }
 
-  // Get unique sizes for a product name
+  // Helper to find product details from the global _products list (used when quality changes)
+  Map<String, dynamic>? _findProductDetails(
+    String productName,
+    String size,
+    String quality,
+  ) {
+    try {
+      return _products.firstWhere(
+        (p) =>
+            p['name'] == productName &&
+            (p['size']?.toString() ?? '') == size &&
+            (p['quality']?.toString() ?? '') == quality,
+        orElse: () => null,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Get unique sizes for a product name (used for dropdown)
   List<String> _getSizesForProduct(String productName) {
     if (productName.isEmpty) return [];
 
@@ -217,7 +237,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     return sizes;
   }
 
-  // Get unique qualities for a product name and size
+  // Get unique qualities for a product name and size (used for dropdown)
   List<String> _getQualitiesForProduct(String productName, String size) {
     if (productName.isEmpty || size.isEmpty) return [];
 
@@ -242,38 +262,11 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     return qualities;
   }
 
-  // Get product details for name, size, and quality
-  Map<String, dynamic>? _getProductDetails(
-    String productName,
-    String size,
-    String quality,
-  ) {
-    try {
-      return _products.firstWhere(
-        (p) =>
-            p['name'] == productName &&
-            (p['size']?.toString() ?? '') == size &&
-            (p['quality']?.toString() ?? '') == quality,
-        orElse: () => null,
-      );
-    } catch (e) {
-      return null;
-    }
-  }
-
   void _addProductRow() {
     setState(() {
       _productRows.add(ProductRow());
       // Scroll to bottom after adding new row
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-      });
+      Future.delayed(const Duration(milliseconds: 100), () {});
     });
   }
 
@@ -359,7 +352,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
         return false;
       }
 
-      if (row.productId == null) {
+      if (row.productId == null && row.selectedProductDetails == null) {
         _showSnackBar(
           'Product ID not found for row ${i + 1}. Please reselect the product.',
         );
@@ -392,12 +385,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
       List<Map<String, dynamic>> rowsData = [];
 
       for (var row in _productRows) {
-        final productDetails = _getProductDetails(
-          row.productName,
-          row.size,
-          row.quality,
-        );
-
+        // Use the stored product details instead of searching global list
+        final productDetails = row.selectedProductDetails;
         if (productDetails == null) {
           throw Exception('Product details not found for ${row.productName}');
         }
@@ -409,8 +398,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
           "quality": row.quality,
           "rate": double.tryParse(row.rateController.text) ?? 0,
           "box": int.tryParse(row.quantityController.text) ?? 0,
-          "area":
-              row.areaController.text.trim().toString(), // 👈 AREA FIELD ADDED
+          "area": row.areaController.text.trim().toString(),
           "Weight": row.weightController.text,
           "TWgt": row.twgtController.text,
           "Coverage": row.covController.text,
@@ -422,8 +410,9 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
         rowsData.add(rowData);
       }
 
-      // Prepare client details
+      // Prepare client details – include clientid if selected, otherwise null
       final clientDetails = {
+        "clientid": _selectedClientId, // 👈 new field
         "name": _clientNameController.text.trim(),
         "contactNo": _contactNumberController.text.trim(),
         "altContactNo": _altNumberController.text.trim(),
@@ -432,18 +421,15 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
         "address": _siteAddressController.text.trim(),
         "architect": _selectedArchitectId ?? "",
         "attendedBy": _selectedEmployeeId ?? "",
-        "attended": "", // Empty as per your example
+        "attended": "",
       };
 
       // Prepare request body
       final requestBody = {
         "additionalDiscount":
             double.tryParse(_additionalDiscountController.text) ?? 0,
-
         "clientDetails": clientDetails,
-
         "rows": rowsData,
-
         "grandTotal": double.parse(_calculateGrandTotal().toStringAsFixed(2)),
       };
 
@@ -451,7 +437,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
       // Make API call
       final response = await _dio.post(
-        'https://dashboard.theceramicstudio.in/api/Quotation/saveQuotation', // Updated API
+        'https://dashboard.theceramicstudio.in/api/Quotation/saveQuotation',
         data: requestBody,
         options: Options(headers: {'Content-Type': 'application/json'}),
       );
@@ -474,29 +460,108 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
           // Close the bottom sheet after delay
           Future.delayed(const Duration(seconds: 1), () {
-            Navigator.pop(context, true); // Return success flag
+            Navigator.pop(context, true);
           });
         } else {
-          throw Exception(
+          // API returned success: false with an error message
+          _showErrorSnackBar(
             responseData['message'] ?? 'Failed to save quotation',
           );
         }
       } else {
-        throw Exception('Failed with status code: ${response.statusCode}');
+        // Handle non-200 status codes
+        _showErrorSnackBar(
+          'Server error: ${response.statusCode}\n${response.statusMessage}',
+        );
       }
+    } on DioException catch (e) {
+      // Handle Dio errors specifically
+      debugPrint('DioException: $e');
+      debugPrint('Response data: ${e.response?.data}');
+      debugPrint('Status code: ${e.response?.statusCode}');
+
+      String errorMessage = 'Failed to save quotation';
+
+      if (e.response != null) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        final responseData = e.response?.data;
+
+        if (responseData != null) {
+          // Try to extract error message from response
+          if (responseData is Map) {
+            if (responseData['message'] != null) {
+              errorMessage = responseData['message'];
+            } else if (responseData['error'] != null) {
+              errorMessage = responseData['error'];
+            } else if (responseData['errors'] != null) {
+              // Handle validation errors
+              final errors = responseData['errors'];
+              if (errors is Map) {
+                // Format validation errors
+                final errorStrings = errors.entries
+                    .map((entry) {
+                      final field = entry.key;
+                      final messages = entry.value;
+                      if (messages is List) {
+                        return '$field: ${messages.join(', ')}';
+                      }
+                      return '$field: $messages';
+                    })
+                    .join('\n');
+                errorMessage = 'Validation errors:\n$errorStrings';
+              } else if (errors is List) {
+                errorMessage = errors.join('\n');
+              }
+            }
+          }
+
+          // Add status code for debugging
+          errorMessage += '\n(Status: ${e.response?.statusCode})';
+        } else {
+          errorMessage = 'Server error (${e.response?.statusCode})';
+        }
+      } else if (e.type == DioExceptionType.connectionTimeout) {
+        errorMessage = 'Connection timeout. Please check your internet.';
+      } else if (e.type == DioExceptionType.receiveTimeout) {
+        errorMessage = 'Receive timeout. Server is not responding.';
+      } else if (e.type == DioExceptionType.sendTimeout) {
+        errorMessage = 'Send timeout. Please try again.';
+      } else if (e.type == DioExceptionType.cancel) {
+        errorMessage = 'Request cancelled.';
+      } else if (e.type == DioExceptionType.connectionError) {
+        errorMessage = 'No internet connection. Please check your network.';
+      }
+
+      _showErrorSnackBar(errorMessage);
     } catch (e) {
-      debugPrint('Save quotation error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      debugPrint('Unexpected error: $e');
+      _showErrorSnackBar('Unexpected error: ${e.toString()}');
     } finally {
       setState(() {
         _isSubmitting = false;
       });
     }
+  }
+
+  // Helper method to show error snackbar with better formatting
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(fontSize: 14)),
+        backgroundColor: Colors.red,
+        duration: const Duration(
+          seconds: 5,
+        ), // Longer duration for error messages
+        action: SnackBarAction(
+          label: 'Dismiss',
+          textColor: Colors.white,
+          onPressed: () {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          },
+        ),
+      ),
+    );
   }
 
   @override
@@ -511,817 +576,852 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     final discountAmount = totalAmount * (additionalDiscount / 100);
     final grandTotal = _calculateGrandTotal();
 
-    return Material(
-      child: Container(
-        margin: const EdgeInsets.only(top: 50),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(24),
-            topRight: Radius.circular(24),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      resizeToAvoidBottomInset: true,
+      body: Material(
+        child: Container(
+          margin: const EdgeInsets.only(top: 50),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
+            ),
           ),
-        ),
-        child: Column(
-          children: [
-            // Header (Fixed)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: Color(0xffFFA54A),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(24),
-                  topRight: Radius.circular(24),
+          child: Column(
+            children: [
+              // Header (Fixed)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Color(0xffFFA54A),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      "Create Quotation",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    "Create Quotation",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
 
-            // Scrollable Content Area
-            Expanded(
-              child: GestureDetector(
-                onTap: () {
-                  // Close all dropdowns when tapping outside
-                  setState(() {
-                    for (var row in _productRows) {
-                      row.showProductDropdown = false;
-                    }
-                  });
-                  FocusScope.of(context).unfocus();
-                },
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    bottom:
-                        bottomPadding > 0
-                            ? bottomPadding + safeAreaBottom
-                            : safeAreaBottom,
-                  ),
-                  child:
-                      _isLoading
-                          ? const Center(
-                            child: CircularProgressIndicator(
-                              color: Color(0xffFFA54A),
-                            ),
-                          )
-                          : SingleChildScrollView(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.all(16),
-                            physics: const BouncingScrollPhysics(),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 12),
+              // Scrollable Content Area
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    // Close all dropdowns when tapping outside
+                    setState(() {
+                      for (var row in _productRows) {
+                        row.showProductDropdown = false;
+                      }
+                    });
+                    FocusScope.of(context).unfocus();
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child:
+                        _isLoading
+                            ? const Center(
+                              child: CircularProgressIndicator(
+                                color: Color(0xffFFA54A),
+                              ),
+                            )
+                            : SingleChildScrollView(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.all(16),
+                              physics: const BouncingScrollPhysics(),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 12),
 
-                                // CLIENT DETAILS SECTION
-                                const Text(
-                                  'CLIENT DETAILS',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xffFFA54A),
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-
-                                // Client Full Name
-                                _buildClientLabel('CLIENT FULL NAME'),
-                                const SizedBox(height: 4),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
+                                  // CLIENT DETAILS SECTION
+                                  const Text(
+                                    'CLIENT DETAILS',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xffFFA54A),
                                     ),
-                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: Column(
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                        ),
-                                        child: TextField(
-                                          controller: _clientNameController,
-                                          onChanged: (value) {
-                                            if (_customerSearchDebounce
-                                                    ?.isActive ??
-                                                false) {
-                                              _customerSearchDebounce!.cancel();
-                                            }
+                                  const SizedBox(height: 16),
 
-                                            _customerSearchDebounce = Timer(
-                                              const Duration(milliseconds: 400),
-                                              () {
-                                                _fetchCustomers(value);
-                                              },
-                                            );
-
-                                            setState(() {});
-                                          },
-                                          onTap: () {
-                                            if (_clientNameController
-                                                .text
-                                                .isNotEmpty) {
-                                              _showCustomerDropdown = true;
-                                            }
-                                          },
-                                          decoration: const InputDecoration(
-                                            hintText: "Search customer...",
-                                            border: InputBorder.none,
-                                            isDense: true,
-                                          ),
-                                        ),
+                                  // Client Full Name
+                                  _buildClientLabel('CLIENT FULL NAME'),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
                                       ),
-
-                                      /// DROPDOWN
-                                      if (_showCustomerDropdown &&
-                                          _filteredCustomers.isNotEmpty)
-                                        Container(
-                                          height: 150,
-                                          decoration: BoxDecoration(
-                                            border: Border.all(
-                                              color: Colors.grey.shade200,
-                                            ),
-                                            borderRadius:
-                                                const BorderRadius.only(
-                                                  bottomLeft: Radius.circular(
-                                                    8,
-                                                  ),
-                                                  bottomRight: Radius.circular(
-                                                    8,
-                                                  ),
-                                                ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
                                           ),
-                                          child: ListView.builder(
-                                            itemCount:
-                                                _filteredCustomers.length,
-                                            itemBuilder: (context, index) {
-                                              final customer =
-                                                  _filteredCustomers[index];
-                                              final fullName =
-                                                  "${customer['name']} ${customer['Last_Name'] ?? ''}";
+                                          child: TextField(
+                                            controller: _clientNameController,
+                                            onChanged: (value) {
+                                              // Clear selected client ID when user types manually
+                                              _selectedClientId = null;
 
-                                              return ListTile(
-                                                title: Text(fullName),
-                                                subtitle: Text(
-                                                  customer['phone'] ?? '',
+                                              if (_customerSearchDebounce
+                                                      ?.isActive ??
+                                                  false) {
+                                                _customerSearchDebounce!
+                                                    .cancel();
+                                              }
+
+                                              _customerSearchDebounce = Timer(
+                                                const Duration(
+                                                  milliseconds: 400,
                                                 ),
-                                                onTap: () {
-                                                  setState(() {
-                                                    _clientNameController.text =
-                                                        fullName;
-                                                    _contactNumberController
-                                                            .text =
-                                                        customer['phone'] ?? '';
-                                                    _altNumberController.text =
-                                                        customer['altphone'] ??
-                                                        '';
-                                                    _emailController.text =
-                                                        customer['email'] ?? '';
-                                                    _siteAddressController
-                                                            .text =
-                                                        customer['siteName'] ??
-                                                        '';
-
-                                                    _showCustomerDropdown =
-                                                        false;
-
-                                                    /// Optional: Architect & Employee Auto Assign
-                                                    // Architect Auto Select
-                                                    final architectName =
-                                                        customer['assignedArchitect'];
-                                                    if (architectName != null) {
-                                                      final architect =
-                                                          _architects.firstWhere(
-                                                            (a) =>
-                                                                "${a['firstname']} ${a['lastname']}"
-                                                                    .toLowerCase()
-                                                                    .trim() ==
-                                                                architectName
-                                                                    .toLowerCase()
-                                                                    .trim(),
-                                                            orElse: () => null,
-                                                          );
-
-                                                      if (architect != null) {
-                                                        _selectedArchitectId =
-                                                            architect['id']
-                                                                .toString();
-                                                      }
-                                                    }
-
-                                                    // Employee Auto Select
-                                                    final employeeName =
-                                                        customer['assignedEmployee'];
-                                                    if (employeeName != null) {
-                                                      final employee =
-                                                          _employees.firstWhere(
-                                                            (e) =>
-                                                                (e['name'] ??
-                                                                        '')
-                                                                    .toLowerCase()
-                                                                    .trim() ==
-                                                                employeeName
-                                                                    .toLowerCase()
-                                                                    .trim(),
-                                                            orElse: () => null,
-                                                          );
-
-                                                      if (employee != null) {
-                                                        _selectedEmployeeId =
-                                                            employee['id']
-                                                                .toString();
-                                                      }
-                                                    }
-                                                  });
-
-                                                  FocusScope.of(
-                                                    context,
-                                                  ).unfocus();
+                                                () {
+                                                  _fetchCustomers(value);
                                                 },
                                               );
+
+                                              setState(() {});
                                             },
+                                            onTap: () {
+                                              if (_clientNameController
+                                                  .text
+                                                  .isNotEmpty) {
+                                                _showCustomerDropdown = true;
+                                              }
+                                            },
+                                            decoration: const InputDecoration(
+                                              hintText: "Search customer...",
+                                              border: InputBorder.none,
+                                              isDense: true,
+                                            ),
                                           ),
                                         ),
+
+                                        /// DROPDOWN
+                                        if (_showCustomerDropdown &&
+                                            _filteredCustomers.isNotEmpty)
+                                          Container(
+                                            height: 150,
+                                            decoration: BoxDecoration(
+                                              border: Border.all(
+                                                color: Colors.grey.shade200,
+                                              ),
+                                              borderRadius:
+                                                  const BorderRadius.only(
+                                                    bottomLeft: Radius.circular(
+                                                      8,
+                                                    ),
+                                                    bottomRight:
+                                                        Radius.circular(8),
+                                                  ),
+                                            ),
+                                            child: ListView.builder(
+                                              itemCount:
+                                                  _filteredCustomers.length,
+                                              itemBuilder: (context, index) {
+                                                final customer =
+                                                    _filteredCustomers[index];
+                                                final fullName =
+                                                    "${customer['name']} ${customer['Last_Name'] ?? ''}";
+
+                                                return ListTile(
+                                                  title: Text(fullName),
+                                                  subtitle: Text(
+                                                    customer['phone'] ?? '',
+                                                  ),
+                                                  onTap: () {
+                                                    setState(() {
+                                                      _clientNameController
+                                                          .text = fullName;
+                                                      _contactNumberController
+                                                              .text =
+                                                          customer['phone'] ??
+                                                          '';
+                                                      _altNumberController
+                                                              .text =
+                                                          customer['altphone'] ??
+                                                          '';
+                                                      _emailController.text =
+                                                          customer['email'] ??
+                                                          '';
+                                                      _siteAddressController
+                                                              .text =
+                                                          customer['siteName'] ??
+                                                          '';
+
+                                                      // 👈 Store selected client ID
+                                                      _selectedClientId =
+                                                          customer['id'];
+
+                                                      _showCustomerDropdown =
+                                                          false;
+
+                                                      /// Optional: Architect & Employee Auto Assign
+                                                      // Architect Auto Select
+                                                      final architectName =
+                                                          customer['assignedArchitect'];
+                                                      if (architectName !=
+                                                          null) {
+                                                        final architect =
+                                                            _architects.firstWhere(
+                                                              (a) =>
+                                                                  "${a['firstname']} ${a['lastname']}"
+                                                                      .toLowerCase()
+                                                                      .trim() ==
+                                                                  architectName
+                                                                      .toLowerCase()
+                                                                      .trim(),
+                                                              orElse:
+                                                                  () => null,
+                                                            );
+
+                                                        if (architect != null) {
+                                                          _selectedArchitectId =
+                                                              architect['id']
+                                                                  .toString();
+                                                        }
+                                                      }
+
+                                                      // Employee Auto Select
+                                                      final employeeName =
+                                                          customer['assignedEmployee'];
+                                                      if (employeeName !=
+                                                          null) {
+                                                        final employee =
+                                                            _employees.firstWhere(
+                                                              (e) =>
+                                                                  (e['name'] ??
+                                                                          '')
+                                                                      .toLowerCase()
+                                                                      .trim() ==
+                                                                  employeeName
+                                                                      .toLowerCase()
+                                                                      .trim(),
+                                                              orElse:
+                                                                  () => null,
+                                                            );
+
+                                                        if (employee != null) {
+                                                          _selectedEmployeeId =
+                                                              employee['id']
+                                                                  .toString();
+                                                        }
+                                                      }
+                                                    });
+
+                                                    FocusScope.of(
+                                                      context,
+                                                    ).unfocus();
+                                                  },
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 12),
+
+                                  // Client GST Number
+                                  _buildClientLabel('CLIENT GST NUMBER'),
+                                  const SizedBox(height: 4),
+                                  _buildClientTextField(
+                                    _clientGstController,
+                                    '27XXXXX...',
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  // Contact Number and Alt Number
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            _buildClientLabel('CONTACT NUMBER'),
+                                            const SizedBox(height: 4),
+                                            _buildClientTextField(
+                                              _contactNumberController,
+                                              '+91',
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            _buildClientLabel('ALT NUMBER'),
+                                            const SizedBox(height: 4),
+                                            _buildClientTextField(
+                                              _altNumberController,
+                                              '+91',
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ],
                                   ),
-                                ),
+                                  const SizedBox(height: 12),
 
-                                const SizedBox(height: 12),
-
-                                // Client GST Number
-                                _buildClientLabel('CLIENT GST NUMBER'),
-                                const SizedBox(height: 4),
-                                _buildClientTextField(
-                                  _clientGstController,
-                                  '27XXXXX...',
-                                ),
-                                const SizedBox(height: 12),
-
-                                // Contact Number and Alt Number
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          _buildClientLabel('CONTACT NUMBER'),
-                                          const SizedBox(height: 4),
-                                          _buildClientTextField(
-                                            _contactNumberController,
-                                            '+91',
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          _buildClientLabel('ALT NUMBER'),
-                                          const SizedBox(height: 4),
-                                          _buildClientTextField(
-                                            _altNumberController,
-                                            '+91',
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-
-                                // Client Email
-                                _buildClientLabel('CLIENT EMAIL (OPTIONAL)'),
-                                const SizedBox(height: 4),
-                                _buildClientTextField(
-                                  _emailController,
-                                  'client@example.com',
-                                ),
-                                const SizedBox(height: 12),
-
-                                // Site Address
-                                _buildClientLabel('SITE ADDRESS'),
-                                const SizedBox(height: 4),
-                                _buildClientTextField(
-                                  _siteAddressController,
-                                  'Full location...',
-                                  maxLines: 3,
-                                ),
-                                const SizedBox(height: 12),
-
-                                // Select Architect and Attended By
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          _buildClientLabel('SELECT ARCHITECT'),
-                                          const SizedBox(height: 4),
-                                          Container(
-                                            height: 40,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              border: Border.all(
-                                                color: Colors.grey.shade300,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            child: DropdownButtonHideUnderline(
-                                              child: DropdownButton<String>(
-                                                isExpanded: true,
-                                                value: _selectedArchitectId,
-                                                hint:
-                                                    _isLoadingArchitects
-                                                        ? const Text(
-                                                          'Loading...',
-                                                        )
-                                                        : const Text(
-                                                          'Choose Architect...',
-                                                        ),
-                                                items:
-                                                    _architects.map((
-                                                      architect,
-                                                    ) {
-                                                      final fullName =
-                                                          '${architect['firstname']} ${architect['lastname']}';
-                                                      return DropdownMenuItem<
-                                                        String
-                                                      >(
-                                                        value:
-                                                            architect['id']
-                                                                .toString(),
-                                                        child: Text(fullName),
-                                                      );
-                                                    }).toList(),
-                                                onChanged: (value) {
-                                                  setState(() {
-                                                    _selectedArchitectId =
-                                                        value;
-                                                    final selectedArchitect =
-                                                        _architects.firstWhere(
-                                                          (a) =>
-                                                              a['id']
-                                                                  .toString() ==
-                                                              value,
-                                                          orElse: () => null,
-                                                        );
-                                                    if (selectedArchitect !=
-                                                        null) {
-                                                      _selectedArchitectName =
-                                                          '${selectedArchitect['firstname']} ${selectedArchitect['lastname']}';
-                                                    }
-                                                  });
-                                                },
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          _buildClientLabel('ATTENDED BY'),
-                                          const SizedBox(height: 4),
-                                          Container(
-                                            height: 40,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              border: Border.all(
-                                                color: Colors.grey.shade300,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            child: DropdownButtonHideUnderline(
-                                              child: DropdownButton<String>(
-                                                isExpanded: true,
-                                                value: _selectedEmployeeId,
-                                                hint:
-                                                    _isLoadingEmployees
-                                                        ? const Text(
-                                                          'Loading...',
-                                                        )
-                                                        : const Text(
-                                                          'Choose Person...',
-                                                        ),
-                                                items:
-                                                    _employees.map((employee) {
-                                                      return DropdownMenuItem<
-                                                        String
-                                                      >(
-                                                        value:
-                                                            employee['id']
-                                                                .toString(),
-                                                        child: Text(
-                                                          employee['name'] ??
-                                                              '',
-                                                        ),
-                                                      );
-                                                    }).toList(),
-                                                onChanged: (value) {
-                                                  setState(() {
-                                                    _selectedEmployeeId = value;
-                                                    final selectedEmployee =
-                                                        _employees.firstWhere(
-                                                          (e) =>
-                                                              e['id']
-                                                                  .toString() ==
-                                                              value,
-                                                          orElse: () => null,
-                                                        );
-                                                    if (selectedEmployee !=
-                                                        null) {
-                                                      _selectedEmployeeName =
-                                                          selectedEmployee['name'];
-                                                    }
-                                                  });
-                                                },
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-
-                                const SizedBox(height: 20),
-                                const Divider(),
-                                const SizedBox(height: 16),
-
-                                // Product Section Header
-                                const Text(
-                                  'PRODUCT DETAILS',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xffFFA54A),
+                                  // Client Email
+                                  _buildClientLabel('CLIENT EMAIL (OPTIONAL)'),
+                                  const SizedBox(height: 4),
+                                  _buildClientTextField(
+                                    _emailController,
+                                    'client@example.com',
                                   ),
-                                ),
+                                  const SizedBox(height: 12),
 
-                                const SizedBox(height: 16),
-
-                                // Product Rows
-                                ..._productRows.asMap().entries.map((entry) {
-                                  final index = entry.key;
-                                  final row = entry.value;
-                                  return _buildProductRow(index, row);
-                                }),
-
-                                // Add Product Button
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
+                                  // Site Address
+                                  _buildClientLabel('SITE ADDRESS'),
+                                  const SizedBox(height: 4),
+                                  _buildClientTextField(
+                                    _siteAddressController,
+                                    'Full location...',
+                                    maxLines: 3,
                                   ),
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      onTap: _addProductRow,
-                                      child: Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 12,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          border: Border.all(
-                                            color: const Color(0xffFFA54A),
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: const Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
+                                  const SizedBox(height: 12),
+
+                                  // Select Architect and Attended By
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            Icon(
-                                              Icons.add,
-                                              color: Color(0xffFFA54A),
-                                              size: 18,
+                                            _buildClientLabel(
+                                              'SELECT ARCHITECT',
                                             ),
-                                            SizedBox(width: 8),
-                                            Text(
-                                              "+ ADD PRODUCT ROW",
-                                              style: TextStyle(
-                                                color: Color(0xffFFA54A),
-                                                fontWeight: FontWeight.w600,
+                                            const SizedBox(height: 4),
+                                            Container(
+                                              height: 40,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                border: Border.all(
+                                                  color: Colors.grey.shade300,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: DropdownButtonHideUnderline(
+                                                child: DropdownButton<String>(
+                                                  isExpanded: true,
+                                                  value: _selectedArchitectId,
+                                                  hint:
+                                                      _isLoadingArchitects
+                                                          ? const Text(
+                                                            'Loading...',
+                                                          )
+                                                          : const Text(
+                                                            'Choose Architect...',
+                                                          ),
+                                                  items:
+                                                      _architects.map((
+                                                        architect,
+                                                      ) {
+                                                        final fullName =
+                                                            '${architect['firstname']} ${architect['lastname']}';
+                                                        return DropdownMenuItem<
+                                                          String
+                                                        >(
+                                                          value:
+                                                              architect['id']
+                                                                  .toString(),
+                                                          child: Text(fullName),
+                                                        );
+                                                      }).toList(),
+                                                  onChanged: (value) {
+                                                    setState(() {
+                                                      _selectedArchitectId =
+                                                          value;
+                                                      final selectedArchitect =
+                                                          _architects.firstWhere(
+                                                            (a) =>
+                                                                a['id']
+                                                                    .toString() ==
+                                                                value,
+                                                            orElse: () => null,
+                                                          );
+                                                      if (selectedArchitect !=
+                                                          null) {
+                                                        _selectedArchitectName =
+                                                            '${selectedArchitect['firstname']} ${selectedArchitect['lastname']}';
+                                                      }
+                                                    });
+                                                  },
+                                                ),
                                               ),
                                             ),
                                           ],
                                         ),
                                       ),
-                                    ),
-                                  ),
-                                ),
-
-                                const SizedBox(height: 20),
-
-                                Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      _buildClientLabel('ADDITIONAL DISCOUNT'),
-                                      const SizedBox(height: 8),
-                                      _buildClientTextField(
-                                        _additionalDiscountController,
-                                        'Enter discount percentage...',
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'This discount will be applied on the total amount',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade600,
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            _buildClientLabel('ATTENDED BY'),
+                                            const SizedBox(height: 4),
+                                            Container(
+                                              height: 40,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                border: Border.all(
+                                                  color: Colors.grey.shade300,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: DropdownButtonHideUnderline(
+                                                child: DropdownButton<String>(
+                                                  isExpanded: true,
+                                                  value: _selectedEmployeeId,
+                                                  hint:
+                                                      _isLoadingEmployees
+                                                          ? const Text(
+                                                            'Loading...',
+                                                          )
+                                                          : const Text(
+                                                            'Choose Person...',
+                                                          ),
+                                                  items:
+                                                      _employees.map((
+                                                        employee,
+                                                      ) {
+                                                        return DropdownMenuItem<
+                                                          String
+                                                        >(
+                                                          value:
+                                                              employee['id']
+                                                                  .toString(),
+                                                          child: Text(
+                                                            employee['name'] ??
+                                                                '',
+                                                          ),
+                                                        );
+                                                      }).toList(),
+                                                  onChanged: (value) {
+                                                    setState(() {
+                                                      _selectedEmployeeId =
+                                                          value;
+                                                      final selectedEmployee =
+                                                          _employees.firstWhere(
+                                                            (e) =>
+                                                                e['id']
+                                                                    .toString() ==
+                                                                value,
+                                                            orElse: () => null,
+                                                          );
+                                                      if (selectedEmployee !=
+                                                          null) {
+                                                        _selectedEmployeeName =
+                                                            selectedEmployee['name'];
+                                                      }
+                                                    });
+                                                  },
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
 
-                                // Additional Discount Section
-                                const SizedBox(height: 20),
+                                  const SizedBox(height: 20),
+                                  const Divider(),
+                                  const SizedBox(height: 16),
 
-                                // FINAL QUOTATION VALUE SECTION
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xffFFA54A,
-                                    ).withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
+                                  // Product Section Header
+                                  const Text(
+                                    'PRODUCT DETAILS',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xffFFA54A),
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 16),
+
+                                  // Product Rows
+                                  ..._productRows.asMap().entries.map((entry) {
+                                    final index = entry.key;
+                                    final row = entry.value;
+                                    return _buildProductRow(index, row);
+                                  }),
+
+                                  // Add Product Button
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: _addProductRow,
+                                        child: Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            border: Border.all(
+                                              color: const Color(0xffFFA54A),
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                          child: const Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.add,
+                                                color: Color(0xffFFA54A),
+                                                size: 18,
+                                              ),
+                                              SizedBox(width: 8),
+                                              Text(
+                                                "+ ADD PRODUCT ROW",
+                                                style: TextStyle(
+                                                  color: Color(0xffFFA54A),
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 20),
+
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        _buildClientLabel(
+                                          'ADDITIONAL DISCOUNT',
+                                        ),
+                                        const SizedBox(height: 8),
+                                        _buildClientTextField(
+                                          _additionalDiscountController,
+                                          'Enter discount percentage...',
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'This discount will be applied on the total amount',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  // Additional Discount Section
+                                  const SizedBox(height: 20),
+
+                                  // FINAL QUOTATION VALUE SECTION
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
                                       color: const Color(
                                         0xffFFA54A,
-                                      ).withOpacity(0.3),
+                                      ).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: const Color(
+                                          0xffFFA54A,
+                                        ).withOpacity(0.3),
+                                      ),
                                     ),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      // Subtotal
+                                    child: Column(
+                                      children: [
+                                        // Subtotal
 
-                                      // Additional Discount
-                                      if (additionalDiscount > 0)
-                                        Column(
-                                          children: [
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Text(
-                                                  'Additional Discount ($additionalDiscount%)',
-                                                  style: const TextStyle(
-                                                    fontSize: 14,
-                                                    color: Colors.green,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '-₹${discountAmount.toStringAsFixed(2)}',
-                                                  style: const TextStyle(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w500,
-                                                    color: Colors.green,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-                                          ],
-                                        ),
-
-                                      // Grand Total
-                                      Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.all(16),
-                                        decoration: BoxDecoration(
-                                          color: const Color(
-                                            0xffFFA54A,
-                                          ).withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          border: Border.all(
-                                            color: const Color(
-                                              0xffFFA54A,
-                                            ).withOpacity(0.3),
-                                          ),
-                                        ),
-                                        child: Column(
-                                          children: [
-                                            // Subtotal
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                const Text(
-                                                  'Subtotal',
-                                                  style: TextStyle(
-                                                    fontSize: 16,
-                                                    color: Colors.black87,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '₹${totalAmount.toStringAsFixed(2)}',
-                                                  style: const TextStyle(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.w500,
-                                                    color: Colors.black87,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-
-                                            // Additional Discount
-                                            if (additionalDiscount > 0)
-                                              Column(
+                                        // Additional Discount
+                                        if (additionalDiscount > 0)
+                                          Column(
+                                            children: [
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
                                                 children: [
-                                                  Row(
-                                                    mainAxisAlignment:
-                                                        MainAxisAlignment
-                                                            .spaceBetween,
-                                                    children: [
-                                                      Text(
-                                                        'Additional Discount ($additionalDiscount%)',
-                                                        style: const TextStyle(
-                                                          fontSize: 14,
-                                                          color: Colors.green,
-                                                        ),
-                                                      ),
-                                                      Text(
-                                                        '-₹${discountAmount.toStringAsFixed(2)}',
-                                                        style: const TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight:
-                                                              FontWeight.w500,
-                                                          color: Colors.green,
-                                                        ),
-                                                      ),
-                                                    ],
+                                                  Text(
+                                                    'Additional Discount ($additionalDiscount%)',
+                                                    style: const TextStyle(
+                                                      fontSize: 14,
+                                                      color: Colors.green,
+                                                    ),
                                                   ),
-                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                    '-₹${discountAmount.toStringAsFixed(2)}',
+                                                    style: const TextStyle(
+                                                      fontSize: 14,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      color: Colors.green,
+                                                    ),
+                                                  ),
                                                 ],
                                               ),
+                                              const SizedBox(height: 8),
+                                            ],
+                                          ),
 
-                                            // Grand Total
-                                            Divider(
-                                              color: Colors.grey.shade400,
-                                              thickness: 1,
+                                        // Grand Total
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(16),
+                                          decoration: BoxDecoration(
+                                            color: const Color(
+                                              0xffFFA54A,
+                                            ).withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
                                             ),
-                                            const SizedBox(height: 8),
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                const Text(
-                                                  'Final Quotation Value',
-                                                  style: TextStyle(
-                                                    fontSize: 18,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Color(0xffFFA54A),
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '₹${grandTotal.toStringAsFixed(2)}',
-                                                  style: const TextStyle(
-                                                    fontSize: 22,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Color(0xffFFA54A),
-                                                  ),
-                                                ),
-                                              ],
+                                            border: Border.all(
+                                              color: const Color(
+                                                0xffFFA54A,
+                                              ).withOpacity(0.3),
                                             ),
-                                          ],
+                                          ),
+                                          child: Column(
+                                            children: [
+                                              // Subtotal
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
+                                                children: [
+                                                  const Text(
+                                                    'Subtotal',
+                                                    style: TextStyle(
+                                                      fontSize: 16,
+                                                      color: Colors.black87,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '₹${totalAmount.toStringAsFixed(2)}',
+                                                    style: const TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      color: Colors.black87,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+
+                                              // Additional Discount
+                                              if (additionalDiscount > 0)
+                                                Column(
+                                                  children: [
+                                                    Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .spaceBetween,
+                                                      children: [
+                                                        Text(
+                                                          'Additional Discount ($additionalDiscount%)',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 14,
+                                                                color:
+                                                                    Colors
+                                                                        .green,
+                                                              ),
+                                                        ),
+                                                        Text(
+                                                          '-₹${discountAmount.toStringAsFixed(2)}',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 14,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
+                                                                color:
+                                                                    Colors
+                                                                        .green,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 8),
+                                                  ],
+                                                ),
+
+                                              // Grand Total
+                                              Divider(
+                                                color: Colors.grey.shade400,
+                                                thickness: 1,
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
+                                                children: [
+                                                  const Text(
+                                                    'Final Quotation Value',
+                                                    style: TextStyle(
+                                                      fontSize: 18,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Color(0xffFFA54A),
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '₹${grandTotal.toStringAsFixed(2)}',
+                                                    style: const TextStyle(
+                                                      fontSize: 22,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Color(0xffFFA54A),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 24),
+
+                                  // Buttons (Always visible at bottom)
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton(
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 16,
+                                            ),
+                                            side: const BorderSide(
+                                              color: Colors.red,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                          ),
+                                          onPressed:
+                                              _isSubmitting
+                                                  ? null
+                                                  : () =>
+                                                      Navigator.pop(context),
+                                          child: const Text(
+                                            'CANCEL',
+                                            style: TextStyle(
+                                              color: Colors.red,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(
+                                              0xffFFA54A,
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 16,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                          ),
+                                          onPressed:
+                                              _isSubmitting
+                                                  ? null
+                                                  : _saveQuotation,
+                                          child:
+                                              _isSubmitting
+                                                  ? const SizedBox(
+                                                    height: 20,
+                                                    width: 20,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                          color: Colors.white,
+                                                        ),
+                                                  )
+                                                  : const Text(
+                                                    'Proceed to Save',
+                                                    style: TextStyle(
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
 
-                                const SizedBox(height: 24),
-
-                                // Buttons (Always visible at bottom)
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: OutlinedButton(
-                                        style: OutlinedButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 16,
-                                          ),
-                                          side: const BorderSide(
-                                            color: Colors.red,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                          ),
-                                        ),
-                                        onPressed:
-                                            _isSubmitting
-                                                ? null
-                                                : () => Navigator.pop(context),
-                                        child: const Text(
-                                          'CANCEL',
-                                          style: TextStyle(
-                                            color: Colors.red,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: ElevatedButton(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(
-                                            0xffFFA54A,
-                                          ),
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 16,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                          ),
-                                        ),
-                                        onPressed:
-                                            _isSubmitting
-                                                ? null
-                                                : _saveQuotation,
-                                        child:
-                                            _isSubmitting
-                                                ? const SizedBox(
-                                                  height: 20,
-                                                  width: 20,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        color: Colors.white,
-                                                      ),
-                                                )
-                                                : const Text(
-                                                  'Proceed to Save',
-                                                  style: TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-
-                                const SizedBox(height: 20),
-                              ],
+                                  const SizedBox(height: 20),
+                                ],
+                              ),
                             ),
-                          ),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1407,6 +1507,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                             row.covController.clear();
                             row.rateController.clear();
                             row.amountController.clear();
+                            // Clear stored details
+                            row.selectedProductDetails = null;
 
                             // Debounce API call
                             if (_productSearchDebounce?.isActive ?? false) {
@@ -1489,6 +1591,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                   product['name'];
                               row.rateController.text = product['rate'] ?? '0';
                               row.covController.text = product['cov'] ?? '0';
+                              // Store full product details
+                              row.selectedProductDetails = product;
                               row.showProductDropdown = false;
                               row.updateTotal();
                               FocusScope.of(context).unfocus();
@@ -1546,6 +1650,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                               row.covController.clear();
                               row.rateController.clear();
                               row.amountController.clear();
+                              // Clear stored details since size changed
+                              row.selectedProductDetails = null;
                               row.updateTotal();
                             });
                           },
@@ -1591,7 +1697,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                             if (value == null) return;
                             setState(() {
                               row.quality = value;
-                              final productDetails = _getProductDetails(
+                              // Find product details for this combination
+                              final productDetails = _findProductDetails(
                                 row.productName,
                                 row.size,
                                 value,
@@ -1602,6 +1709,13 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                     productDetails['rate']?.toString() ?? '0';
                                 row.covController.text =
                                     productDetails['cov']?.toString() ?? '0';
+                                // Store the full details
+                                row.selectedProductDetails = productDetails;
+                              } else {
+                                // Clear if not found
+                                row.selectedProductDetails = null;
+                                row.rateController.clear();
+                                row.covController.clear();
                               }
                               row.updateTotal();
                             });
@@ -1652,7 +1766,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                 ),
               ),
               const SizedBox(width: 8),
-              // AREA (NEW FIELD)
+              // AREA
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1660,7 +1774,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                     _buildLabel('AREA'),
                     const SizedBox(height: 4),
                     _buildTextField(
-                      row.areaController, // 👈 NEW CONTROLLER
+                      row.areaController,
                       '0',
                       keyboardType: TextInputType.text,
                       onChanged: (_) => row.updateTotal(),
@@ -1901,11 +2015,13 @@ class ProductRow {
   bool showProductDropdown = false;
   int? productId;
 
+  // Store the full product details when selected
+  Map<String, dynamic>? selectedProductDetails;
+
   final TextEditingController productSearchController = TextEditingController();
   final TextEditingController rateController = TextEditingController();
   final TextEditingController covController = TextEditingController();
-  final TextEditingController areaController =
-      TextEditingController(); // 👈 NEW
+  final TextEditingController areaController = TextEditingController();
   final TextEditingController weightController = TextEditingController();
   final TextEditingController twgtController = TextEditingController();
   final TextEditingController quantityController = TextEditingController();
@@ -1961,7 +2077,7 @@ class ProductRow {
     productSearchController.dispose();
     rateController.dispose();
     covController.dispose();
-    areaController.dispose(); // 👈 NEW
+    areaController.dispose();
     weightController.dispose();
     twgtController.dispose();
     quantityController.dispose();

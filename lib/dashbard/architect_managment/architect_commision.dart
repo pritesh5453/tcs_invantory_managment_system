@@ -80,7 +80,7 @@ class _CommissionPageState extends State<CommissionPage> {
       if (input > 100) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Commission percentage cannot exceed 100%'),
+            content: Text('Bonus percentage cannot exceed 100%'),
           ),
         );
         commissionController.text = '100';
@@ -132,7 +132,7 @@ class _CommissionPageState extends State<CommissionPage> {
     return Scaffold(
       backgroundColor: const Color(0xffF6F6F6),
       appBar: AppBar(
-        title: const Text('Commission'),
+        title: const Text('Bonus'),
         backgroundColor: Colors.orange,
       ),
       body: SingleChildScrollView(
@@ -179,7 +179,7 @@ class _CommissionPageState extends State<CommissionPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Add Commission',
+            'Add Bonus',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),

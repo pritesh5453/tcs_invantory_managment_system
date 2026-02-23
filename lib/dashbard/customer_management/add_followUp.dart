@@ -13,6 +13,7 @@ class AddFollowUpPopup extends StatefulWidget {
 class _AddFollowUpPopupState extends State<AddFollowUpPopup> {
   final TextEditingController dateCtrl = TextEditingController();
   final TextEditingController noteCtrl = TextEditingController();
+  final TextEditingController nextDateCtrl = TextEditingController(); // 👈 new
 
   bool isLoading = false;
 
@@ -43,7 +44,9 @@ class _AddFollowUpPopupState extends State<AddFollowUpPopup> {
 
   /// ================= SAVE API =================
   Future<void> _saveFollowUp() async {
-    if (dateCtrl.text.isEmpty || noteCtrl.text.isEmpty) {
+    if (dateCtrl.text.isEmpty ||
+        noteCtrl.text.isEmpty ||
+        nextDateCtrl.text.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
@@ -53,15 +56,19 @@ class _AddFollowUpPopupState extends State<AddFollowUpPopup> {
     setState(() => isLoading = true);
 
     try {
-      final parts = dateCtrl.text.split('/');
-      final formattedDate = "${parts[2]}-${parts[1]}-${parts[0]}";
+      // Convert DD/MM/YYYY to YYYY-MM-DD
+      String formatDate(String ddMmYyyy) {
+        final parts = ddMmYyyy.split('/');
+        return "${parts[2]}-${parts[1]}-${parts[0]}";
+      }
 
       final response = await _dio.post(
         "/api/users/followup/add",
         data: {
           "customerId": widget.customerId,
-          "date": formattedDate,
+          "date": formatDate(dateCtrl.text),
           "response": noteCtrl.text,
+          "nextFollowupDate": formatDate(nextDateCtrl.text), // 👈 new field
         },
       );
 
@@ -78,6 +85,19 @@ class _AddFollowUpPopupState extends State<AddFollowUpPopup> {
       ).showSnackBar(const SnackBar(content: Text("Failed to save follow-up")));
     } finally {
       setState(() => isLoading = false);
+    }
+  }
+
+  /// ================= DATE PICKER HELPER =================
+  Future<void> _selectDate(TextEditingController controller) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) {
+      controller.text = "${picked.day}/${picked.month}/${picked.year}";
     }
   }
 
@@ -119,18 +139,20 @@ class _AddFollowUpPopupState extends State<AddFollowUpPopup> {
                 hint: "DD/MM/YYYY",
                 suffix: const Icon(Icons.calendar_month),
               ),
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: DateTime.now(),
-                  firstDate: DateTime.now(),
-                  lastDate: DateTime(2100),
-                );
-                if (picked != null) {
-                  dateCtrl.text =
-                      "${picked.day}/${picked.month}/${picked.year}";
-                }
-              },
+              onTap: () => _selectDate(dateCtrl),
+            ),
+
+            const SizedBox(height: 14),
+
+            /// ===== NEXT FOLLOW-UP DATE =====
+            TextField(
+              controller: nextDateCtrl,
+              readOnly: true,
+              decoration: _dec(
+                hint: "DD/MM/YYYY",
+                suffix: const Icon(Icons.calendar_month),
+              ),
+              onTap: () => _selectDate(nextDateCtrl),
             ),
 
             const SizedBox(height: 14),

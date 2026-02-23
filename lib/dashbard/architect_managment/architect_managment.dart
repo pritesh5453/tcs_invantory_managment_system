@@ -651,7 +651,7 @@ class _ArchitectManagementScreenState extends State<ArchitectManagementScreen> {
                                           ).showSnackBar(
                                             const SnackBar(
                                               content: Text(
-                                                "Commission panel is accessible only to Super Admin.",
+                                                "Bonus panel is accessible only to Super Admin.",
                                               ),
                                               backgroundColor: Colors.red,
                                             ),
@@ -827,10 +827,6 @@ class ArchitectCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             "Whatsapp No. : +91 ${architect.whatsapp}",
-            style: const TextStyle(fontSize: 12.5),
-          ),
-          Text(
-            "Commission : ${architect.commission}%",
             style: const TextStyle(fontSize: 12.5),
           ),
           Text(
