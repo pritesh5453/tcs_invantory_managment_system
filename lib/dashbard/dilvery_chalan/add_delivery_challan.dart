@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
@@ -84,7 +83,78 @@ class Batch {
   }
 }
 
-/// ================= ADD DELIVERY CHALLAN SCREEN =================
+/// ================= MODEL FOR MANUALLY ADDED PRODUCT ROWS =================
+class AdditionalProductRow {
+  String productName = '';
+  String size = '';
+  String quality = '';
+  String godown = 'KKW';
+  bool showProductDropdown = false;
+  int? productId;
+
+  // Store the full product details when selected
+  Map<String, dynamic>? selectedProductDetails;
+
+  final TextEditingController productSearchController = TextEditingController();
+  final TextEditingController rateController = TextEditingController();
+  final TextEditingController covController = TextEditingController();
+  final TextEditingController areaController = TextEditingController();
+  final TextEditingController weightController = TextEditingController();
+  final TextEditingController twgtController = TextEditingController();
+  final TextEditingController quantityController = TextEditingController();
+  final TextEditingController amountController = TextEditingController();
+  final TextEditingController discountController = TextEditingController();
+
+  void updateTWGT() {
+    try {
+      final weight = double.tryParse(weightController.text) ?? 0;
+      final quantity = double.tryParse(quantityController.text) ?? 0;
+      final twgt = weight * quantity;
+      twgtController.text = twgt.toStringAsFixed(2);
+      updateTotal();
+    } catch (e) {
+      twgtController.text = '0';
+      amountController.text = '0';
+    }
+  }
+
+  void updateTotal() {
+    try {
+      final quantity = double.tryParse(quantityController.text) ?? 0;
+      final rate = double.tryParse(rateController.text) ?? 0;
+      final cov = double.tryParse(covController.text) ?? 0;
+      final discount = double.tryParse(discountController.text) ?? 0;
+
+      // Calculate base amount: Rate * QUANTITY
+      final baseAmount = rate * quantity;
+      final covAmount = baseAmount * cov;
+      final discountAmount = covAmount * (discount / 100);
+      final finalAmount = covAmount - discountAmount;
+
+      amountController.text = finalAmount.toStringAsFixed(2);
+    } catch (e) {
+      amountController.text = '0';
+    }
+  }
+
+  double getTotalAmount() {
+    return double.tryParse(amountController.text) ?? 0;
+  }
+
+  void dispose() {
+    productSearchController.dispose();
+    rateController.dispose();
+    covController.dispose();
+    areaController.dispose();
+    weightController.dispose();
+    twgtController.dispose();
+    quantityController.dispose();
+    amountController.dispose();
+    discountController.dispose();
+  }
+}
+
+/// ================= MAIN SCREEN =================
 class AddDeliveryChallanScreen extends StatefulWidget {
   const AddDeliveryChallanScreen({super.key});
 
@@ -108,8 +178,15 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       TextEditingController();
   final TextEditingController _vehicleNoController = TextEditingController();
 
-  // Dispatch boxes controllers for each item
+  // Dispatch boxes controllers for each quotation item
   final Map<int, TextEditingController> _dispatchBoxesControllers = {};
+
+  // Additional product rows (manually added)
+  List<AdditionalProductRow> _additionalRows = [];
+
+  // Additional discount
+  final TextEditingController _additionalDiscountController =
+      TextEditingController(text: '0');
 
   // Loading states
   bool _isSearching = false;
@@ -121,10 +198,14 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   // Search with debounce
   Timer? _searchDebounce;
 
+  // Product search data (for manual rows)
+  List<dynamic> _products = [];
+  List<dynamic> _filteredProducts = [];
+  Timer? _productSearchDebounce;
+
   @override
   void initState() {
     super.initState();
-    // Initialize controllers for existing items
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_selectedQuotation != null) {
         _initializeControllers();
@@ -135,15 +216,22 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _productSearchDebounce?.cancel();
     _searchController.dispose();
     _driverNameController.dispose();
     _driverContactController.dispose();
     _vehicleNoController.dispose();
+    _additionalDiscountController.dispose();
 
     // Dispose all dispatch boxes controllers
     _dispatchBoxesControllers.forEach((key, controller) {
       controller.dispose();
     });
+
+    // Dispose all additional rows
+    for (var row in _additionalRows) {
+      row.dispose();
+    }
 
     super.dispose();
   }
@@ -201,9 +289,9 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       _driverNameController.clear();
       _driverContactController.clear();
       _vehicleNoController.clear();
+      // Do not clear additional rows or discount – they stay
     });
 
-    // Initialize controllers for items
     _initializeControllers();
   }
 
@@ -214,84 +302,293 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     });
   }
 
-  Future<void> _generateDeliveryChallan() async {
-    // Validate inputs
-    if (_selectedQuotation == null) {
-      _showError("Please select a quotation");
+  // ---------- Product search for manual rows ----------
+  Future<void> _fetchProducts({required String search}) async {
+    if (search.trim().isEmpty) {
+      setState(() {
+        _filteredProducts = [];
+      });
       return;
+    }
+
+    try {
+      final response = await dio.get(
+        'https://dashboard.theceramicstudio.in/api/product/list',
+        queryParameters: {'search': search},
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        setState(() {
+          _filteredProducts = response.data['products'];
+          _products = response.data['products'];
+        });
+      }
+    } catch (e) {
+      debugPrint('Product search error: $e');
+    }
+  }
+
+  Map<String, dynamic>? _findProductDetails(
+    String productName,
+    String size,
+    String quality,
+  ) {
+    try {
+      return _products.firstWhere(
+        (p) =>
+            p['name'] == productName &&
+            (p['size']?.toString() ?? '') == size &&
+            (p['quality']?.toString() ?? '') == quality,
+        orElse: () => null,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  List<String> _getSizesForProduct(String productName) {
+    if (productName.isEmpty) return [];
+    final productsWithSameName =
+        _products.where((p) => p['name'] == productName).toList();
+    if (productsWithSameName.isEmpty) return [];
+    final sizes =
+        productsWithSameName
+            .map((p) => p['size']?.toString() ?? '')
+            .where((size) => size.isNotEmpty)
+            .toSet()
+            .toList();
+    return sizes;
+  }
+
+  List<String> _getQualitiesForProduct(String productName, String size) {
+    if (productName.isEmpty || size.isEmpty) return [];
+    final productsWithSameNameAndSize =
+        _products
+            .where(
+              (p) =>
+                  p['name'] == productName &&
+                  (p['size']?.toString() ?? '') == size,
+            )
+            .toList();
+    if (productsWithSameNameAndSize.isEmpty) return [];
+    final qualities =
+        productsWithSameNameAndSize
+            .map((p) => p['quality']?.toString() ?? '')
+            .where((quality) => quality.isNotEmpty)
+            .toSet()
+            .toList();
+    return qualities;
+  }
+
+  // ---------- Manual row management ----------
+  void _addAdditionalRow() {
+    setState(() {
+      _additionalRows.add(AdditionalProductRow());
+    });
+    // Scroll to bottom after adding
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // You can add scroll controller logic if needed
+    });
+  }
+
+  void _removeAdditionalRow(int index) {
+    setState(() {
+      _additionalRows[index].dispose();
+      _additionalRows.removeAt(index);
+    });
+  }
+
+  // ---------- Calculations ----------
+  double _calculateQuotationItemsTotal() {
+    double total = 0;
+    if (_selectedQuotation != null) {
+      for (var item in _selectedQuotation!.items) {
+        final controller = _dispatchBoxesControllers[item.id];
+        final dispatchBoxes = double.tryParse(controller?.text ?? '0') ?? 0;
+        // You need to know the rate for quotation items – assuming you have it in the item or you fetch it.
+        // For now, use a placeholder rate of 0. You should adjust based on your data.
+        // Possibly you need to extend QuotationItem to include rate.
+        // We'll assume there is a field 'rate' in QuotationItem. If not, you'll need to fetch product details.
+        final rate = 0.0; // Replace with actual rate
+        total += dispatchBoxes * rate;
+      }
+    }
+    return total;
+  }
+
+  double _calculateAdditionalRowsTotal() {
+    double total = 0;
+    for (var row in _additionalRows) {
+      total += row.getTotalAmount();
+    }
+    return total;
+  }
+
+  double _calculateTotalAmount() {
+    return _calculateQuotationItemsTotal() + _calculateAdditionalRowsTotal();
+  }
+
+  double _calculateGrandTotal() {
+    double subtotal = _calculateTotalAmount();
+    double additionalDiscount =
+        double.tryParse(_additionalDiscountController.text) ?? 0;
+    if (additionalDiscount > 0) {
+      double discountAmount = subtotal * (additionalDiscount / 100);
+      return subtotal - discountAmount;
+    }
+    return subtotal;
+  }
+
+  // ---------- Validation ----------
+  bool _validateForm() {
+    if (_selectedQuotation == null && _additionalRows.isEmpty) {
+      _showError("Please select a quotation or add at least one product");
+      return false;
     }
 
     if (_driverNameController.text.isEmpty) {
       _showError("Please enter driver name");
-      return;
+      return false;
     }
 
     if (_driverContactController.text.isEmpty) {
       _showError("Please enter driver contact");
-      return;
+      return false;
     }
 
     if (_vehicleNoController.text.isEmpty) {
       _showError("Please enter vehicle number");
-      return;
+      return false;
     }
 
-    // Check if at least one dispatch box is entered
-    bool hasDispatchBoxes = false;
-    for (var controller in _dispatchBoxesControllers.values) {
-      final value = int.tryParse(controller.text) ?? 0;
-      if (value > 0) {
-        hasDispatchBoxes = true;
-        break;
+    // Validate quotation items have at least one dispatch box > 0 if quotation exists
+    if (_selectedQuotation != null) {
+      bool hasQuotationDispatch = false;
+      for (var item in _selectedQuotation!.items) {
+        final controller = _dispatchBoxesControllers[item.id];
+        final value = int.tryParse(controller?.text ?? '0') ?? 0;
+        if (value > 0) {
+          hasQuotationDispatch = true;
+          break;
+        }
+      }
+      // If there are no additional rows, we need at least one quotation dispatch
+      if (!hasQuotationDispatch && _additionalRows.isEmpty) {
+        _showError("Please enter dispatch boxes for at least one product");
+        return false;
       }
     }
 
-    if (!hasDispatchBoxes) {
-      _showError("Please enter dispatch boxes for at least one product");
-      return;
+    // Validate additional rows
+    for (int i = 0; i < _additionalRows.length; i++) {
+      final row = _additionalRows[i];
+      if (row.productName.isEmpty) {
+        _showError("Please select product for additional row ${i + 1}");
+        return false;
+      }
+      if (row.size.isEmpty) {
+        _showError("Please select size for additional row ${i + 1}");
+        return false;
+      }
+      if (row.quality.isEmpty) {
+        _showError("Please select quality for additional row ${i + 1}");
+        return false;
+      }
+      if (row.quantityController.text.trim().isEmpty ||
+          double.tryParse(row.quantityController.text) == 0) {
+        _showError("Please enter valid quantity for additional row ${i + 1}");
+        return false;
+      }
+      if (row.productId == null && row.selectedProductDetails == null) {
+        _showError("Product details not found for additional row ${i + 1}");
+        return false;
+      }
     }
+
+    return true;
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
+    );
+  }
+
+  // ---------- API Submission ----------
+  Future<void> _generateDeliveryChallan() async {
+    if (!_validateForm()) return;
 
     setState(() => _isSubmitting = true);
 
     try {
-      // Prepare items for API
-      final List<Map<String, dynamic>> items = [];
-
-      for (var item in _selectedQuotation!.items) {
-        final controller = _dispatchBoxesControllers[item.id];
-        final dispatchBoxes = int.tryParse(controller?.text ?? '0') ?? 0;
-
-        if (dispatchBoxes > 0) {
-          // Find rate from original item data (you might need to store rate in your model)
-          // For now, using a placeholder rate
-          final rate = "120.00"; // You should get this from your item data
-
-          items.add({
-            "productId": item.productId,
-            "productName": item.productName,
-            "dispatchBoxes": dispatchBoxes,
-            "rate": rate,
-          });
+      // Prepare quotation items (if any)
+      final List<Map<String, dynamic>> quotationItems = [];
+      if (_selectedQuotation != null) {
+        for (var item in _selectedQuotation!.items) {
+          final controller = _dispatchBoxesControllers[item.id];
+          final dispatchBoxes = int.tryParse(controller?.text ?? '0') ?? 0;
+          if (dispatchBoxes > 0) {
+            // You need to get the actual rate for the product – you might have it in item or need to fetch
+            final rate = 0.0; // TODO: replace with actual rate from your data
+            quotationItems.add({
+              "quotationItemId": item.id,
+              "productId": item.productId,
+              "productName": item.productName,
+              "dispatchBoxes": dispatchBoxes,
+              "rate": rate,
+            });
+          }
         }
       }
 
+      // Prepare additional items
+      final List<Map<String, dynamic>> additionalItems = [];
+      for (var row in _additionalRows) {
+        final productDetails = row.selectedProductDetails;
+        if (productDetails == null) continue;
+
+        additionalItems.add({
+          "productId": productDetails['id'] ?? row.productId,
+          "productName": row.productName,
+          "size": row.size,
+          "quality": row.quality,
+          "rate": double.tryParse(row.rateController.text) ?? 0,
+          "box": int.tryParse(row.quantityController.text) ?? 0,
+          "area": row.areaController.text.trim(),
+          "weight": double.tryParse(row.weightController.text) ?? 0,
+          "twgt": double.tryParse(row.twgtController.text) ?? 0,
+          "coverage": double.tryParse(row.covController.text) ?? 0,
+          "discount": double.tryParse(row.discountController.text) ?? 0,
+          "total": row.getTotalAmount(),
+          "godown": row.godown,
+        });
+      }
+
       final Map<String, dynamic> payload = {
-        "quotationId": _selectedQuotation!.id,
-        "client": _selectedQuotation!.clientName,
-        "contact": _selectedQuotation!.contactNo,
-        "address": _selectedQuotation!.address,
+        "quotationId": _selectedQuotation?.id,
         "driverDetails": {
           "deliveryBoy": _driverNameController.text.trim(),
           "contact": _driverContactController.text.trim(),
           "tempo": _vehicleNoController.text.trim(),
         },
-        "items": items,
+        "additionalDiscount":
+            double.tryParse(_additionalDiscountController.text) ?? 0,
+        "quotationItems": quotationItems,
+        "additionalItems": additionalItems,
+        "grandTotal": _calculateGrandTotal(),
       };
 
       debugPrint("Payload: ${jsonEncode(payload)}");
 
+      // TODO: Replace with your actual delivery challan endpoint
       final response = await dio.post(
-        "https://dashboard.theceramicstudio.in/api/Quotation/generate-dc",
+        "https://dashboard.theceramicstudio.in/api/DeliveryChallan/create",
         data: payload,
         options: Options(headers: {"Content-Type": "application/json"}),
       );
@@ -300,8 +597,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
         final data = response.data;
         if (data['success'] == true) {
           _showSuccess("Delivery Challan Generated Successfully!");
-
-          // Clear form and go back
           Future.delayed(const Duration(seconds: 2), () {
             Navigator.pop(context, true);
           });
@@ -319,28 +614,522 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     }
   }
 
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 3),
+  // ---------- UI Helpers ----------
+  Widget _buildLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: Colors.black87,
       ),
     );
   }
 
-  void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 3),
+  Widget _buildTextField(
+    TextEditingController controller,
+    String hintText, {
+    bool enabled = true,
+    TextInputType keyboardType = TextInputType.text,
+    void Function(String)? onChanged,
+  }) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: TextField(
+        controller: controller,
+        enabled: enabled,
+        keyboardType: keyboardType,
+        style: const TextStyle(fontSize: 14),
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+          border: InputBorder.none,
+          isDense: true,
+        ),
+        onChanged: onChanged,
       ),
     );
   }
 
+  Widget _buildAdditionalProductRow(int index, AdditionalProductRow row) {
+    final sizes = _getSizesForProduct(row.productName);
+    final qualities = _getQualitiesForProduct(row.productName, row.size);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+        color: Colors.blue.shade50, // light blue background to distinguish
+      ),
+      child: Column(
+        children: [
+          // Product Name Search
+          _buildLabel('PRODUCT'),
+          const SizedBox(height: 4),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.search, size: 18, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: row.productSearchController,
+                          onChanged: (value) {
+                            row.productName = value;
+                            row.showProductDropdown = value.isNotEmpty;
+
+                            // Reset dependent fields
+                            row.size = '';
+                            row.quality = '';
+                            row.weightController.clear();
+                            row.twgtController.clear();
+                            row.covController.clear();
+                            row.rateController.clear();
+                            row.amountController.clear();
+                            row.selectedProductDetails = null;
+
+                            if (_productSearchDebounce?.isActive ?? false) {
+                              _productSearchDebounce!.cancel();
+                            }
+
+                            _productSearchDebounce = Timer(
+                              const Duration(milliseconds: 400),
+                              () {
+                                if (value.trim().isNotEmpty) {
+                                  _fetchProducts(search: value.trim());
+                                } else {
+                                  setState(() {
+                                    _filteredProducts = [];
+                                  });
+                                }
+                              },
+                            );
+
+                            setState(() {});
+                          },
+                          onTap: () {
+                            setState(() {
+                              row.showProductDropdown = true;
+                            });
+                          },
+                          decoration: const InputDecoration(
+                            hintText: 'Search product...',
+                            hintStyle: TextStyle(fontSize: 14),
+                            border: InputBorder.none,
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (row.showProductDropdown && row.productName.isNotEmpty)
+                  Container(
+                    height: 150,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade200),
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(8),
+                        bottomRight: Radius.circular(8),
+                      ),
+                    ),
+                    child: ListView.builder(
+                      itemCount:
+                          _filteredProducts
+                              .where(
+                                (p) => p['name']
+                                    .toString()
+                                    .toLowerCase()
+                                    .contains(row.productName.toLowerCase()),
+                              )
+                              .length,
+                      itemBuilder: (context, idx) {
+                        final product =
+                            _filteredProducts
+                                .where(
+                                  (p) => p['name']
+                                      .toString()
+                                      .toLowerCase()
+                                      .contains(row.productName.toLowerCase()),
+                                )
+                                .toList()[idx];
+                        return ListTile(
+                          title: Text(product['name'] ?? ''),
+                          subtitle: Text(
+                            'Size: ${product['size']} | Quality: ${product['quality']}',
+                          ),
+                          onTap: () {
+                            setState(() {
+                              row.productId = product['id'];
+                              row.productName = product['name'];
+                              row.size = product['size'].toString();
+                              row.quality = product['quality'].toString();
+                              row.productSearchController.text =
+                                  product['name'];
+                              row.rateController.text = product['rate'] ?? '0';
+                              row.covController.text = product['cov'] ?? '0';
+                              row.selectedProductDetails = product;
+                              row.showProductDropdown = false;
+                              row.updateTotal();
+                              FocusScope.of(context).unfocus();
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Size and Quality Dropdowns
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('SIZE'),
+                    const SizedBox(height: 4),
+                    Container(
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value:
+                              row.size.isNotEmpty && sizes.contains(row.size)
+                                  ? row.size
+                                  : null,
+                          hint: const Text('Select Size'),
+                          items:
+                              sizes.map((size) {
+                                return DropdownMenuItem<String>(
+                                  value: size,
+                                  child: Text(size),
+                                );
+                              }).toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() {
+                              row.size = value;
+                              row.quality = '';
+                              row.weightController.clear();
+                              row.twgtController.clear();
+                              row.covController.clear();
+                              row.rateController.clear();
+                              row.amountController.clear();
+                              row.selectedProductDetails = null;
+                              row.updateTotal();
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('QUALITY'),
+                    const SizedBox(height: 4),
+                    Container(
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value:
+                              row.quality.isNotEmpty &&
+                                      qualities.contains(row.quality)
+                                  ? row.quality
+                                  : null,
+                          hint: const Text('Select Quality'),
+                          items:
+                              qualities.map((quality) {
+                                return DropdownMenuItem<String>(
+                                  value: quality,
+                                  child: Text(quality),
+                                );
+                              }).toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() {
+                              row.quality = value;
+                              final productDetails = _findProductDetails(
+                                row.productName,
+                                row.size,
+                                value,
+                              );
+                              if (productDetails != null) {
+                                row.productId = productDetails['id'];
+                                row.rateController.text =
+                                    productDetails['rate']?.toString() ?? '0';
+                                row.covController.text =
+                                    productDetails['cov']?.toString() ?? '0';
+                                row.selectedProductDetails = productDetails;
+                              } else {
+                                row.selectedProductDetails = null;
+                                row.rateController.clear();
+                                row.covController.clear();
+                              }
+                              row.updateTotal();
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Rate, COV, AREA
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('RATE (₹)'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.rateController,
+                      '0',
+                      onChanged: (_) => row.updateTotal(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('COVERAGE'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.covController,
+                      '0',
+                      onChanged: (_) => row.updateTotal(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('AREA'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.areaController,
+                      '0',
+                      keyboardType: TextInputType.text,
+                      onChanged: (_) => row.updateTotal(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // BOX, DISCOUNT, WEIGHT
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('BOX'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.quantityController,
+                      '0',
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => row.updateTWGT(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('DISCOUNT (%)'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.discountController,
+                      '0',
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => row.updateTotal(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('WEIGHT'),
+                    const SizedBox(height: 4),
+                    _buildTextField(
+                      row.weightController,
+                      '0',
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => row.updateTWGT(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // TWGT, AMOUNT, GODOWN
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('TWGT'),
+                    const SizedBox(height: 4),
+                    _buildTextField(row.twgtController, '0', enabled: false),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('AMOUNT (₹)'),
+                    const SizedBox(height: 4),
+                    _buildTextField(row.amountController, '0', enabled: false),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('GODOWN'),
+                    const SizedBox(height: 4),
+                    Container(
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value: row.godown,
+                          items: const [
+                            DropdownMenuItem(value: 'KKW', child: Text('KKW')),
+                            DropdownMenuItem(value: 'TCS', child: Text('TCS')),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              row.godown = value!;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // Delete button
+          Align(
+            alignment: Alignment.centerRight,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => _removeAdditionalRow(index),
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    border: Border.all(color: Colors.red),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.delete, size: 16, color: Colors.red),
+                      SizedBox(width: 4),
+                      Text(
+                        'Delete Row',
+                        style: TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------- Main Build ----------
   @override
   Widget build(BuildContext context) {
+    final subtotal = _calculateTotalAmount();
+    final additionalDiscount =
+        double.tryParse(_additionalDiscountController.text) ?? 0;
+    final discountAmount = subtotal * (additionalDiscount / 100);
+    final grandTotal = _calculateGrandTotal();
+
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
@@ -352,40 +1141,251 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
         elevation: 0,
         backgroundColor: const Color(0xFFFA9C42),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            /// SEARCH BAR
-            _buildSearchBar(),
+      body: GestureDetector(
+        onTap: () {
+          // Close dropdowns when tapping outside
+          for (var row in _additionalRows) {
+            row.showProductDropdown = false;
+          }
+          FocusScope.of(context).unfocus();
+        },
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Search Bar
+              _buildSearchBar(),
 
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
 
-            /// SELECTED QUOTATION
-            if (_selectedQuotation != null) ...[
-              _buildSelectedQuotation(),
-              const SizedBox(height: 24),
+              // Selected Quotation (if any)
+              if (_selectedQuotation != null) ...[
+                _buildSelectedQuotation(),
+                const SizedBox(height: 24),
+              ],
 
-              /// DISPATCH LOGISTICS
+              // Dispatch Logistics
               _buildDispatchLogistics(),
               const SizedBox(height: 24),
 
-              /// PRODUCTS LIST
-              _buildProductsList(),
-              const SizedBox(height: 32),
+              // Quotation Products (if any)
+              if (_selectedQuotation != null &&
+                  _selectedQuotation!.items.isNotEmpty) ...[
+                Text(
+                  "PRODUCTS FROM QUOTATION",
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ..._selectedQuotation!.items.map((item) {
+                  return _buildProductItem(item);
+                }).toList(),
+                const SizedBox(height: 24),
+              ],
 
-              /// GENERATE BUTTON
-              _buildGenerateButton(),
+              // Additional Products Section
+              const Text(
+                "ADDITIONAL PRODUCTS",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFFA9C42),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Additional product rows
+              ..._additionalRows.asMap().entries.map((entry) {
+                return _buildAdditionalProductRow(entry.key, entry.value);
+              }),
+
+              // Add Product Row Button
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: _addAdditionalRow,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: const Color(0xFFFA9C42)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add, color: Color(0xFFFA9C42), size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            "+ ADD PRODUCT ROW",
+                            style: TextStyle(
+                              color: Color(0xFFFA9C42),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Additional Discount
+              // Container(
+              //   padding: const EdgeInsets.all(16),
+              //   decoration: BoxDecoration(
+              //     border: Border.all(color: Colors.grey.shade300),
+              //     borderRadius: BorderRadius.circular(8),
+              //   ),
+              //   child: Column(
+              //     crossAxisAlignment: CrossAxisAlignment.start,
+              //     children: [
+              //       _buildLabel('ADDITIONAL DISCOUNT (%)'),
+              //       const SizedBox(height: 8),
+              //       _buildTextField(
+              //         _additionalDiscountController,
+              //         'Enter discount percentage...',
+              //       ),
+              //       const SizedBox(height: 8),
+              //       Text(
+              //         'This discount will be applied on the total amount',
+              //         style: TextStyle(
+              //           fontSize: 12,
+              //           color: Colors.grey.shade600,
+              //         ),
+              //       ),
+              //     ],
+              //   ),
+              // ),
+              const SizedBox(height: 24),
+
+              // Totals
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFA9C42).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFFA9C42).withOpacity(0.3),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Subtotal',
+                          style: TextStyle(fontSize: 16, color: Colors.black87),
+                        ),
+                        Text(
+                          '₹${subtotal.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (additionalDiscount > 0) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Additional Discount ($additionalDiscount%)',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.green,
+                            ),
+                          ),
+                          Text(
+                            '-₹${discountAmount.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.green,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const Divider(height: 24, thickness: 1),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Grand Total',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFFA9C42),
+                          ),
+                        ),
+                        Text(
+                          '₹${grandTotal.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFFA9C42),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Generate Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isSubmitting ? null : _generateDeliveryChallan,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFA9C42),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child:
+                      _isSubmitting
+                          ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                          : const Text(
+                            'Generate Delivery Challan',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                ),
+              ),
             ],
-
-            const SizedBox(height: 40),
-          ],
+          ),
         ),
       ),
     );
   }
 
+  // Existing UI methods (unchanged)
   Widget _buildSearchBar() {
     return Container(
       decoration: BoxDecoration(
@@ -436,7 +1436,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             ),
           ),
 
-          // Search results
           if (_quotations.isNotEmpty || _isSearching)
             Container(
               constraints: const BoxConstraints(maxHeight: 200),
@@ -596,7 +1595,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Driver Name
           _buildInputField(
             label: "Driver Name",
             hintText: "Enter driver name",
@@ -606,7 +1604,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
 
           const SizedBox(height: 12),
 
-          // Driver Contact
           _buildInputField(
             label: "Contact",
             hintText: "Enter contact number",
@@ -617,7 +1614,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
 
           const SizedBox(height: 12),
 
-          // Vehicle Number
           _buildInputField(
             label: "Vehicle No (e.g. MH-15-AB-1234)",
             hintText: "Enter vehicle number",
@@ -680,31 +1676,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  Widget _buildProductsList() {
-    if (_selectedQuotation == null || _selectedQuotation!.items.isEmpty) {
-      return Container();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "PRODUCTS",
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade700,
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        ..._selectedQuotation!.items.map((item) {
-          return _buildProductItem(item);
-        }).toList(),
-      ],
-    );
-  }
-
   Widget _buildProductItem(QuotationItem item) {
     final controller =
         _dispatchBoxesControllers[item.id] ?? TextEditingController(text: '0');
@@ -726,7 +1697,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Product name header
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -760,7 +1730,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
 
           const SizedBox(height: 12),
 
-          // Batches
           if (item.batches.isNotEmpty) ...[
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -804,7 +1773,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             const SizedBox(height: 12),
           ],
 
-          // Stock info and dispatch boxes
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -876,38 +1844,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildGenerateButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: _isSubmitting ? null : _generateDeliveryChallan,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFFA9C42),
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 0,
-        ),
-        child:
-            _isSubmitting
-                ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                )
-                : const Text(
-                  "Generate Delivery Challan",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
       ),
     );
   }

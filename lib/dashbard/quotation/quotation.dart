@@ -591,7 +591,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                         context,
                         MaterialPageRoute(
                           builder:
-                              (context) => SettlementScreen(
+                              (context) => QuotationSettlementScreen(
                                 quotationId: entry.value['id'],
                                 dueAmount:
                                     double.tryParse(
@@ -702,7 +702,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                         context,
                         MaterialPageRoute(
                           builder:
-                              (context) => SettlementScreen(
+                              (context) => QuotationSettlementScreen(
                                 quotationId: entry.value['id'],
                                 dueAmount:
                                     double.tryParse(

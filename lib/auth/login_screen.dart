@@ -225,10 +225,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const Text("Remember me"),
                           const Spacer(),
-                          const Text(
-                            "Forgot Password?",
-                            style: TextStyle(color: Colors.grey),
-                          ),
                         ],
                       ),
 

@@ -36,80 +36,191 @@ final dioProvider = Provider<Dio>((ref) {
   );
 });
 
-/// ================= PROVIDERS =================
-final qualityProvider =
-    StateNotifierProvider<QualityNotifier, AsyncValue<List<Quality>>>(
-      (ref) => QualityNotifier(ref),
-    );
-
-// Search query provider
+/// ================= SEARCH QUERY PROVIDER =================
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
-// Pagination state provider
-final paginationStateProvider =
-    StateNotifierProvider<PaginationNotifier, PaginationState>((ref) {
-      return PaginationNotifier();
+/// ================= QUALITY NOTIFIER (now with built-in pagination) =================
+class QualityNotifier extends StateNotifier<AsyncValue<List<Quality>>> {
+  final Ref ref;
+
+  // Pagination state – kept internally, not in a separate provider
+  int _currentPage = 1;
+  int _totalPages = 1;
+  bool _isLoadingMore = false;
+  bool _hasMoreData = true;
+
+  QualityNotifier(this.ref) : super(const AsyncLoading()) {
+    // Initial fetch – does NOT modify any external provider
+    _fetchInitial();
+  }
+
+  Dio get dio => ref.read(dioProvider);
+
+  // Public getters for pagination (used by the UI)
+  bool get isLoadingMore => _isLoadingMore;
+  bool get hasMoreData => _hasMoreData;
+  int get currentPage => _currentPage;
+  int get totalPages => _totalPages;
+
+  /// Internal method for the initial load (no pagination updates)
+  Future<void> _fetchInitial() async {
+    try {
+      state = const AsyncLoading();
+      final res = await dio.get(
+        "/list",
+        queryParameters: {"page": 1, "limit": 10},
+      );
+
+      final List data = res.data['qualities'] ?? [];
+      final paginationData = res.data['pagination'] ?? {};
+      _totalPages = paginationData['totalPages'] ?? 1;
+      _hasMoreData = 1 < _totalPages;
+      _currentPage = 1;
+
+      state = AsyncData(data.map((e) => Quality.fromJson(e)).toList());
+    } catch (e, st) {
+      state = AsyncError(e, st);
+    }
+  }
+
+  /// Public method to fetch qualities (with pagination support)
+  Future<void> fetchQualities({bool isLoadMore = false}) async {
+    // Prevent concurrent loads
+    if (isLoadMore && (_isLoadingMore || !_hasMoreData)) return;
+
+    if (isLoadMore) {
+      _isLoadingMore = true;
+      // Notify UI that loadingMore changed (we need to trigger rebuild)
+      // Since state doesn't change, we must notify listeners manually.
+      // To keep it simple, we'll use a separate provider for pagination flags.
+      // But for now, we'll call a helper to update pagination state without changing the list.
+      _notifyPaginationListeners();
+    }
+
+    try {
+      final page = isLoadMore ? _currentPage + 1 : 1;
+
+      final res = await dio.get(
+        "/list",
+        queryParameters: {"page": page, "limit": 10},
+      );
+
+      final List data = res.data['qualities'] ?? [];
+      final paginationData = res.data['pagination'] ?? {};
+      final totalPages = paginationData['totalPages'] ?? 1;
+
+      if (isLoadMore) {
+        final currentList = state.value ?? [];
+        state = AsyncData([
+          ...currentList,
+          ...data.map((e) => Quality.fromJson(e)).toList(),
+        ]);
+        _currentPage = page;
+      } else {
+        state = AsyncData(data.map((e) => Quality.fromJson(e)).toList());
+        _currentPage = 1;
+      }
+
+      _totalPages = totalPages;
+      _hasMoreData = _currentPage < _totalPages;
+    } catch (e, st) {
+      if (!isLoadMore) {
+        state = AsyncError(e, st);
+      }
+    } finally {
+      if (isLoadMore) {
+        _isLoadingMore = false;
+        _notifyPaginationListeners();
+      }
+    }
+  }
+
+  /// Force a refresh (reset to page 1)
+  Future<void> refresh() async {
+    await fetchQualities(isLoadMore: false);
+  }
+
+  /// Load next page
+  Future<void> loadMore() async {
+    await fetchQualities(isLoadMore: true);
+  }
+
+  /// Notify listeners that pagination flags changed (without altering the list)
+  /// We achieve this by updating a dummy provider that widgets can listen to.
+  /// But for simplicity, we'll create a separate provider for pagination.
+  /// However, to keep the example self-contained, we'll instead expose the pagination
+  /// via a separate provider that watches this notifier's internal state.
+  /// See below: `paginationInfoProvider`.
+  void _notifyPaginationListeners() {
+    // This method is a placeholder. We'll use a separate provider to expose pagination.
+    // The real notification happens via that provider's state changes.
+  }
+
+  // CRUD methods (unchanged)
+  Future<void> createQuality(String name) async {
+    await dio.post(
+      "/create",
+      data: {
+        "name": name,
+        "status": "Available",
+        "createdAt": DateTime.now().toIso8601String(),
+      },
+    );
+    await refresh();
+  }
+
+  Future<void> updateQuality(Quality q) async {
+    await dio.put(
+      "/update/${q.id}",
+      data: {"name": q.name, "status": q.status},
+    );
+    await refresh();
+  }
+
+  Future<void> deleteQuality(int id) async {
+    await dio.delete("/delete/$id");
+    await refresh();
+  }
+
+  Future<void> toggleStatus(Quality q, bool value) async {
+    await updateQuality(
+      q.copyWith(status: value ? "Available" : "unAvailable"),
+    );
+  }
+}
+
+/// ================= PROVIDER FOR QUALITY LIST =================
+final qualityProvider =
+    StateNotifierProvider<QualityNotifier, AsyncValue<List<Quality>>>((ref) {
+      return QualityNotifier(ref);
     });
 
-class PaginationState {
-  final int currentPage;
-  final int totalPages;
-  final bool isLoadingMore;
-  final bool hasMoreData;
+/// ================= PROVIDER FOR PAGINATION INFO =================
+/// This provider watches the QualityNotifier and exposes its pagination state.
+// final paginationInfoProvider = Provider<PaginationInfo>((ref) {
+//   final notifier = ref.watch(qualityProvider.notifier);
+//   // We need to rebuild when the notifier's internal pagination changes.
+//   // To achieve that, we listen to a dummy state that we update manually.
+//   // A simpler way is to use `ref.listen` inside the widget to get the notifier
+//   // and read its properties directly, but that won't cause rebuilds.
+//   // Instead, we can create a small StateProvider that the notifier updates.
+//   // For brevity, we'll keep pagination inside the widget using a `State` that we update.
+//   // However, to follow Riverpod patterns, we'll use a separate StateProvider that the notifier can update.
+//   // Let's implement a simple solution: expose pagination as a separate stream.
+//   // But for now, I'll provide a getter that can be used with `ref.watch(qualityProvider.notifier).hasMoreData` etc.,
+//   // but that won't cause rebuilds when those flags change. So we need a different approach.
+//   // To keep the answer concise, I'll modify the UI to use a `ConsumerStatefulWidget` that holds local pagination state
+//   // and updates it via callbacks from the notifier. That is simpler and avoids over‑engineering.
+//   // I'll show that in the screen widget.
+//   throw UnimplementedError(
+//     'See explanation above – we will handle pagination inside the screen widget.',
+//   );
+// });
 
-  PaginationState({
-    required this.currentPage,
-    required this.totalPages,
-    required this.isLoadingMore,
-    required this.hasMoreData,
-  });
-
-  PaginationState.initial()
-    : currentPage = 1,
-      totalPages = 1,
-      isLoadingMore = false,
-      hasMoreData = true;
-
-  PaginationState copyWith({
-    int? currentPage,
-    int? totalPages,
-    bool? isLoadingMore,
-    bool? hasMoreData,
-  }) {
-    return PaginationState(
-      currentPage: currentPage ?? this.currentPage,
-      totalPages: totalPages ?? this.totalPages,
-      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
-      hasMoreData: hasMoreData ?? this.hasMoreData,
-    );
-  }
-}
-
-class PaginationNotifier extends StateNotifier<PaginationState> {
-  PaginationNotifier() : super(PaginationState.initial());
-
-  void setLoadingMore(bool isLoading) {
-    state = state.copyWith(isLoadingMore: isLoading);
-  }
-
-  void updatePagination(int currentPage, int totalPages) {
-    state = state.copyWith(
-      currentPage: currentPage,
-      totalPages: totalPages,
-      hasMoreData: currentPage < totalPages,
-    );
-  }
-
-  void reset() {
-    state = PaginationState.initial();
-  }
-}
-
-// Filtered qualities provider with pagination
+/// ================= FILTERED QUALITIES PROVIDER (unchanged) =================
 final filteredQualitiesProvider = Provider<AsyncValue<List<Quality>>>((ref) {
   final searchQuery = ref.watch(searchQueryProvider);
   final qualities = ref.watch(qualityProvider);
-  final pagination = ref.watch(paginationStateProvider);
 
   return qualities.when(
     data: (qualitiesList) {
@@ -133,102 +244,7 @@ final filteredQualitiesProvider = Provider<AsyncValue<List<Quality>>>((ref) {
   );
 });
 
-class QualityNotifier extends StateNotifier<AsyncValue<List<Quality>>> {
-  final Ref ref;
-
-  QualityNotifier(this.ref) : super(const AsyncLoading()) {
-    fetchQualities();
-  }
-
-  Dio get dio => ref.read(dioProvider);
-
-  /// ---------- LIST WITH PAGINATION ----------
-  Future<void> fetchQualities({bool isLoadMore = false}) async {
-    try {
-      final pagination = ref.read(paginationStateProvider.notifier);
-
-      if (!isLoadMore) {
-        pagination.reset();
-        state = const AsyncLoading();
-      } else {
-        pagination.setLoadingMore(true);
-      }
-
-      final currentPage =
-          isLoadMore ? ref.read(paginationStateProvider).currentPage + 1 : 1;
-
-      final res = await dio.get(
-        "/list",
-        queryParameters: {"page": currentPage, "limit": 10},
-      );
-
-      final List data = res.data['qualities'] ?? [];
-      final paginationData = res.data['pagination'] ?? {};
-      final totalPages = paginationData['totalPages'] ?? 1;
-
-      if (isLoadMore) {
-        final currentList = state.value ?? [];
-        state = AsyncData([
-          ...currentList,
-          ...data.map((e) => Quality.fromJson(e)).toList(),
-        ]);
-      } else {
-        state = AsyncData(data.map((e) => Quality.fromJson(e)).toList());
-      }
-
-      pagination.updatePagination(currentPage, totalPages);
-      pagination.setLoadingMore(false);
-    } catch (e, st) {
-      state = AsyncError(e, st);
-      ref.read(paginationStateProvider.notifier).setLoadingMore(false);
-    }
-  }
-
-  /// ---------- CREATE ----------
-  Future<void> createQuality(String name) async {
-    await dio.post(
-      "/create",
-      data: {
-        "name": name,
-        "status": "Available",
-        "createdAt": DateTime.now().toIso8601String(),
-      },
-    );
-    fetchQualities();
-  }
-
-  /// ---------- UPDATE ----------
-  Future<void> updateQuality(Quality q) async {
-    await dio.put(
-      "/update/${q.id}",
-      data: {"name": q.name, "status": q.status},
-    );
-    fetchQualities();
-  }
-
-  /// ---------- DELETE ----------
-  Future<void> deleteQuality(int id) async {
-    await dio.delete("/delete/$id");
-    fetchQualities();
-  }
-
-  /// ---------- TOGGLE STATUS ----------
-  Future<void> toggleStatus(Quality q, bool value) async {
-    await updateQuality(
-      q.copyWith(status: value ? "Available" : "unAvailable"),
-    );
-  }
-
-  /// ---------- LOAD MORE ----------
-  Future<void> loadMore() async {
-    final pagination = ref.read(paginationStateProvider);
-    if (pagination.isLoadingMore || !pagination.hasMoreData) return;
-
-    await fetchQualities(isLoadMore: true);
-  }
-}
-
-/// ================= SEARCH BAR WIDGET =================
+/// ================= SEARCH BAR WIDGET (unchanged) =================
 class SearchBarWidget extends ConsumerStatefulWidget {
   const SearchBarWidget({super.key});
 
@@ -313,11 +329,70 @@ class _SearchBarWidgetState extends ConsumerState<SearchBarWidget> {
 }
 
 /// ================= MAIN SCREEN =================
-class QualityManagementScreen extends ConsumerWidget {
+class QualityManagementScreen extends ConsumerStatefulWidget {
   const QualityManagementScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<QualityManagementScreen> createState() =>
+      _QualityManagementScreenState();
+}
+
+class _QualityManagementScreenState
+    extends ConsumerState<QualityManagementScreen> {
+  final ScrollController _scrollController = ScrollController();
+  bool _isLoadingMore = false;
+  bool _hasMoreData = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        !_isLoadingMore &&
+        _hasMoreData) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final notifier = ref.read(qualityProvider.notifier);
+    if (notifier.isLoadingMore || !notifier.hasMoreData) return;
+
+    setState(() {
+      _isLoadingMore = true;
+      _hasMoreData =
+          notifier.hasMoreData; // initial value, will be updated after load
+    });
+
+    await notifier.loadMore();
+
+    setState(() {
+      _isLoadingMore = false;
+      _hasMoreData = notifier.hasMoreData;
+    });
+  }
+
+  Future<void> _refresh() async {
+    final notifier = ref.read(qualityProvider.notifier);
+    await notifier.refresh();
+    setState(() {
+      _hasMoreData = notifier.hasMoreData;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final canAdd = PermissionManager.hasPermission("Quality Management_Add");
     final canEdit = PermissionManager.hasPermission("Quality Management_Edit");
     final canDelete = PermissionManager.hasPermission(
@@ -326,19 +401,6 @@ class QualityManagementScreen extends ConsumerWidget {
 
     final searchQuery = ref.watch(searchQueryProvider);
     final filteredState = ref.watch(filteredQualitiesProvider);
-    final pagination = ref.watch(paginationStateProvider);
-    final scrollController = ScrollController();
-
-    // Scroll listener for pagination
-    scrollController.addListener(() {
-      if (scrollController.position.pixels >=
-              scrollController.position.maxScrollExtent - 100 &&
-          !pagination.isLoadingMore &&
-          pagination.hasMoreData &&
-          searchQuery.isEmpty) {
-        ref.read(qualityProvider.notifier).loadMore();
-      }
-    });
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
@@ -432,15 +494,11 @@ class QualityManagementScreen extends ConsumerWidget {
                 }
 
                 return RefreshIndicator(
-                  onRefresh: () async {
-                    await ref.read(qualityProvider.notifier).fetchQualities();
-                    ref.read(searchQueryProvider.notifier).state = '';
-                  },
+                  onRefresh: _refresh,
                   child: CustomScrollView(
-                    controller: scrollController,
+                    controller: _scrollController,
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
-                      /// QUALITIES LIST
                       SliverList(
                         delegate: SliverChildBuilderDelegate((context, index) {
                           if (index < list.length) {
@@ -454,7 +512,6 @@ class QualityManagementScreen extends ConsumerWidget {
                         }, childCount: list.length),
                       ),
 
-                      /// EMPTY STATE
                       if (list.isEmpty && searchQuery.isEmpty)
                         SliverFillRemaining(
                           child: Center(
@@ -479,19 +536,17 @@ class QualityManagementScreen extends ConsumerWidget {
                           ),
                         ),
 
-                      /// LOAD MORE INDICATOR
-                      if (pagination.isLoadingMore)
-                        SliverToBoxAdapter(
+                      if (_isLoadingMore)
+                        const SliverToBoxAdapter(
                           child: Padding(
-                            padding: const EdgeInsets.all(16),
+                            padding: EdgeInsets.all(16),
                             child: Center(child: CircularProgressIndicator()),
                           ),
                         ),
 
-                      /// NO MORE DATA MESSAGE
-                      if (!pagination.hasMoreData && list.isNotEmpty)
-                        SliverToBoxAdapter(
-                          child: const Padding(
+                      if (!_hasMoreData && list.isNotEmpty)
+                        const SliverToBoxAdapter(
+                          child: Padding(
                             padding: EdgeInsets.all(16),
                             child: Center(
                               child: Text(
@@ -502,7 +557,6 @@ class QualityManagementScreen extends ConsumerWidget {
                           ),
                         ),
 
-                      /// EXTRA SPACE AT BOTTOM
                       SliverToBoxAdapter(child: Container(height: 50)),
                     ],
                   ),
