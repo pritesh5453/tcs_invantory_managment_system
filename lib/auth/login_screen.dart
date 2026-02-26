@@ -1,3 +1,4 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -43,28 +44,39 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => isLoading = true);
 
     try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 🔥 1. Pehle FCM token generate karo (agar nahi hai to)
+      String? fcmToken = prefs.getString('fcm_token');
+      if (fcmToken == null || fcmToken.isEmpty) {
+        fcmToken = await FirebaseMessaging.instance.getToken();
+        if (fcmToken != null) {
+          await prefs.setString('fcm_token', fcmToken);
+        } else {
+          // Agar token nahi mila to empty string bhejo, but try to proceed
+          fcmToken = "";
+        }
+      }
+
+      // 2. Ab login API call karo with fcm_token
       final response = await dio.post(
         "/api/employees/login",
         data: {
           "email": mobileController.text.trim(),
           "password": passwordController.text.trim(),
+          "fcmToken": fcmToken,
         },
       );
 
       final data = response.data;
 
       if (response.statusCode == 200 && data["success"] == true) {
-        /// 🔥 SAVE USER DATA TO SHARED PREFERENCES
-        final prefs = await SharedPreferences.getInstance();
-
+        // User data save karo
         if (rememberMe) {
           await prefs.setBool("isLoggedIn", true);
           await prefs.setString("token", data["token"]);
-
-          // Save role and user information
           await prefs.setString("role", data["role"] ?? "employee");
 
-          // Save user data
           final user = data["user"];
           if (user != null) {
             await prefs.setInt("userId", user["id"] ?? 0);
@@ -74,11 +86,10 @@ class _LoginScreenState extends State<LoginScreen> {
             await prefs.setString("profilePhoto", user["profile_photo"] ?? "");
           }
 
-          // Save permissions if available (as JSON string)
+          // Permissions
           final permissions = data["permissions"];
           if (permissions != null) {
             await prefs.setString("permissions", json.encode(permissions));
-            // PermissionManager ko bhi update karo
             PermissionManager.updatePermissions(permissions);
           } else {
             await prefs.setString("permissions", "{}");
@@ -88,7 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
           await prefs.clear();
         }
 
-        /// 🎉 SUCCESS ANIMATION
+        // Success animation & navigate
         setState(() {
           showSuccessOverlay = true;
           logoScale = 1.8;

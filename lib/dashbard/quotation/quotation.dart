@@ -964,17 +964,19 @@ class InvoiceCard extends StatelessWidget {
   }
 
   Widget _buildStatus() {
-    final isSettled = quotation['isSettled'] == 1;
+    final String type = quotation['type']?.toString() ?? "Active";
+    final bool isFinal = type.toLowerCase() == "final";
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: isSettled ? const Color(0xFFE7F7E9) : const Color(0xFFFFF4E5),
+        color: isFinal ? const Color(0xFFE7F7E9) : const Color(0xFFFFF4E5),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
-        isSettled ? "Settled" : "Active",
+        type[0].toUpperCase() + type.substring(1), // Capitalize first letter
         style: TextStyle(
-          color: isSettled ? const Color(0xFF2E7D32) : const Color(0xFFF57C00),
+          color: isFinal ? const Color(0xFF2E7D32) : const Color(0xFFF57C00),
           fontWeight: FontWeight.w600,
           fontSize: 12,
         ),
