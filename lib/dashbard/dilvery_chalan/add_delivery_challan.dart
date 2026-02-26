@@ -9,6 +9,7 @@ class Quotation {
   final String clientName;
   final String contactNo;
   final String address;
+  final String clientId; // 👈 new field
   final List<QuotationItem> items;
 
   Quotation({
@@ -16,6 +17,7 @@ class Quotation {
     required this.clientName,
     required this.contactNo,
     required this.address,
+    required this.clientId,
     required this.items,
   });
 
@@ -29,6 +31,7 @@ class Quotation {
       clientName: json['clientName'] ?? '',
       contactNo: json['contactNo'] ?? '',
       address: json['address'] ?? '',
+      clientId: json['clientId']?.toString() ?? '', // 👈
       items: items,
     );
   }
@@ -41,6 +44,11 @@ class QuotationItem {
   final int remainingBoxes;
   final List<Batch> batches;
   final int currentStock;
+  // 👇 new fields
+  final double rate;
+  final double cov;
+  final String size;
+  final String quality;
 
   QuotationItem({
     required this.id,
@@ -49,6 +57,10 @@ class QuotationItem {
     required this.remainingBoxes,
     required this.batches,
     required this.currentStock,
+    required this.rate,
+    required this.cov,
+    required this.size,
+    required this.quality,
   });
 
   factory QuotationItem.fromJson(Map<String, dynamic> json) {
@@ -63,6 +75,10 @@ class QuotationItem {
       remainingBoxes: json['remainingBoxes'] ?? 0,
       batches: batches,
       currentStock: json['currentStock'] ?? 0,
+      rate: double.tryParse(json['rate']?.toString() ?? '0') ?? 0,
+      cov: double.tryParse(json['cov']?.toString() ?? '0') ?? 0,
+      size: json['size']?.toString() ?? '',
+      quality: json['quality']?.toString() ?? '',
     );
   }
 }
@@ -171,6 +187,15 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
 
   // Selected quotation
   Quotation? _selectedQuotation;
+
+  // Payment summary data
+  double? _quotationAmount;
+  double? _quotationPaidAmount;
+  double? _customerWalletAmount;
+  bool _isLoadingSummary = false;
+
+  // Black/White challan toggle (true = Black, false = White)
+  bool _isBlackChallan = false; // default White
 
   // Dispatch logistics
   final TextEditingController _driverNameController = TextEditingController();
@@ -281,7 +306,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     });
   }
 
-  void _selectQuotation(Quotation quotation) {
+  void _selectQuotation(Quotation quotation) async {
     setState(() {
       _selectedQuotation = quotation;
       _quotations = []; // Clear search results
@@ -289,16 +314,41 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       _driverNameController.clear();
       _driverContactController.clear();
       _vehicleNoController.clear();
-      // Do not clear additional rows or discount – they stay
     });
 
     _initializeControllers();
+    await _fetchPaymentSummary(quotation.id);
+  }
+
+  Future<void> _fetchPaymentSummary(int quotationId) async {
+    setState(() => _isLoadingSummary = true);
+    try {
+      final response = await dio.get(
+        "https://dashboard.theceramicstudio.in/api/Quotation/payment-summary/$quotationId",
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final data = response.data['data'];
+        setState(() {
+          _quotationAmount = (data['quotationAmount'] ?? 0).toDouble();
+          _quotationPaidAmount = (data['quotationPaidAmount'] ?? 0).toDouble();
+          _customerWalletAmount =
+              (data['customerWalletAmount'] ?? 0).toDouble();
+        });
+      }
+    } catch (e) {
+      debugPrint("Payment summary error: $e");
+    } finally {
+      setState(() => _isLoadingSummary = false);
+    }
   }
 
   void _clearSelection() {
     setState(() {
       _selectedQuotation = null;
       _dispatchBoxesControllers.clear();
+      _quotationAmount = null;
+      _quotationPaidAmount = null;
+      _customerWalletAmount = null;
     });
   }
 
@@ -405,12 +455,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       for (var item in _selectedQuotation!.items) {
         final controller = _dispatchBoxesControllers[item.id];
         final dispatchBoxes = double.tryParse(controller?.text ?? '0') ?? 0;
-        // You need to know the rate for quotation items – assuming you have it in the item or you fetch it.
-        // For now, use a placeholder rate of 0. You should adjust based on your data.
-        // Possibly you need to extend QuotationItem to include rate.
-        // We'll assume there is a field 'rate' in QuotationItem. If not, you'll need to fetch product details.
-        final rate = 0.0; // Replace with actual rate
-        total += dispatchBoxes * rate;
+        total += dispatchBoxes * item.rate; // use item.rate
       }
     }
     return total;
@@ -520,75 +565,92 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- API Submission ----------
+  // ---------- API Submission (UPDATED) ----------
   Future<void> _generateDeliveryChallan() async {
     if (!_validateForm()) return;
 
     setState(() => _isSubmitting = true);
 
     try {
-      // Prepare quotation items (if any)
-      final List<Map<String, dynamic>> quotationItems = [];
+      // Build items list
+      final List<Map<String, dynamic>> items = [];
+
+      // Quotation items (isExtra: 0)
       if (_selectedQuotation != null) {
+        int rowId = 1;
         for (var item in _selectedQuotation!.items) {
           final controller = _dispatchBoxesControllers[item.id];
           final dispatchBoxes = int.tryParse(controller?.text ?? '0') ?? 0;
           if (dispatchBoxes > 0) {
-            // You need to get the actual rate for the product – you might have it in item or need to fetch
-            final rate = 0.0; // TODO: replace with actual rate from your data
-            quotationItems.add({
-              "quotationItemId": item.id,
+            items.add({
+              "rowId": rowId++,
               "productId": item.productId,
               "productName": item.productName,
               "dispatchBoxes": dispatchBoxes,
-              "rate": rate,
+              "rate": item.rate,
+              "cov": item.cov,
+              "currentStock": item.currentStock,
+              "isExtra": 0,
+              "size": item.size,
+              "quality": item.quality,
+              "batches":
+                  item.batches
+                      .map(
+                        (b) => {
+                          "batch_no": b.batchNo,
+                          "qty": b.qty,
+                          "location": b.location,
+                        },
+                      )
+                      .toList(),
             });
           }
         }
       }
 
-      // Prepare additional items
-      final List<Map<String, dynamic>> additionalItems = [];
+      // Additional items (isExtra: 1)
+      int rowId = (_selectedQuotation?.items.length ?? 0) + 1;
       for (var row in _additionalRows) {
         final productDetails = row.selectedProductDetails;
         if (productDetails == null) continue;
 
-        additionalItems.add({
+        items.add({
+          "rowId": rowId++,
           "productId": productDetails['id'] ?? row.productId,
           "productName": row.productName,
+          "dispatchBoxes": int.tryParse(row.quantityController.text) ?? 0,
+          "rate": double.tryParse(row.rateController.text) ?? 0,
+          "cov": double.tryParse(row.covController.text) ?? 0,
+          "currentStock": 0,
+          "isExtra": 1,
           "size": row.size,
           "quality": row.quality,
-          "rate": double.tryParse(row.rateController.text) ?? 0,
-          "box": int.tryParse(row.quantityController.text) ?? 0,
-          "area": row.areaController.text.trim(),
-          "weight": double.tryParse(row.weightController.text) ?? 0,
-          "twgt": double.tryParse(row.twgtController.text) ?? 0,
-          "coverage": double.tryParse(row.covController.text) ?? 0,
-          "discount": double.tryParse(row.discountController.text) ?? 0,
-          "total": row.getTotalAmount(),
-          "godown": row.godown,
+          "batches": [], // no batches for extra items
         });
       }
 
+      final double grandTotal = _calculateGrandTotal();
+
       final Map<String, dynamic> payload = {
         "quotationId": _selectedQuotation?.id,
+        "client": _selectedQuotation?.clientName ?? "",
+        "ClientId": _selectedQuotation?.clientId ?? "",
+        "contact": _selectedQuotation?.contactNo ?? "",
+        "address": _selectedQuotation?.address ?? "",
+        "walletDifference": grandTotal,
+        "isBlackChallan": _isBlackChallan,
         "driverDetails": {
           "deliveryBoy": _driverNameController.text.trim(),
           "contact": _driverContactController.text.trim(),
           "tempo": _vehicleNoController.text.trim(),
         },
-        "additionalDiscount":
-            double.tryParse(_additionalDiscountController.text) ?? 0,
-        "quotationItems": quotationItems,
-        "additionalItems": additionalItems,
-        "grandTotal": _calculateGrandTotal(),
+        "items": items,
       };
 
       debugPrint("Payload: ${jsonEncode(payload)}");
 
-      // TODO: Replace with your actual delivery challan endpoint
       final response = await dio.post(
-        "https://dashboard.theceramicstudio.in/api/DeliveryChallan/create",
+        "https://dashboard.theceramicstudio.in/api/Quotation/generate-dc",
         data: payload,
         options: Options(headers: {"Content-Type": "application/json"}),
       );
@@ -666,7 +728,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(8),
-        color: Colors.blue.shade50, // light blue background to distinguish
+        color: Colors.white,
       ),
       child: Column(
         children: [
@@ -781,8 +843,10 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                               row.quality = product['quality'].toString();
                               row.productSearchController.text =
                                   product['name'];
-                              row.rateController.text = product['rate'] ?? '0';
-                              row.covController.text = product['cov'] ?? '0';
+                              row.rateController.text =
+                                  product['rate']?.toString() ?? '0';
+                              row.covController.text =
+                                  product['cov']?.toString() ?? '0';
                               row.selectedProductDetails = product;
                               row.showProductDropdown = false;
                               row.updateTotal();
@@ -947,28 +1011,12 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('AREA'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.areaController,
-                      '0',
-                      keyboardType: TextInputType.text,
-                      onChanged: (_) => row.updateTotal(),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
 
           const SizedBox(height: 12),
 
-          // BOX, DISCOUNT, WEIGHT
+          // BOX, WEIGHT
           Row(
             children: [
               Expanded(
@@ -991,22 +1039,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildLabel('DISCOUNT (%)'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.discountController,
-                      '0',
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) => row.updateTotal(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
                     _buildLabel('WEIGHT'),
                     const SizedBox(height: 4),
                     _buildTextField(
@@ -1014,68 +1046,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                       '0',
                       keyboardType: TextInputType.number,
                       onChanged: (_) => row.updateTWGT(),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // TWGT, AMOUNT, GODOWN
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('TWGT'),
-                    const SizedBox(height: 4),
-                    _buildTextField(row.twgtController, '0', enabled: false),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('AMOUNT (₹)'),
-                    const SizedBox(height: 4),
-                    _buildTextField(row.amountController, '0', enabled: false),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('GODOWN'),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value: row.godown,
-                          items: const [
-                            DropdownMenuItem(value: 'KKW', child: Text('KKW')),
-                            DropdownMenuItem(value: 'TCS', child: Text('TCS')),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              row.godown = value!;
-                            });
-                          },
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -1115,6 +1085,175 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------- New UI Section: Payment Summary & Delivery Challan Amount ----------
+  Widget _buildPaymentSummarySection() {
+    if (_selectedQuotation == null) return const SizedBox();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "PAYMENT SUMMARY",
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          if (_isLoadingSummary)
+            const Center(child: CircularProgressIndicator())
+          else if (_quotationAmount != null) ...[
+            _buildSummaryRow(
+              "Quotation Amount",
+              "₹${_quotationAmount!.toStringAsFixed(2)}",
+            ),
+            _buildSummaryRow(
+              "Paid Amount",
+              "₹${_quotationPaidAmount!.toStringAsFixed(2)}",
+            ),
+            _buildSummaryRow(
+              "Wallet Balance",
+              "₹${_customerWalletAmount!.toStringAsFixed(2)}",
+            ),
+          ],
+
+          const Divider(height: 24),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                "Delivery Challan Amount",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              Text(
+                "₹${_calculateGrandTotal().toStringAsFixed(2)}",
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFFA9C42),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: Colors.grey.shade700)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  // ---------- Toggle for Black/White Challan ----------
+  Widget _buildChallanTypeToggle() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "CHALLAN TYPE",
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _isBlackChallan = true),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color:
+                          _isBlackChallan ? Colors.blue : Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '',
+                        style: TextStyle(
+                          color: _isBlackChallan ? Colors.white : Colors.black,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _isBlackChallan = false),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color:
+                          !_isBlackChallan ? Colors.red : Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '',
+                        style: TextStyle(
+                          color: !_isBlackChallan ? Colors.white : Colors.black,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1162,7 +1301,15 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               // Selected Quotation (if any)
               if (_selectedQuotation != null) ...[
                 _buildSelectedQuotation(),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+
+                // Payment Summary & Delivery Challan Amount (NEW)
+                _buildPaymentSummarySection(),
+                const SizedBox(height: 20),
+
+                // Challan Type Toggle (NEW)
+                _buildChallanTypeToggle(),
+                const SizedBox(height: 20),
               ],
 
               // Dispatch Logistics
@@ -1385,7 +1532,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // Existing UI methods (unchanged)
+  // ---------- Existing UI methods (unchanged) ----------
   Widget _buildSearchBar() {
     return Container(
       decoration: BoxDecoration(

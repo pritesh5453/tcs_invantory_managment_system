@@ -10,7 +10,7 @@ import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/add_deliv
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/update_timeline.dart';
 import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
-/// ================= DEBOUNCER FOR SEARCH =================
+/// ================= DEBOUNCER =================
 class Debouncer {
   final int milliseconds;
   VoidCallback? action;
@@ -19,9 +19,7 @@ class Debouncer {
   Debouncer({required this.milliseconds});
 
   void run(VoidCallback action) {
-    if (_timer != null) {
-      _timer!.cancel();
-    }
+    _timer?.cancel();
     _timer = Timer(Duration(milliseconds: milliseconds), action);
   }
 }
@@ -56,8 +54,6 @@ class _DeliveryChallanSearchBarWidgetState
     super.initState();
     _searchController = TextEditingController();
     _searchFocusNode = FocusNode();
-
-    // Initialize with current search query
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.initialValue.isNotEmpty) {
         _searchController.text = widget.initialValue;
@@ -68,7 +64,6 @@ class _DeliveryChallanSearchBarWidgetState
   @override
   void didUpdateWidget(DeliveryChallanSearchBarWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Sync controller with parent state
     if (widget.initialValue != _searchController.text) {
       _searchController.text = widget.initialValue;
     }
@@ -85,7 +80,6 @@ class _DeliveryChallanSearchBarWidgetState
   Widget build(BuildContext context) {
     return Row(
       children: [
-        /// 🔍 SEARCH BAR - Employee Management ki tarah
         Expanded(
           child: Container(
             height: 42,
@@ -124,10 +118,7 @@ class _DeliveryChallanSearchBarWidgetState
             ),
           ),
         ),
-
         const SizedBox(width: 12),
-
-        /// ➕ ADD BUTTON - Employee Management ki tarah exact
         InkWell(
           onTap:
               widget.canAdd && widget.onAddPressed != null
@@ -137,7 +128,7 @@ class _DeliveryChallanSearchBarWidgetState
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text(
-                            "You don't have permission to add delivery challan. Please contact support.",
+                            "You don't have permission to add delivery challan.",
                           ),
                           backgroundColor: Colors.red,
                         ),
@@ -170,6 +161,7 @@ class DeliveryChallan {
   final String deliveryBoy;
   final String tempo;
   final int totalItems;
+  final bool isBlackChallan; // 👈 new field
 
   DeliveryChallan({
     required this.id,
@@ -178,6 +170,7 @@ class DeliveryChallan {
     required this.deliveryBoy,
     required this.tempo,
     required this.totalItems,
+    required this.isBlackChallan,
   });
 
   factory DeliveryChallan.fromJson(Map<String, dynamic> json) {
@@ -188,11 +181,12 @@ class DeliveryChallan {
       deliveryBoy: json['deliveryBoy'] ?? "",
       tempo: json['tempo'] ?? "",
       totalItems: json['totalItems'],
+      isBlackChallan: (json['isBlackChallan'] ?? 0) == 1,
     );
   }
 }
 
-/// ================= SCREEN =================
+/// ================= MAIN SCREEN =================
 class DeliveryChalanScreen extends StatefulWidget {
   const DeliveryChalanScreen({super.key});
 
@@ -200,7 +194,8 @@ class DeliveryChalanScreen extends StatefulWidget {
   State<DeliveryChalanScreen> createState() => _DeliveryChalanScreenState();
 }
 
-class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
+class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
+    with SingleTickerProviderStateMixin {
   late bool canView;
   late bool canAddChallan;
   late bool canUpdateTimeline;
@@ -210,24 +205,30 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
 
   final Dio dio = Dio();
 
-  bool loading = false;
-  bool loadingMore = false;
+  // Tab Controller
+  late TabController _tabController;
+  int _currentTabIndex = 0; // 0 = White, 1 = Black
+
+  // Separate states for each type
+  Map<int, List<DeliveryChallan>> _challans = {0: [], 1: []};
+  Map<int, bool> _loading = {0: false, 1: false};
+  Map<int, bool> _loadingMore = {0: false, 1: false};
+  Map<int, int> _currentPage = {0: 1, 1: 1};
+  Map<int, int> _totalPages = {0: 1, 1: 1};
+  Map<int, bool> _hasMoreData = {0: true, 1: true};
+
   String searchQuery = '';
-  List<DeliveryChallan> challans = [];
   final Debouncer _debouncer = Debouncer(milliseconds: 500);
 
-  // ✅ PAGINATION VARIABLES
-  int _currentPage = 1;
-  int _totalPages = 1;
-  bool _hasMoreData = true;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
 
+    // Permission checks
     canView = PermissionManager.hasPermission("Delivery Challans_View");
-    canAddChallan = true; // Sabko Add ka access
+    canAddChallan = true; // sabko add access
     canUpdateTimeline = PermissionManager.hasPermission(
       "Delivery Challans_Update Timeline",
     );
@@ -237,42 +238,65 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
       "Delivery Challans_Return DC",
     );
 
-    fetchChallans();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_onTabChanged);
 
-    // Add scroll listener for pagination
+    // Load initial data for White tab (index 0)
+    _fetchChallans(type: 'WHITE');
+
     _scrollController.addListener(_scrollListener);
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) {
+      setState(() {
+        _currentTabIndex = _tabController.index;
+      });
+      final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+      if (_challans[_currentTabIndex]!.isEmpty &&
+          !_loading[_currentTabIndex]!) {
+        _fetchChallans(type: type);
+      }
+    }
   }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  /// ================= FETCH API WITH PAGINATION =================
-  Future<void> fetchChallans({String? search, bool isLoadMore = false}) async {
+  /// ================= FETCH API WITH TYPE & PAGINATION =================
+  Future<void> _fetchChallans({
+    required String type,
+    bool isLoadMore = false,
+  }) async {
+    final tabIndex = type == 'WHITE' ? 0 : 1;
+
     if (!isLoadMore) {
       setState(() {
-        loading = true;
-        _currentPage = 1;
-        challans = [];
+        _loading[tabIndex] = true;
+        _currentPage[tabIndex] = 1;
+        _challans[tabIndex] = [];
       });
     } else {
       setState(() {
-        loadingMore = true;
+        _loadingMore[tabIndex] = true;
       });
     }
 
     try {
       final Map<String, dynamic> queryParams = {
-        "page": _currentPage,
+        "page": _currentPage[tabIndex],
         "limit": 10,
+        "challanType": type, // 👈 filter by type
       };
-      if (search != null && search.isNotEmpty) {
-        queryParams['search'] = search;
+      if (searchQuery.isNotEmpty) {
+        queryParams['search'] = searchQuery;
       }
 
-      print('Fetching delivery challans with query: $queryParams');
+      debugPrint('Fetching $type challans with query: $queryParams');
 
       final res = await dio.get(
         "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan/list",
@@ -283,21 +307,24 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
         final List data = res.data['challans'];
         final pagination = res.data['pagination'] ?? {};
 
+        final newList = data.map((e) => DeliveryChallan.fromJson(e)).toList();
+
         setState(() {
           if (isLoadMore) {
-            challans.addAll(
-              data.map((e) => DeliveryChallan.fromJson(e)).toList(),
-            );
+            _challans[tabIndex]!.addAll(newList);
           } else {
-            challans = data.map((e) => DeliveryChallan.fromJson(e)).toList();
+            _challans[tabIndex] = newList;
           }
 
-          _currentPage = pagination['currentPage'] ?? _currentPage;
-          _totalPages = pagination['totalPages'] ?? _totalPages;
-          _hasMoreData = (_currentPage) < (_totalPages);
+          _currentPage[tabIndex] =
+              pagination['currentPage'] ?? _currentPage[tabIndex];
+          _totalPages[tabIndex] =
+              pagination['totalPages'] ?? _totalPages[tabIndex];
+          _hasMoreData[tabIndex] =
+              _currentPage[tabIndex]! < _totalPages[tabIndex]!;
 
-          loading = false;
-          loadingMore = false;
+          _loading[tabIndex] = false;
+          _loadingMore[tabIndex] = false;
         });
       } else {
         throw Exception('Failed to load delivery challans');
@@ -305,10 +332,10 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
     } catch (e) {
       debugPrint("Delivery Challan API Error: $e");
       setState(() {
-        loading = false;
-        loadingMore = false;
+        _loading[tabIndex] = false;
+        _loadingMore[tabIndex] = false;
       });
-      _showError("Failed to load delivery challans");
+      _showError("Failed to load $type challans");
     }
   }
 
@@ -316,32 +343,29 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
   void _scrollListener() {
     if (_scrollController.position.pixels >=
             _scrollController.position.maxScrollExtent - 100 &&
-        !loadingMore &&
-        _hasMoreData) {
+        !_loadingMore[_currentTabIndex]! &&
+        _hasMoreData[_currentTabIndex]!) {
       _loadMoreData();
     }
   }
 
-  /// ================= LOAD MORE DATA =================
   Future<void> _loadMoreData() async {
-    if (!_hasMoreData || loadingMore) return;
+    final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+    if (!_hasMoreData[_currentTabIndex]! || _loadingMore[_currentTabIndex]!)
+      return;
 
-    setState(() {
-      loadingMore = true;
-    });
-
-    _currentPage++;
-    await fetchChallans(search: searchQuery, isLoadMore: true);
+    _currentPage[_currentTabIndex] = _currentPage[_currentTabIndex]! + 1;
+    await _fetchChallans(type: type, isLoadMore: true);
   }
 
-  /// ================= SEARCH FUNCTIONALITY =================
+  /// ================= SEARCH =================
   void _searchChallans(String query) {
     setState(() {
       searchQuery = query;
     });
-
     _debouncer.run(() {
-      fetchChallans(search: query);
+      final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+      _fetchChallans(type: type);
     });
   }
 
@@ -349,24 +373,28 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
     setState(() {
       searchQuery = '';
     });
-    fetchChallans();
+    final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+    _fetchChallans(type: type);
   }
 
-  /// ================= ADD CHALLAN FUNCTION =================
+  /// ================= ADD =================
   void _onAddPressed() {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const AddDeliveryChallanScreen()),
-    );
+    ).then((_) {
+      // Refresh current tab after adding
+      final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+      _fetchChallans(type: type);
+    });
   }
 
-  /// ================= DELETE API =================
-  Future<void> deleteChallan(int id) async {
+  /// ================= DELETE =================
+  Future<void> _deleteChallan(int id) async {
     try {
       final res = await dio.delete(
         "https://dashboard.theceramicstudio.in/api/Quotation/delivery-challan/delete/$id",
       );
-
       if (res.data['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -374,14 +402,15 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        fetchChallans(search: searchQuery);
+        final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+        _fetchChallans(type: type);
       }
     } catch (e) {
       _showError("Delete failed");
     }
   }
 
-  /// ================= PRINT PDF =================
+  /// ================= PRINT =================
   Future<void> _printPdf({
     required int challanId,
     required bool isReturn,
@@ -410,7 +439,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
       final bytes = response.data as List<int>;
       debugPrint("PDF Bytes Length: ${bytes.length}");
 
-      // ✅ SAFE DIRECTORY (no permission needed)
       final directory = await getExternalStorageDirectory();
       if (directory == null) {
         _showError("Storage not available");
@@ -465,7 +493,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
                     canDelete
                         ? () {
                           Navigator.pop(context);
-                          deleteChallan(id);
+                          _deleteChallan(id);
                         }
                         : () {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -490,13 +518,12 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
     ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
   }
 
-  /// ================= REFRESH FUNCTION =================
   Future<void> _refreshChallans() async {
     setState(() {
-      loading = true;
       searchQuery = '';
     });
-    await fetchChallans();
+    final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+    await _fetchChallans(type: type);
   }
 
   @override
@@ -511,6 +538,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
         ),
       );
     }
+
     return WillPopScope(
       onWillPop: () async {
         Navigator.pushAndRemoveUntil(
@@ -518,125 +546,171 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
           MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
           (route) => false,
         );
-
         return false;
       },
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF6F7F9),
-        body: Column(
-          children: [
-            /// ================= TOP SEARCH BAR =================
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-              decoration: const BoxDecoration(
-                color: Color(0xFFFA9C42),
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(24),
-                  bottomRight: Radius.circular(24),
+      child: DefaultTabController(
+        length: 2,
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF6F7F9),
+          body: Column(
+            children: [
+              /// ================= TOP SEARCH BAR =================
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFA9C42),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(24),
+                    bottomRight: Radius.circular(24),
+                  ),
+                ),
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DeliveryChallanSearchBarWidget(
+                              onSearchChanged: _searchChallans,
+                              initialValue: searchQuery,
+                              onAddPressed: _onAddPressed,
+                              canAdd: canAddChallan,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              child: SafeArea(
-                bottom: false,
-                child: Column(
-                  children: [
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DeliveryChallanSearchBarWidget(
-                            onSearchChanged: _searchChallans,
-                            initialValue: searchQuery,
-                            onAddPressed: _onAddPressed,
-                            canAdd: canAddChallan,
+
+              /// ================= TABS =================
+              Container(
+                color: Colors.white,
+                child: TabBar(
+                  controller: _tabController,
+                  indicatorColor: Colors.orange,
+                  tabs: [
+                    Tab(
+                      child: SizedBox(
+                        height: 40,
+                        child: Center(
+                          child: Container(
+                            width: 100,
+                            height: 30,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.rectangle,
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(6),
+                              ),
+                            ),
                           ),
                         ),
-                      ],
+                      ),
+                    ),
+                    Tab(
+                      child: SizedBox(
+                        height: 40,
+                        child: Center(
+                          child: Container(
+                            width: 100,
+                            height: 30,
+                            decoration: const BoxDecoration(
+                              color: Colors.blue,
+                              shape: BoxShape.rectangle,
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(6),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
 
-            /// ================= LIST WITH PAGINATION =================
-            Expanded(
-              child:
-                  loading && challans.isEmpty
-                      ? const Center(child: CircularProgressIndicator())
-                      : RefreshIndicator(
-                        onRefresh: _refreshChallans,
-                        child: ListView(
-                          controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          children: [
-                            /// EMPTY STATE
-                            if (challans.isEmpty && !loading)
-                              SizedBox(
-                                height:
-                                    MediaQuery.of(context).size.height * 0.7,
-                                child: _buildEmptyState(),
-                              )
-                            /// CHALLAN LIST
-                            else if (challans.isNotEmpty)
-                              ..._buildChallanList(),
-
-                            /// LOAD MORE INDICATOR
-                            if (loadingMore)
-                              const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              ),
-
-                            if (!_hasMoreData && challans.isNotEmpty)
-                              const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Center(
-                                  child: Text(
-                                    "No more delivery challans",
-                                    style: TextStyle(color: Colors.grey),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-            ),
-          ],
+              /// ================= TAB VIEWS =================
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildTabContent(type: 'WHITE', index: 0),
+                    _buildTabContent(type: 'BLACK', index: 1),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  /// ================= BUILD CHALLAN LIST WIDGETS =================
-  List<Widget> _buildChallanList() {
-    return [
-      Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text(
-          "Delivery Challans (${challans.length})",
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
+  Widget _buildTabContent({required String type, required int index}) {
+    final isLoading = _loading[index]! && _challans[index]!.isEmpty;
+    final challans = _challans[index]!;
+
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refreshChallans,
+      child: ListView(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          /// Header with count and color
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: type == 'WHITE' ? Colors.red.shade50 : Colors.blue.shade50,
+            child: Row(children: [const SizedBox(width: 12)]),
           ),
-        ),
-      ),
-      ...challans
-          .asMap()
-          .entries
-          .map(
-            (entry) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: _chalanCard(context, entry.value),
+
+          /// Empty state
+          if (challans.isEmpty && !isLoading)
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.6,
+              child: _buildEmptyState(type),
+            )
+          else
+            ...challans.map(
+              (ch) => Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: _chalanCard(context, ch),
+              ),
             ),
-          )
-          .toList(),
-    ];
+
+          /// Load more indicator
+          if (_loadingMore[index]!)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+
+          if (!_hasMoreData[index]! && challans.isNotEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                child: Text(
+                  "No more delivery challans",
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
-  /// ================= EMPTY STATE =================
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(String type) {
     if (searchQuery.isNotEmpty) {
       return Center(
         child: Column(
@@ -657,16 +731,23 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
         ),
       );
     }
-
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.local_shipping_outlined, size: 60, color: Colors.grey),
-          SizedBox(height: 16),
+          Icon(
+            type == 'WHITE' ? Icons.receipt_outlined : Icons.receipt,
+            size: 60,
+            color: type == 'WHITE' ? Colors.red.shade200 : Colors.blue.shade200,
+          ),
+          const SizedBox(height: 16),
           Text(
-            "No delivery challans found",
-            style: TextStyle(color: Colors.grey, fontSize: 16),
+            "No $type challans found",
+            style: TextStyle(
+              color:
+                  type == 'WHITE' ? Colors.red.shade400 : Colors.blue.shade400,
+              fontSize: 16,
+            ),
           ),
         ],
       ),
@@ -675,6 +756,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
 
   /// ================= CHALAN CARD =================
   Widget _chalanCard(BuildContext context, DeliveryChallan chalan) {
+    final bool isWhite = !chalan.isBlackChallan; // White = isBlackChallan == 0
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -687,11 +769,14 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
             offset: const Offset(0, 4),
           ),
         ],
+        // Left border color based on type
+        border: Border(
+          left: BorderSide(color: isWhite ? Colors.red : Colors.blue, width: 4),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          /// TOP ROW
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -699,22 +784,16 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
                 "Chalan no. : CH ${chalan.id}",
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-
-              /// 🔥 3 DOT MENU
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert),
                 onSelected: (value) {
-                  debugPrint("MENU SELECTED: $value for ID ${chalan.id}");
-
                   if (value == "dc") {
                     if (!canPrint) {
                       _showError("You don't have permission to print DC");
                       return;
                     }
                     _printPdf(challanId: chalan.id, isReturn: false);
-                  }
-
-                  if (value == "return") {
+                  } else if (value == "return") {
                     if (!canReturnPrint) {
                       _showError(
                         "You don't have permission to print Return DC",
@@ -750,31 +829,21 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 10),
-
           Text(
             "Recipient Details : ${chalan.client}",
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
-
           const SizedBox(height: 6),
-
           Text(
             "Delivery Boy : ${chalan.deliveryBoy.isEmpty ? "-" : chalan.deliveryBoy}",
           ),
-
           const SizedBox(height: 4),
-
           Text("Tempo No. : ${chalan.tempo.isEmpty ? "-" : chalan.tempo}"),
-
           const SizedBox(height: 4),
-
           Text("Total Items : ${chalan.totalItems}"),
-
           const SizedBox(height: 18),
 
-          /// BUTTONS
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -815,7 +884,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen> {
                   ),
                 ),
               ),
-
               Opacity(
                 opacity: canDelete ? 1 : 0.4,
                 child: OutlinedButton(
