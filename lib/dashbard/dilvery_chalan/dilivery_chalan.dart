@@ -205,17 +205,17 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
 
   final Dio dio = Dio();
 
-  // Tab Controller
+  // Tab Controller – now 3 tabs: All, White, Black
   late TabController _tabController;
-  int _currentTabIndex = 0; // 0 = White, 1 = Black
+  int _currentTabIndex = 0; // 0 = All, 1 = White, 2 = Black
 
   // Separate states for each type
-  Map<int, List<DeliveryChallan>> _challans = {0: [], 1: []};
-  Map<int, bool> _loading = {0: false, 1: false};
-  Map<int, bool> _loadingMore = {0: false, 1: false};
-  Map<int, int> _currentPage = {0: 1, 1: 1};
-  Map<int, int> _totalPages = {0: 1, 1: 1};
-  Map<int, bool> _hasMoreData = {0: true, 1: true};
+  Map<int, List<DeliveryChallan>> _challans = {0: [], 1: [], 2: []};
+  Map<int, bool> _loading = {0: false, 1: false, 2: false};
+  Map<int, bool> _loadingMore = {0: false, 1: false, 2: false};
+  Map<int, int> _currentPage = {0: 1, 1: 1, 2: 1};
+  Map<int, int> _totalPages = {0: 1, 1: 1, 2: 1};
+  Map<int, bool> _hasMoreData = {0: true, 1: true, 2: true};
 
   String searchQuery = '';
   final Debouncer _debouncer = Debouncer(milliseconds: 500);
@@ -238,11 +238,11 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
       "Delivery Challans_Return DC",
     );
 
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this); // 👈 3 tabs
     _tabController.addListener(_onTabChanged);
 
-    // Load initial data for White tab (index 0)
-    _fetchChallans(type: 'WHITE');
+    // Load initial data for All tab (index 0)
+    _fetchChallans(type: 'ALL');
 
     _scrollController.addListener(_scrollListener);
   }
@@ -252,11 +252,24 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
       setState(() {
         _currentTabIndex = _tabController.index;
       });
-      final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+      final type = _getTypeForIndex(_currentTabIndex);
       if (_challans[_currentTabIndex]!.isEmpty &&
           !_loading[_currentTabIndex]!) {
         _fetchChallans(type: type);
       }
+    }
+  }
+
+  String _getTypeForIndex(int index) {
+    switch (index) {
+      case 0:
+        return 'ALL';
+      case 1:
+        return 'WHITE';
+      case 2:
+        return 'BLACK';
+      default:
+        return 'ALL';
     }
   }
 
@@ -272,7 +285,15 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     required String type,
     bool isLoadMore = false,
   }) async {
-    final tabIndex = type == 'WHITE' ? 0 : 1;
+    int tabIndex;
+    if (type == 'ALL')
+      tabIndex = 0;
+    else if (type == 'WHITE')
+      tabIndex = 1;
+    else if (type == 'BLACK')
+      tabIndex = 2;
+    else
+      return;
 
     if (!isLoadMore) {
       setState(() {
@@ -290,8 +311,11 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
       final Map<String, dynamic> queryParams = {
         "page": _currentPage[tabIndex],
         "limit": 10,
-        "challanType": type, // 👈 filter by type
       };
+      // Add challanType only if not ALL
+      if (type != 'ALL') {
+        queryParams['challanType'] = type;
+      }
       if (searchQuery.isNotEmpty) {
         queryParams['search'] = searchQuery;
       }
@@ -350,7 +374,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
   }
 
   Future<void> _loadMoreData() async {
-    final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+    final type = _getTypeForIndex(_currentTabIndex);
     if (!_hasMoreData[_currentTabIndex]! || _loadingMore[_currentTabIndex]!)
       return;
 
@@ -364,7 +388,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
       searchQuery = query;
     });
     _debouncer.run(() {
-      final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+      final type = _getTypeForIndex(_currentTabIndex);
       _fetchChallans(type: type);
     });
   }
@@ -373,7 +397,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     setState(() {
       searchQuery = '';
     });
-    final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+    final type = _getTypeForIndex(_currentTabIndex);
     _fetchChallans(type: type);
   }
 
@@ -384,7 +408,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
       MaterialPageRoute(builder: (_) => const AddDeliveryChallanScreen()),
     ).then((_) {
       // Refresh current tab after adding
-      final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+      final type = _getTypeForIndex(_currentTabIndex);
       _fetchChallans(type: type);
     });
   }
@@ -402,7 +426,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
             backgroundColor: Colors.green,
           ),
         );
-        final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+        final type = _getTypeForIndex(_currentTabIndex);
         _fetchChallans(type: type);
       }
     } catch (e) {
@@ -522,7 +546,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     setState(() {
       searchQuery = '';
     });
-    final type = _currentTabIndex == 0 ? 'WHITE' : 'BLACK';
+    final type = _getTypeForIndex(_currentTabIndex);
     await _fetchChallans(type: type);
   }
 
@@ -549,7 +573,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
         return false;
       },
       child: DefaultTabController(
-        length: 2,
+        length: 3, // 👈 3 tabs
         child: Scaffold(
           backgroundColor: const Color(0xFFF6F7F9),
           body: Column(
@@ -593,37 +617,61 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                   controller: _tabController,
                   indicatorColor: Colors.orange,
                   tabs: [
+                    // All tab
                     Tab(
-                      child: SizedBox(
-                        height: 40,
-                        child: Center(
-                          child: Container(
-                            width: 100,
-                            height: 30,
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.rectangle,
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(6),
-                              ),
+                      child: Container(
+                        width: 100,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade400,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'All',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
                       ),
                     ),
+                    // White tab
                     Tab(
-                      child: SizedBox(
-                        height: 40,
-                        child: Center(
-                          child: Container(
-                            width: 100,
-                            height: 30,
-                            decoration: const BoxDecoration(
-                              color: Colors.blue,
-                              shape: BoxShape.rectangle,
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(6),
-                              ),
+                      child: Container(
+                        width: 100,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            '',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Black tab
+                    Tab(
+                      child: Container(
+                        width: 100,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            '',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
@@ -638,8 +686,9 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                 child: TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildTabContent(type: 'WHITE', index: 0),
-                    _buildTabContent(type: 'BLACK', index: 1),
+                    _buildTabContent(type: 'ALL', index: 0),
+                    _buildTabContent(type: 'WHITE', index: 1),
+                    _buildTabContent(type: 'BLACK', index: 2),
                   ],
                 ),
               ),
@@ -664,12 +713,13 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          /// Header with count and color
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: type == 'WHITE' ? Colors.red.shade50 : Colors.blue.shade50,
-            child: Row(children: [const SizedBox(width: 12)]),
-          ),
+          /// Header with count and color (optional)
+          if (type != 'ALL')
+            Container(
+              padding: const EdgeInsets.all(16),
+              color: type == 'WHITE' ? Colors.red.shade50 : Colors.blue.shade50,
+              child: Row(children: [const SizedBox(width: 12)]),
+            ),
 
           /// Empty state
           if (challans.isEmpty && !isLoading)
@@ -731,24 +781,31 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
         ),
       );
     }
+
+    Color iconColor;
+    String message;
+    if (type == 'ALL') {
+      iconColor = Colors.grey.shade500;
+      message = "No challans found";
+    } else if (type == 'WHITE') {
+      iconColor = Colors.red.shade200;
+      message = "No white challans found";
+    } else {
+      iconColor = Colors.blue.shade200;
+      message = "No black challans found";
+    }
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            type == 'WHITE' ? Icons.receipt_outlined : Icons.receipt,
+            type == 'ALL' ? Icons.receipt_long : Icons.receipt,
             size: 60,
-            color: type == 'WHITE' ? Colors.red.shade200 : Colors.blue.shade200,
+            color: iconColor,
           ),
           const SizedBox(height: 16),
-          Text(
-            "No $type challans found",
-            style: TextStyle(
-              color:
-                  type == 'WHITE' ? Colors.red.shade400 : Colors.blue.shade400,
-              fontSize: 16,
-            ),
-          ),
+          Text(message, style: TextStyle(color: iconColor, fontSize: 16)),
         ],
       ),
     );
@@ -756,7 +813,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
 
   /// ================= CHALAN CARD =================
   Widget _chalanCard(BuildContext context, DeliveryChallan chalan) {
-    final bool isWhite = !chalan.isBlackChallan; // White = isBlackChallan == 0
+    final bool isWhite = !chalan.isBlackChallan;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

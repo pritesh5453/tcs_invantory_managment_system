@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/add_delivery_challan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/add_quotation.dart';
 import 'package:tcs_invantory_managment_system/dashbard/quotation/dispatch_challan.dart';
@@ -607,11 +608,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                       () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder:
-                              (context) => DispatchChallanScreen(
-                                quotationId: entry.value['id'],
-                                quotationData: entry.value,
-                              ),
+                          builder: (context) => AddDeliveryChallanScreen(),
                         ),
                       ),
                   onFollowUp: () {

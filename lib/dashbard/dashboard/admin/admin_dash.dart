@@ -37,18 +37,24 @@ class _DashboardPageState extends State<DashboardPage> {
   bool isLoading = true;
   String errorMessage = '';
 
-  // Date selection state - ✅ AUTOMATICALLY SET CURRENT MONTH DATES
+  // Date selection state - automatically set current month dates
   DateTime? fromDate;
   DateTime? toDate;
 
-  // ✅ ADD FLAG TO TRACK IF USER MANUALLY CHANGED DATES
+  // Flag to track if user manually changed dates
   bool _showMonthText = true;
+
+  // Pending request count for notification dot
+  int pendingRequestCount = 0;
+
+  // Unread notification count
+  int unreadNotificationCount = 0;
 
   @override
   void initState() {
     super.initState();
 
-    // ✅ SET DEFAULT DATES TO CURRENT MONTH (1st to today)
+    // Set default dates to current month (1st to today)
     final now = DateTime.now();
     fromDate = DateTime(now.year, now.month, 1); // Month start (1st)
     toDate = now; // Today's date
@@ -73,7 +79,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  // Add this method to fetch chart data
+  // Fetch chart data
   Future<void> _fetchChartData() async {
     try {
       final response = await _dio.get('/dashboard/charts');
@@ -93,7 +99,55 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  // Update _fetchAllData method to include chart data
+  // Fetch pending request count from /payment/pending
+  Future<void> _fetchPendingRequestCount() async {
+    try {
+      final response = await _dio.get('/payment/pending');
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        setState(() {
+          final requestsList = response.data['requests'] as List? ?? [];
+          pendingRequestCount = requestsList.length;
+        });
+      } else {
+        pendingRequestCount = 0;
+      }
+    } on DioException catch (e) {
+      print('Pending request count error: $e');
+      pendingRequestCount = 0;
+    }
+  }
+
+  // Fetch unread notification count from /users/GetNotification
+  Future<void> _fetchUnreadNotificationCount() async {
+    try {
+      final response = await _dio.get(
+        '/users/GetNotification',
+        queryParameters: {
+          'role': 'Admin',
+          'page': 1,
+          'limit': 100,
+        }, // fetch enough to count unread
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final notifications = response.data['data'] as List? ?? [];
+        // Count unread – adjust field name if needed (e.g., 'read', 'is_read')
+        final unreadCount =
+            notifications.where((n) => n['is_read'] == false).length;
+        setState(() {
+          unreadNotificationCount = unreadCount;
+        });
+      } else {
+        unreadNotificationCount = 0;
+      }
+    } on DioException catch (e) {
+      print('Unread notification count error: $e');
+      unreadNotificationCount = 0;
+    }
+  }
+
+  // Fetch all data
   Future<void> _fetchAllData() async {
     setState(() {
       isLoading = true;
@@ -104,7 +158,9 @@ class _DashboardPageState extends State<DashboardPage> {
       await Future.wait([
         _fetchDashboardStats(),
         _fetchUserWiseOrders(),
-        _fetchChartData(), // Add this line
+        _fetchChartData(),
+        _fetchPendingRequestCount(),
+        _fetchUnreadNotificationCount(), // NEW
       ]);
     } catch (e) {
       setState(() {
@@ -117,10 +173,9 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  // Fetch User Wise Orders API - ✅ AUTOMATICALLY CALL WITH CURRENT MONTH DATES
+  // Fetch User Wise Orders API
   Future<void> _fetchUserWiseOrders() async {
     try {
-      // ✅ ALWAYS USE CURRENT DATES (fromDate and toDate are set in initState)
       final startDate = fromDate!;
       final endDate = toDate!;
 
@@ -165,7 +220,7 @@ class _DashboardPageState extends State<DashboardPage> {
               ? (fromDate ?? DateTime.now())
               : (toDate ?? DateTime.now()),
       firstDate: DateTime(2020),
-      lastDate: DateTime.now(), // ✅ CAN'T SELECT FUTURE DATES
+      lastDate: DateTime.now(), // Can't select future dates
     );
 
     if (picked != null) {
@@ -175,14 +230,12 @@ class _DashboardPageState extends State<DashboardPage> {
         } else {
           toDate = picked;
         }
-        // ✅ DON'T HIDE TEXT YET, ONLY HIDE WHEN USER CLICKS SUBMIT
       });
     }
   }
 
-  // Submit task function - ✅ NOW HIDES THE MONTH TEXT
+  // Submit task function
   Future<void> _submitTask() async {
-    // Validate dates
     if (fromDate == null || toDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -193,7 +246,6 @@ class _DashboardPageState extends State<DashboardPage> {
       return;
     }
 
-    // Validate date range
     if (fromDate!.isAfter(toDate!)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -204,7 +256,6 @@ class _DashboardPageState extends State<DashboardPage> {
       return;
     }
 
-    // ✅ CAN'T SELECT FUTURE DATES
     if (toDate!.isAfter(DateTime.now())) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -215,13 +266,11 @@ class _DashboardPageState extends State<DashboardPage> {
       return;
     }
 
-    // ✅ HIDE THE "Showing data for..." TEXT
     setState(() {
       _showMonthText = false;
     });
 
     try {
-      // Call the API with selected dates
       final response = await _dio.get(
         '/dashboard/user-wise-orders',
         queryParameters: {
@@ -347,7 +396,6 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // ✅ RESET TO CURRENT MONTH AND SHOW TEXT AGAIN
           final now = DateTime.now();
           setState(() {
             fromDate = DateTime(now.year, now.month, 1);
@@ -364,7 +412,7 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  // 🔶 TOP HEADER
+  // 🔶 TOP HEADER with notification dot
   Widget _topHeader(bool isMobile) {
     return Container(
       padding: EdgeInsets.all(isMobile ? 12 : 16),
@@ -403,27 +451,47 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
               ),
               SizedBox(width: isMobile ? 8 : 12),
-              Container(
-                height: isMobile ? 44 : 48,
-                width: isMobile ? 44 : 48,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(isMobile ? 20 : 24),
-                ),
-                child: IconButton(
-                  icon: Icon(
-                    Icons.notifications_none,
-                    size: isMobile ? 20 : 24,
-                  ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const NotificationScreen(),
+              // 🔔 NOTIFICATION ICON WITH RED DOT
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    height: isMobile ? 44 : 48,
+                    width: isMobile ? 44 : 48,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(isMobile ? 20 : 24),
+                    ),
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.notifications_none,
+                        size: isMobile ? 20 : 24,
                       ),
-                    );
-                  },
-                ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const NotificationScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  if (unreadNotificationCount > 0)
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: Container(
+                        width: isMobile ? 10 : 12,
+                        height: isMobile ? 10 : 12,
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
@@ -458,21 +526,41 @@ class _DashboardPageState extends State<DashboardPage> {
             spacing: isMobile ? 6 : 8,
             runSpacing: isMobile ? 6 : 8,
             children: [
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const PaymentRequestsPage(),
+              // 🔔 REQUESTS CHIP WITH NOTIFICATION DOT
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const PaymentRequestsPage(),
+                        ),
+                      );
+                    },
+                    child: _overviewChip(
+                      label: "Requests",
+                      color: const Color(0xffFFA34D),
+                      icon: Icons.notifications,
+                      isMobile: isMobile,
                     ),
-                  );
-                },
-                child: _overviewChip(
-                  label: "Requests",
-                  color: const Color(0xffFFA34D),
-                  icon: Icons.notifications,
-                  isMobile: isMobile,
-                ),
+                  ),
+                  if (pendingRequestCount > 0)
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: Container(
+                        width: isMobile ? 12 : 14,
+                        height: isMobile ? 12 : 14,
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                      ),
+                    ),
+                ],
               ),
               InkWell(
                 onTap: () {
@@ -568,7 +656,7 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  // 🔶 ASSIGNED TASK CARD - Now using dynamic API data
+  // 🔶 ASSIGNED TASK CARD - using dynamic API data
   Widget _assignedTaskCard(BuildContext context, bool isMobile) {
     return Container(
       padding: EdgeInsets.all(isMobile ? 12 : 16),
@@ -762,7 +850,7 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
             ),
 
-          // ✅ CURRENT MONTH INDICATOR - ONLY SHOW WHEN NOT MANUALLY SUBMITTED
+          // Current month indicator - only show when not manually submitted
           if (_showMonthText)
             Padding(
               padding: const EdgeInsets.only(top: 12),
@@ -793,7 +881,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // Helper function to get current month name
   String _getCurrentMonthName() {
-    final monthNames = [
+    const monthNames = [
       'January',
       'February',
       'March',
@@ -834,7 +922,7 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  // 🔶 STATS GRID - Now using dynamic API data
+  // 🔶 STATS GRID - using dynamic API data
   Widget _statsGrid(bool isMobile, bool isTablet) {
     int crossAxisCount;
     if (isMobile) {
@@ -887,7 +975,7 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  // 🔶 BOTTOM CHART PLACEHOLDERS
+  // 🔶 BOTTOM CHARTS
   Widget _bottomCharts(BuildContext context, bool isMobile, bool isTablet) {
     if (isMobile) {
       return Column(
@@ -1040,7 +1128,6 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildPurchaseChart(bool isMobile) {
-    // Find max value for scaling
     final maxValue =
         salesVsPurchaseData.isNotEmpty
             ? salesVsPurchaseData
@@ -1053,7 +1140,7 @@ class _DashboardPageState extends State<DashboardPage> {
       child: BarChart(
         BarChartData(
           alignment: BarChartAlignment.spaceAround,
-          maxY: maxValue * 1.2, // Add 20% padding
+          maxY: maxValue * 1.2,
           barTouchData: BarTouchData(
             enabled: true,
             touchTooltipData: BarTouchTooltipData(
@@ -1252,7 +1339,6 @@ class _DashboardPageState extends State<DashboardPage> {
           maxX: cashFlowData.length > 0 ? cashFlowData.length - 1 : 0,
           minY: 0,
           lineBarsData: [
-            // IN amount line (green)
             LineChartBarData(
               spots:
                   cashFlowData.asMap().entries.map((entry) {
@@ -1265,7 +1351,6 @@ class _DashboardPageState extends State<DashboardPage> {
               dotData: FlDotData(show: true),
               belowBarData: BarAreaData(show: false),
             ),
-            // OUT amount line (red)
             LineChartBarData(
               spots:
                   cashFlowData.asMap().entries.map((entry) {

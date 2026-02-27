@@ -79,9 +79,7 @@ class _CommissionPageState extends State<CommissionPage> {
     if (isPercentage) {
       if (input > 100) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Bonus percentage cannot exceed 100%'),
-          ),
+          const SnackBar(content: Text('Bonus percentage cannot exceed 100%')),
         );
         commissionController.text = '100';
         calculatedPay = total;
@@ -296,7 +294,7 @@ class _CommissionPageState extends State<CommissionPage> {
                   loading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : const Text(
-                        'SETTLE COMMISSION',
+                        'SETTLE BONUS',
                         style: TextStyle(color: Colors.white),
                       ),
             ),

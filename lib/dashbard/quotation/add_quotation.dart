@@ -2049,19 +2049,15 @@ class ProductRow {
     try {
       final quantity = double.tryParse(quantityController.text) ?? 0;
       final rate = double.tryParse(rateController.text) ?? 0;
-
       final cov = double.tryParse(covController.text) ?? 0;
       final discount = double.tryParse(discountController.text) ?? 0;
 
-      // Calculate base amount: Rate * QUANTITY
-      final baseAmount = rate * quantity;
-
-      final covAmount = baseAmount * (cov);
-      final amountAfterCov = covAmount;
-
-      // Apply discount (assuming discount is a percentage)
-      final discountAmount = amountAfterCov * (discount / 100);
-      final finalAmount = amountAfterCov - discountAmount;
+      // Apply discount to rate first
+      final discountedRate = rate * (1 - discount / 100);
+      // Then calculate base amount with quantity
+      final baseAmount = discountedRate * quantity;
+      // Finally apply COV factor
+      final finalAmount = baseAmount * cov;
 
       amountController.text = finalAmount.toStringAsFixed(2);
     } catch (e) {

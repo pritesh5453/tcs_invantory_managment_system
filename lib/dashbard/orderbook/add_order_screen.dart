@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
@@ -20,6 +21,13 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
   DateTime? selectedDate;
   bool isLoading = false;
 
+  /// ================= PRODUCT SEARCH =================
+  final Dio _dio = Dio();
+  List<dynamic> _products = [];
+  List<dynamic> _filteredProducts = [];
+  bool _showProductDropdown = false;
+  Timer? _productSearchDebounce;
+
   /// ================= DATE PICKER =================
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -34,6 +42,47 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
       dateController.text =
           "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
       setState(() {});
+    }
+  }
+
+  /// ================= FETCH PRODUCTS =================
+  Future<void> _fetchProducts(String search) async {
+    if (search.trim().isEmpty) {
+      setState(() {
+        _filteredProducts = [];
+        _showProductDropdown = false;
+      });
+      return;
+    }
+
+    try {
+      final response = await _dio.get(
+        'https://dashboard.theceramicstudio.in/api/product/list',
+        queryParameters: {'search': search},
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        setState(() {
+          _products = response.data['products'];
+          // Filter locally by name (API already searches, but we keep it)
+          _filteredProducts =
+              _products
+                  .where(
+                    (p) => p['name'].toString().toLowerCase().contains(
+                      search.toLowerCase(),
+                    ),
+                  )
+                  .toList();
+          _showProductDropdown = _filteredProducts.isNotEmpty;
+        });
+      } else {
+        _filteredProducts = [];
+        _showProductDropdown = false;
+      }
+    } catch (e) {
+      debugPrint('Product search error: $e');
+      _filteredProducts = [];
+      _showProductDropdown = false;
     }
   }
 
@@ -60,9 +109,9 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
           "name": productController.text.trim(),
           "size": sizeController.text.trim(),
           "quality": qualityController.text.trim(),
-          "date": dateController.text.trim(), // yyyy-MM-dd
+          "date": dateController.text.trim(),
           "quantity": quantityController.text.trim(),
-          "brand": brandController.text.trim(),
+          "brand": brandController.text.trim(), // brand name
         },
       );
 
@@ -131,17 +180,125 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
 
                       const SizedBox(height: 16),
 
+                      /// PRODUCT SEARCH FIELD (with dropdown)
                       _label("Product Name"),
-                      _field(productController, "Search Product..."),
+                      const SizedBox(height: 4),
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.search,
+                                    size: 18,
+                                    color: Colors.grey,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: productController,
+                                      onChanged: (value) {
+                                        // Clear dependent fields when search changes
+                                        brandController.clear();
+                                        sizeController.clear();
+                                        qualityController.clear();
+
+                                        if (_productSearchDebounce?.isActive ??
+                                            false) {
+                                          _productSearchDebounce!.cancel();
+                                        }
+
+                                        _productSearchDebounce = Timer(
+                                          const Duration(milliseconds: 400),
+                                          () => _fetchProducts(value),
+                                        );
+                                      },
+                                      onTap: () {
+                                        if (productController.text.isNotEmpty) {
+                                          _fetchProducts(
+                                            productController.text,
+                                          );
+                                        }
+                                      },
+                                      decoration: const InputDecoration(
+                                        hintText: "Search product...",
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_showProductDropdown &&
+                                _filteredProducts.isNotEmpty)
+                              Container(
+                                height: 200,
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    top: BorderSide(
+                                      color: Colors.grey.shade200,
+                                    ),
+                                  ),
+                                  borderRadius: const BorderRadius.only(
+                                    bottomLeft: Radius.circular(12),
+                                    bottomRight: Radius.circular(12),
+                                  ),
+                                ),
+                                child: ListView.builder(
+                                  itemCount: _filteredProducts.length,
+                                  itemBuilder: (context, index) {
+                                    final product = _filteredProducts[index];
+                                    return ListTile(
+                                      title: Text(product['name'] ?? ''),
+                                      subtitle: Text(
+                                        'Size: ${product['size']} | Quality: ${product['quality']} | Brand: ${product['brand']}',
+                                      ),
+                                      onTap: () {
+                                        setState(() {
+                                          productController.text =
+                                              product['name'] ?? '';
+                                          brandController.text =
+                                              product['brand'] ?? '';
+                                          sizeController.text =
+                                              product['size']?.toString() ?? '';
+                                          qualityController.text =
+                                              product['quality']?.toString() ??
+                                              '';
+                                          _showProductDropdown = false;
+                                          FocusScope.of(context).unfocus();
+                                        });
+                                      },
+                                    );
+                                  },
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
 
                       const SizedBox(height: 12),
 
+                      /// BRAND NAME
                       _label("Brand Name"),
-                      _field(brandController, "Search or Type Brand..."),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: brandController,
+                        readOnly: true,
+                        decoration: _decoration("Brand"),
+                      ),
 
                       const SizedBox(height: 12),
 
-                      /// SIZE + QUALITY
+                      /// SIZE + QUALITY (read-only)
                       Row(
                         children: [
                           Expanded(
@@ -149,7 +306,12 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _label("Size"),
-                                _field(sizeController, "Eg. 1200x1800"),
+                                const SizedBox(height: 4),
+                                TextField(
+                                  controller: sizeController,
+                                  readOnly: true,
+                                  decoration: _decoration("Eg. 1200x1800"),
+                                ),
                               ],
                             ),
                           ),
@@ -159,7 +321,12 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _label("Quality"),
-                                _field(qualityController, "PREMIUM"),
+                                const SizedBox(height: 4),
+                                TextField(
+                                  controller: qualityController,
+                                  readOnly: true,
+                                  decoration: _decoration("PREMIUM"),
+                                ),
                               ],
                             ),
                           ),
@@ -194,7 +361,11 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _label("Quantity"),
-                                _field(quantityController, "Eg. 1"),
+                                TextField(
+                                  controller: quantityController,
+                                  keyboardType: TextInputType.number,
+                                  decoration: _decoration("Eg. 1"),
+                                ),
                               ],
                             ),
                           ),
@@ -260,10 +431,6 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
     ),
   );
 
-  Widget _field(TextEditingController controller, String hint) {
-    return TextField(controller: controller, decoration: _decoration(hint));
-  }
-
   InputDecoration _decoration(String hint, {IconData? icon}) {
     return InputDecoration(
       hintText: hint,
@@ -271,5 +438,17 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
     );
+  }
+
+  @override
+  void dispose() {
+    _productSearchDebounce?.cancel();
+    productController.dispose();
+    brandController.dispose();
+    sizeController.dispose();
+    qualityController.dispose();
+    quantityController.dispose();
+    dateController.dispose();
+    super.dispose();
   }
 }

@@ -356,11 +356,11 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
               decoration: _dec("enter salary"),
             ),
 
-            label("Commission (%)"),
+            label("Bonus (%)"),
             TextField(
               controller: commissionCtrl,
               keyboardType: TextInputType.number,
-              decoration: _dec("enter commission"),
+              decoration: _dec("enter Bonus"),
             ),
 
             const SizedBox(height: 16),
