@@ -131,6 +131,9 @@ class _AddFollowUpPopupState extends State<AddFollowUpPopup> {
 
             const SizedBox(height: 16),
 
+            const Text("Date :"),
+            const SizedBox(height: 6),
+
             /// ===== DATE =====
             TextField(
               controller: dateCtrl,
@@ -145,6 +148,8 @@ class _AddFollowUpPopupState extends State<AddFollowUpPopup> {
             const SizedBox(height: 14),
 
             /// ===== NEXT FOLLOW-UP DATE =====
+            const Text("Next Follow-Up Date :"),
+            const SizedBox(height: 6),
             TextField(
               controller: nextDateCtrl,
               readOnly: true,

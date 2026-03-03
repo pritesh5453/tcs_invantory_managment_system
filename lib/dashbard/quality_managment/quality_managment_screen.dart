@@ -689,9 +689,7 @@ class QualityCard extends ConsumerWidget {
                     onPressed:
                         canDelete
                             ? () {
-                              ref
-                                  .read(qualityProvider.notifier)
-                                  .deleteQuality(q.id);
+                              _showDeleteDialog(context, ref);
                             }
                             : () {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -711,6 +709,34 @@ class QualityCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _showDeleteDialog(BuildContext context, WidgetRef ref) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text("Delete Quality"),
+            content: const Text(
+              "Are you sure you want to delete this quality?",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text("Delete"),
+              ),
+            ],
+          ),
+    );
+
+    if (confirm == true) {
+      ref.read(qualityProvider.notifier).deleteQuality(q.id);
+    }
   }
 
   static Widget _info(String t, String v) {

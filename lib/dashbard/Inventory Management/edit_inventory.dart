@@ -34,12 +34,13 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
   String? _selectedSupplierContact;
   bool _showSupplierDropdown = false;
 
-  // Focus nodes for closing dropdowns
+  // Focus nodes
   final FocusNode _supplierFocusNode = FocusNode();
 
   // Products data
   List<dynamic> _products = [];
   List<dynamic> _filteredProducts = [];
+  Map<int, dynamic> _productMap = {}; // lookup by product ID
 
   // Form controllers
   final TextEditingController _dateController = TextEditingController();
@@ -53,7 +54,6 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
   bool _isLoading = true;
   bool _isSubmitting = false;
 
-  // Scroll controller for keyboard handling
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -66,17 +66,13 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
   void _setupFocusNodes() {
     _supplierFocusNode.addListener(() {
       if (!_supplierFocusNode.hasFocus) {
-        setState(() {
-          _showSupplierDropdown = false;
-        });
+        setState(() => _showSupplierDropdown = false);
       }
     });
 
-    // Add listener to scroll when keyboard opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       FocusScope.of(context).addListener(() {
         if (FocusScope.of(context).hasFocus) {
-          // Scroll to bottom when keyboard opens
           Future.delayed(const Duration(milliseconds: 300), () {
             _scrollController.animateTo(
               _scrollController.position.maxScrollExtent,
@@ -89,45 +85,51 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
     });
   }
 
+  Future<void> _initializeData() async {
+    setState(() => _isLoading = true);
+
+    await _fetchSuppliers();
+    await _fetchProducts();
+
+    _productRows.clear();
+    _prefillData(); // rows from purchase items
+    _prefillProductsFromApi(); // fill details using map
+
+    setState(() => _isLoading = false);
+  }
+
   void _prefillData() {
-    // Prefill date
+    // Date
     final purchaseDate = widget.purchase['purchase_date'];
     if (purchaseDate != null) {
       try {
         final date = DateTime.parse(purchaseDate);
         _dateController.text = DateFormat('dd-MM-yyyy').format(date);
       } catch (e) {
-        print('Error parsing date: $e');
+        print('Date parse error: $e');
       }
     }
 
-    // Prefill bill number
+    // Bill number
     _billNoController.text = widget.purchase['bill_no'] ?? '';
 
-    // Prefill supplier
+    // Supplier
     _selectedSupplierName = widget.purchase['client_name'];
     _selectedSupplierContact = widget.purchase['client_contact'];
     _supplierSearchController.text = widget.purchase['client_name'] ?? '';
 
-    // Prefill product rows
+    // Product rows
     final items = widget.purchase['items'] as List? ?? [];
     for (var item in items) {
       final row = ProductRow();
-      row.productName = item['product_name'] ?? '';
-      row.size = item['size'] ?? '';
-      row.quality = item['quality'] ?? '';
+      row.productId = item['product_id']; // store product ID
+      row.selectedBatch = item['batch_no'];
       row.rateController.text = (item['rate'] ?? 0).toString();
       row.covController.text = (item['cov'] ?? 0).toString();
-      row.selectedBatch = item['batch_no'];
-      row.stockController.text = (item['availQty'] ?? 0).toString();
       row.quantityController.text = (item['qty'] ?? 0).toString();
       row.discountController.text = (item['discount'] ?? 0).toString();
       row.godown = item['godown'] ?? 'KKW';
       row.productSearchController.text = item['product_name'] ?? '';
-
-      // Calculate and set amount
-      row.updateTotal();
-
       _productRows.add(row);
     }
 
@@ -136,59 +138,33 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
     }
   }
 
-  Future<void> _initializeData() async {
-    setState(() => _isLoading = true);
-
-    await _fetchSuppliers();
-    await _fetchProducts();
-
-    _productRows.clear(); // 🔥 IMPORTANT
-    _prefillData(); // rows create
-    _prefillProductsFromApi(); // product details set
-
-    setState(() => _isLoading = false);
-  }
-
   void _prefillProductsFromApi() {
     for (var row in _productRows) {
-      if (row.productName.isEmpty) continue;
+      if (row.productId == null) continue;
+      final product = _productMap[row.productId!];
+      if (product == null) continue;
 
-      final product = _products.firstWhere(
-        (p) =>
-            p['name'] == row.productName &&
-            p['size'] == row.size &&
-            p['quality'] == row.quality,
-        orElse: () => {},
-      );
-
-      if (product.isEmpty) continue;
-
-      // ✅ Product text field prefill
-      row.productSearchController.text = product['name'] ?? row.productName;
-
-      // ✅ Rate & COV
+      row.productName = product['name'] ?? '';
+      row.size = product['size']?.toString() ?? '';
+      row.quality = product['quality']?.toString() ?? '';
+      row.productSearchController.text = row.productName;
       row.rateController.text =
           product['rate']?.toString() ?? row.rateController.text;
       row.covController.text =
           product['cov']?.toString() ?? row.covController.text;
-
-      // ✅ Batches
       row.batches = product['batches'] ?? [];
 
-      // ✅ Batch + stock
       if (row.batches.isNotEmpty) {
-        final batch = row.batches.firstWhere(
+        final matchingBatch = row.batches.firstWhere(
           (b) => b['batch_no'] == row.selectedBatch,
           orElse: () => row.batches.first,
         );
-
-        row.selectedBatch = batch['batch_no'];
-        row.stockController.text = batch['qty'].toString();
+        row.selectedBatch = matchingBatch['batch_no'];
+        row.stockController.text = matchingBatch['qty'].toString();
       }
 
       row.updateTotal();
     }
-
     setState(() {});
   }
 
@@ -197,29 +173,27 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/suppliers/list',
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
         setState(() {
           _suppliers = response.data['suppliers'];
           _filteredSuppliers = _suppliers;
 
-          // Try to find and select the current supplier
           final clientName = widget.purchase['client_name'];
           if (clientName != null) {
-            final foundSupplier = _suppliers.firstWhere(
+            final found = _suppliers.firstWhere(
               (s) => s['name'] == clientName,
               orElse: () => null,
             );
-            if (foundSupplier != null) {
-              _selectedSupplierId = foundSupplier['id'].toString();
+            if (found != null) {
+              _selectedSupplierId = found['id'].toString();
               _selectedSupplierContact =
-                  foundSupplier['mobile'] ?? _selectedSupplierContact;
+                  found['mobile'] ?? _selectedSupplierContact;
             }
           }
         });
       }
     } catch (e) {
-      print('Error fetching suppliers: $e');
+      print('Supplier fetch error: $e');
     }
   }
 
@@ -228,64 +202,17 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/product/list?limit=100',
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
-        _products = List<Map<String, dynamic>>.from(
-          response.data['products'] ?? [],
-        );
-
-        _filteredProducts = _products;
-
-        // 🔥 IMPORTANT: product prefill for edit
-        // for (var row in _productRows) {
-        //   if (row.productName.isEmpty) continue;
-
-        //   final product = _products.firstWhere(
-        //     (p) =>
-        //         p['name'] == row.productName &&
-        //         p['size'] == row.size &&
-        //         p['quality'] == row.quality,
-        //     orElse: () => {},
-        //   );
-
-        //   if (product.isEmpty) continue;
-
-        //   // ✅ Product name textbox (search field)
-        //   row.productSearchController.text =
-        //       product['name']?.toString() ?? row.productName;
-
-        //   // ✅ Rate
-        //   row.rateController.text =
-        //       product['rate']?.toString() ?? row.rateController.text;
-
-        //   // ✅ COV
-        //   row.covController.text =
-        //       product['cov']?.toString() ?? row.covController.text;
-
-        //   // ✅ Batches
-        //   row.batches = List<Map<String, dynamic>>.from(
-        //     product['batches'] ?? [],
-        //   );
-
-        //   // ✅ Batch + Stock preselect
-        //   if (row.batches.isNotEmpty) {
-        //     final batch = row.batches.firstWhere(
-        //       (b) => b['batch_no'] == row.selectedBatch,
-        //       orElse: () => row.batches.first,
-        //     );
-
-        //     row.selectedBatch = batch['batch_no'];
-        //     row.stockController.text = batch['qty'].toString();
-        //   }
-
-        //   // ✅ Final amount calculate
-        //   row.updateTotal();
-        // }
-
-        setState(() {}); // UI refresh
+        setState(() {
+          _products = List<Map<String, dynamic>>.from(
+            response.data['products'] ?? [],
+          );
+          _filteredProducts = _products;
+          _productMap = {for (var p in _products) p['id'] as int: p};
+        });
       }
     } catch (e) {
-      debugPrint('Error fetching products: $e');
+      debugPrint('Product fetch error: $e');
     }
   }
 
@@ -295,13 +222,12 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
       if (query.isEmpty) {
         _filteredSuppliers = _suppliers;
       } else {
+        final lower = query.toLowerCase();
         _filteredSuppliers =
-            _suppliers.where((supplier) {
-              final name = supplier['name']?.toString().toLowerCase() ?? '';
-              final mobile = supplier['mobile']?.toString().toLowerCase() ?? '';
-              final searchLower = query.toLowerCase();
-
-              return name.contains(searchLower) || mobile.contains(searchLower);
+            _suppliers.where((s) {
+              final name = s['name']?.toString().toLowerCase() ?? '';
+              final mobile = s['mobile']?.toString().toLowerCase() ?? '';
+              return name.contains(lower) || mobile.contains(lower);
             }).toList();
       }
     });
@@ -318,31 +244,26 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
     });
   }
 
-  // Get unique sizes for a product name
+  // Helper: case‑insensitive product lookup
   List<String> _getSizesForProduct(String productName) {
-    final productsWithSameName =
-        _products.where((p) => p['name'] == productName).toList();
-    final sizes =
-        productsWithSameName.map((p) => p['size'].toString()).toSet().toList();
-    return sizes;
+    final matches =
+        _products.where((p) {
+          return (p['name'] as String?)?.trim().toLowerCase() ==
+              productName.trim().toLowerCase();
+        }).toList();
+    return matches.map((p) => p['size'].toString()).toSet().toList();
   }
 
-  // Get unique qualities for a product name and size
   List<String> _getQualitiesForProduct(String productName, String size) {
-    final productsWithSameNameAndSize =
-        _products
-            .where((p) => p['name'] == productName && p['size'] == size)
-            .toList();
-
-    final qualities =
-        productsWithSameNameAndSize
-            .map((p) => p['quality'].toString())
-            .toSet()
-            .toList();
-    return qualities;
+    final matches =
+        _products.where((p) {
+          return (p['name'] as String?)?.trim().toLowerCase() ==
+                  productName.trim().toLowerCase() &&
+              (p['size'] as String?)?.trim() == size.trim();
+        }).toList();
+    return matches.map((p) => p['quality'].toString()).toSet().toList();
   }
 
-  // Get product details for name, size, and quality
   Map<String, dynamic>? _getProductDetails(
     String productName,
     String size,
@@ -350,67 +271,52 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
   ) {
     return _products.firstWhere(
       (p) =>
-          p['name'] == productName &&
-          p['size'] == size &&
-          p['quality'] == quality,
+          (p['name'] as String?)?.trim().toLowerCase() ==
+              productName.trim().toLowerCase() &&
+          (p['size'] as String?)?.trim() == size.trim() &&
+          (p['quality'] as String?)?.trim() == quality.trim(),
       orElse: () => null,
     );
   }
 
   Future<void> _submitPurchase() async {
-    if (_selectedSupplierId == null || _productRows.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select supplier and add at least one product'),
-          backgroundColor: Colors.red,
-        ),
-      );
+    if (_selectedSupplierId == null) {
+      _showSnackBar('Please select a supplier');
+      return;
+    }
+    if (_billNoController.text.isEmpty) {
+      _showSnackBar('Please enter bill number');
+      return;
+    }
+    if (_productRows.isEmpty) {
+      _showSnackBar('Add at least one product');
       return;
     }
 
-    // Validate all product rows
     for (var row in _productRows) {
-      if (row.productName.isEmpty || row.size.isEmpty || row.quality.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please fill all product details'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      if (row.productId == null) {
+        _showSnackBar('Please select a valid product for all rows');
+        return;
+      }
+      if (row.quantityController.text.isEmpty ||
+          double.tryParse(row.quantityController.text) == 0) {
+        _showSnackBar('Quantity must be greater than 0');
         return;
       }
     }
 
-    if (_billNoController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter bill number'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-    });
+    setState(() => _isSubmitting = true);
 
     try {
-      // Format date to YYYY-MM-DD
       final dateParts = _dateController.text.split('-');
       final formattedDate = '${dateParts[2]}-${dateParts[1]}-${dateParts[0]}';
 
-      // Prepare items array
-      final List<Map<String, dynamic>> items = [];
+      List<Map<String, dynamic>> items = [];
       double subTotal = 0;
 
       for (var row in _productRows) {
-        final productDetails = _getProductDetails(
-          row.productName,
-          row.size,
-          row.quality,
-        );
-        if (productDetails == null) continue;
+        final product = _productMap[row.productId!];
+        if (product == null) continue;
 
         final rate = double.tryParse(row.rateController.text) ?? 0;
         final quantity = double.tryParse(row.quantityController.text) ?? 0;
@@ -418,13 +324,13 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
         final total = row.getTotalAmount();
 
         items.add({
-          "productId": productDetails['id'],
+          "productId": product['id'],
           "productName": row.productName,
           "size": row.size,
           "quality": row.quality,
           "rate": rate,
           "cov": row.covController.text,
-          "batches": productDetails['batches'] ?? [],
+          "batches": product['batches'] ?? [],
           "batchNo": row.selectedBatch,
           "availQty": double.tryParse(row.stockController.text) ?? 0,
           "qty": row.quantityController.text,
@@ -434,7 +340,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                   ? "0"
                   : row.discountController.text,
           "godown": row.godown,
-          "stockDiff": double.tryParse(row.quantityController.text) ?? 0,
+          "stockDiff": quantity,
         });
 
         subTotal += total;
@@ -456,47 +362,46 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              response.data['message'] ?? 'Purchase updated successfully',
-            ),
-            backgroundColor: Colors.green,
-          ),
+        _showSnackBar(
+          response.data['message'] ?? 'Purchase updated successfully',
+          isError: false,
         );
       } else {
-        throw Exception('Failed to update purchase');
+        throw Exception('Update failed');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
+      _showSnackBar('Error: $e');
     } finally {
-      setState(() {
-        _isSubmitting = false;
-      });
+      setState(() => _isSubmitting = false);
     }
   }
 
+  void _showSnackBar(String message, {bool isError = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+      ),
+    );
+  }
+
   Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
+    final picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
     );
-
     if (picked != null) {
-      setState(() {
-        _dateController.text = DateFormat('dd-MM-yyyy').format(picked);
-      });
+      setState(
+        () => _dateController.text = DateFormat('dd-MM-yyyy').format(picked),
+      );
     }
   }
 
   void _addProductRow() {
     setState(() {
       _productRows.add(ProductRow());
-      // Scroll to bottom after adding new row
       Future.delayed(const Duration(milliseconds: 100), () {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
@@ -508,9 +413,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
   }
 
   void _removeProductRow(int index) {
-    setState(() {
-      _productRows.removeAt(index);
-    });
+    setState(() => _productRows.removeAt(index));
   }
 
   @override
@@ -530,7 +433,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
       ),
       child: Column(
         children: [
-          // Header (Fixed)
+          // Header
           Container(
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
@@ -559,16 +462,13 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
             ),
           ),
 
-          // Scrollable Content Area
+          // Scrollable content
           Expanded(
             child: GestureDetector(
               onTap: () {
-                // Close all dropdowns when tapping outside
                 setState(() {
                   _showSupplierDropdown = false;
-                  for (var row in _productRows) {
-                    row.showProductDropdown = false;
-                  }
+                  for (var row in _productRows) row.showProductDropdown = false;
                 });
                 FocusScope.of(context).unfocus();
               },
@@ -593,7 +493,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Date Field
+                              // Date
                               _buildLabel('DATE'),
                               const SizedBox(height: 4),
                               GestureDetector(
@@ -644,7 +544,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
 
                               const SizedBox(height: 12),
 
-                              // Supplier Dropdown with Search
+                              // Supplier Search
                               _buildLabel('SUPPLIER'),
                               const SizedBox(height: 4),
                               Container(
@@ -675,10 +575,11 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                                                   _supplierSearchController,
                                               onChanged: _filterSuppliers,
                                               onTap:
-                                                  () => setState(() {
-                                                    _showSupplierDropdown =
-                                                        true;
-                                                  }),
+                                                  () => setState(
+                                                    () =>
+                                                        _showSupplierDropdown =
+                                                            true,
+                                                  ),
                                               decoration: const InputDecoration(
                                                 hintText: 'Search supplier...',
                                                 hintStyle: TextStyle(
@@ -707,9 +608,9 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                                         ),
                                         child: ListView.builder(
                                           itemCount: _filteredSuppliers.length,
-                                          itemBuilder: (context, index) {
+                                          itemBuilder: (context, idx) {
                                             final supplier =
-                                                _filteredSuppliers[index];
+                                                _filteredSuppliers[idx];
                                             return ListTile(
                                               title: Text(
                                                 supplier['name'] ?? '',
@@ -731,14 +632,14 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
 
                               const SizedBox(height: 12),
 
-                              // Supplier Contact (Auto-filled)
+                              // Supplier Contact
                               _buildLabel('SUPPLIER CONTACT'),
                               const SizedBox(height: 4),
                               _buildTextField(
                                 TextEditingController(
                                   text: _selectedSupplierContact ?? '',
                                 ),
-                                'Auto-filled from supplier',
+                                'Auto-filled',
                                 enabled: false,
                               ),
 
@@ -746,7 +647,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                               const Divider(),
                               const SizedBox(height: 16),
 
-                              // Product Section Header
+                              // Product Section
                               const Text(
                                 'PRODUCT DETAILS',
                                 style: TextStyle(
@@ -755,10 +656,8 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                                   color: Color(0xffFFA54A),
                                 ),
                               ),
-
                               const SizedBox(height: 16),
 
-                              // Product Rows
                               ..._productRows.asMap().entries.map((entry) {
                                 final index = entry.key;
                                 final row = entry.value;
@@ -808,7 +707,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
 
                               const SizedBox(height: 32),
 
-                              // Buttons (Always visible at bottom)
+                              // Buttons
                               Row(
                                 children: [
                                   Expanded(
@@ -881,7 +780,6 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                                   ),
                                 ],
                               ),
-
                               const SizedBox(height: 20),
                             ],
                           ),
@@ -911,7 +809,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
       ),
       child: Column(
         children: [
-          // Product Name Search
+          // Product Search
           _buildLabel('PRODUCT'),
           const SizedBox(height: 4),
           Container(
@@ -939,13 +837,13 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                               row.selectedBatch = null;
                               row.covController.clear();
                               row.rateController.clear();
+                              row.productId = null; // clear until new selection
                             });
                           },
-                          onTap: () {
-                            setState(() {
-                              row.showProductDropdown = true;
-                            });
-                          },
+                          onTap:
+                              () => setState(
+                                () => row.showProductDropdown = true,
+                              ),
                           decoration: const InputDecoration(
                             hintText: 'Search product...',
                             hintStyle: TextStyle(fontSize: 14),
@@ -971,22 +869,29 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                       itemCount:
                           _filteredProducts
                               .where(
-                                (p) => p['name']
-                                    .toString()
-                                    .toLowerCase()
-                                    .contains(row.productName.toLowerCase()),
+                                (p) =>
+                                    (p['name'] as String?)
+                                        ?.toLowerCase()
+                                        .contains(
+                                          row.productName.toLowerCase(),
+                                        ) ??
+                                    false,
                               )
                               .length,
                       itemBuilder: (context, idx) {
-                        final product =
+                        final filtered =
                             _filteredProducts
                                 .where(
-                                  (p) => p['name']
-                                      .toString()
-                                      .toLowerCase()
-                                      .contains(row.productName.toLowerCase()),
+                                  (p) =>
+                                      (p['name'] as String?)
+                                          ?.toLowerCase()
+                                          .contains(
+                                            row.productName.toLowerCase(),
+                                          ) ??
+                                      false,
                                 )
-                                .toList()[idx];
+                                .toList();
+                        final product = filtered[idx];
                         return ListTile(
                           title: Text(product['name'] ?? ''),
                           subtitle: Text(
@@ -994,13 +899,16 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                           ),
                           onTap: () {
                             setState(() {
+                              row.productId = product['id']; // set product ID
                               row.productName = product['name'];
                               row.size = product['size'].toString();
                               row.quality = product['quality'].toString();
                               row.productSearchController.text =
                                   product['name'];
-                              row.rateController.text = product['rate'] ?? '0';
-                              row.covController.text = product['cov'] ?? '0';
+                              row.rateController.text =
+                                  product['rate']?.toString() ?? '0';
+                              row.covController.text =
+                                  product['cov']?.toString() ?? '0';
                               row.batches = product['batches'] ?? [];
                               if (row.batches.isNotEmpty) {
                                 row.selectedBatch =
@@ -1046,20 +954,27 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                           value: row.size.isNotEmpty ? row.size : null,
                           hint: const Text('Select Size'),
                           items:
-                              sizes.map((size) {
-                                return DropdownMenuItem<String>(
-                                  value: size,
-                                  child: Text(size),
-                                );
-                              }).toList(),
+                              sizes
+                                  .map<DropdownMenuItem<String>>(
+                                    (s) => DropdownMenuItem<String>(
+                                      value: s,
+                                      child: Text(s),
+                                    ),
+                                  )
+                                  .toList(),
                           onChanged: (value) {
+                            if (value == null) return;
+
                             setState(() {
-                              row.size = value!;
+                              row.size = value;
                               row.quality = '';
                               row.selectedBatch = null;
+
                               row.covController.clear();
                               row.rateController.clear();
-                              row.updateTotal();
+
+                              // product may change after size change
+                              row.productId = null;
                             });
                           },
                         ),
@@ -1090,33 +1005,49 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                           value: row.quality.isNotEmpty ? row.quality : null,
                           hint: const Text('Select Quality'),
                           items:
-                              qualities.map((quality) {
-                                return DropdownMenuItem<String>(
-                                  value: quality,
-                                  child: Text(quality),
-                                );
-                              }).toList(),
+                              qualities
+                                  .map<DropdownMenuItem<String>>(
+                                    (q) => DropdownMenuItem<String>(
+                                      value: q,
+                                      child: Text(q),
+                                    ),
+                                  )
+                                  .toList(),
                           onChanged: (value) {
+                            if (value == null) return;
+
                             setState(() {
-                              row.quality = value!;
+                              row.quality = value;
+
                               final productDetails = _getProductDetails(
                                 row.productName,
                                 row.size,
                                 value,
                               );
+
                               if (productDetails != null) {
+                                /// ✅ IMPORTANT
+                                row.productId = productDetails['id'];
+
                                 row.rateController.text =
-                                    productDetails['rate'] ?? '0';
+                                    productDetails['rate']?.toString() ?? '0';
+
                                 row.covController.text =
-                                    productDetails['cov'] ?? '0';
+                                    productDetails['cov']?.toString() ?? '0';
+
                                 row.batches = productDetails['batches'] ?? [];
+
                                 if (row.batches.isNotEmpty) {
                                   row.selectedBatch =
                                       row.batches.first['batch_no'];
+
                                   row.stockController.text =
                                       row.batches.first['qty'].toString();
                                 }
+                              } else {
+                                row.productId = null;
                               }
+
                               row.updateTotal();
                             });
                           },
@@ -1168,7 +1099,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
 
           const SizedBox(height: 12),
 
-          // Batch Selection and Stock
+          // Batch and Stock
           Row(
             children: [
               Expanded(
@@ -1199,12 +1130,12 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                           onChanged: (value) {
                             setState(() {
                               row.selectedBatch = value;
-                              final selectedBatch = row.batches.firstWhere(
+                              final batch = row.batches.firstWhere(
                                 (b) => b['batch_no'] == value,
                                 orElse: () => {'qty': 0},
                               );
                               row.stockController.text =
-                                  selectedBatch['qty'].toString();
+                                  batch['qty'].toString();
                             });
                           },
                         ),
@@ -1303,11 +1234,8 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                             DropdownMenuItem(value: 'KKW', child: Text('KKW')),
                             DropdownMenuItem(value: 'TCS', child: Text('TCS')),
                           ],
-                          onChanged: (value) {
-                            setState(() {
-                              row.godown = value!;
-                            });
-                          },
+                          onChanged:
+                              (value) => setState(() => row.godown = value!),
                         ),
                       ),
                     ),
@@ -1317,7 +1245,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
             ],
           ),
 
-          // Delete button for additional rows
+          // Delete button
           if (_productRows.length > 1)
             Align(
               alignment: Alignment.centerRight,
@@ -1409,6 +1337,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
 }
 
 class ProductRow {
+  int? productId;
   String productName = '';
   String size = '';
   String quality = '';
@@ -1432,14 +1361,9 @@ class ProductRow {
       final cov = double.tryParse(covController.text) ?? 0;
       final discount = double.tryParse(discountController.text) ?? 0;
 
-      // Calculate base amount
       final baseAmount = rate * quantity;
-
-      // Add COV (assuming COV is a percentage)
       final covAmount = baseAmount * (cov / 100);
       final amountAfterCov = baseAmount + covAmount;
-
-      // Apply discount (assuming discount is a percentage)
       final discountAmount = amountAfterCov * (discount / 100);
       final finalAmount = amountAfterCov - discountAmount;
 
@@ -1449,9 +1373,7 @@ class ProductRow {
     }
   }
 
-  double getTotalAmount() {
-    return double.tryParse(amountController.text) ?? 0;
-  }
+  double getTotalAmount() => double.tryParse(amountController.text) ?? 0;
 
   void dispose() {
     productSearchController.dispose();

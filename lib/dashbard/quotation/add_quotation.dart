@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
+import 'package:tcs_invantory_managment_system/dashbard/architect_managment/add_architect.dart';
 
 class AddQuotationSheet extends StatefulWidget {
   static Future<void> show(BuildContext context) async {
@@ -62,7 +63,21 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
   final TextEditingController _billNoController = TextEditingController();
 
   // Product rows
-  List<ProductRow> _productRows = [ProductRow()];
+  List<ProductRow> _productRows = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeData();
+
+    _productRows.add(
+      ProductRow(
+        onChanged: () {
+          setState(() {}); // 👈 subtotal refresh
+        },
+      ),
+    );
+  }
 
   bool _isLoading = true;
   bool _isSubmitting = false;
@@ -71,12 +86,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
   // Scroll controller for keyboard handling
   final ScrollController _scrollController = ScrollController();
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeData();
-  }
 
   Future<void> _initializeData() async {
     try {
@@ -264,7 +273,13 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
   void _addProductRow() {
     setState(() {
-      _productRows.add(ProductRow());
+      _productRows.add(
+        ProductRow(
+          onChanged: () {
+            setState(() {});
+          },
+        ),
+      );
       // Scroll to bottom after adding new row
       Future.delayed(const Duration(milliseconds: 100), () {});
     });
@@ -909,6 +924,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                   // Select Architect and Attended By
                                   Row(
                                     children: [
+                                      // Architect Dropdown (Expanded)
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
@@ -983,7 +999,46 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                           ],
                                         ),
                                       ),
+
+                                      // + Button (Orange)
+                                      const SizedBox(width: 8),
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 20),
+                                        child: Container(
+                                          height: 40,
+                                          width: 40,
+                                          decoration: BoxDecoration(
+                                            color: Colors.orange,
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                          child: IconButton(
+                                            icon: const Icon(
+                                              Icons.add,
+                                              color: Colors.white,
+                                              size: 20,
+                                            ),
+                                            onPressed: () {
+                                              // Open Architect Management Screen
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder:
+                                                      (context) =>
+                                                          const AddArchitectScreen(),
+                                                ),
+                                              ).then((_) {
+                                                _fetchArchitects();
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ),
+
                                       const SizedBox(width: 12),
+
+                                      // Attended By Dropdown (Expanded)
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
@@ -1059,7 +1114,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                       ),
                                     ],
                                   ),
-
                                   const SizedBox(height: 20),
                                   const Divider(),
                                   const SizedBox(height: 16),
@@ -1150,6 +1204,11 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                         _buildClientTextField(
                                           _additionalDiscountController,
                                           'Enter discount percentage...',
+                                          onChanged: (_) {
+                                            setState(
+                                              () {},
+                                            ); // 👈 This will refresh totals instantly
+                                          },
                                         ),
                                         const SizedBox(height: 8),
                                         Text(
@@ -1442,6 +1501,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     TextEditingController controller,
     String hintText, {
     int maxLines = 1,
+    void Function(String)? onChanged,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1459,6 +1519,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
           border: InputBorder.none,
           isDense: true,
         ),
+        onChanged: onChanged,
       ),
     );
   }
@@ -1744,6 +1805,9 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                     _buildTextField(
                       row.rateController,
                       '0',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       onChanged: (_) => row.updateTotal(),
                     ),
                   ],
@@ -1760,6 +1824,9 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                     _buildTextField(
                       row.covController,
                       '0',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       onChanged: (_) => row.updateTotal(),
                     ),
                   ],
@@ -2008,6 +2075,10 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 }
 
 class ProductRow {
+  final VoidCallback? onChanged; // 👈 ADD THIS
+
+  ProductRow({this.onChanged});
+
   String productName = '';
   String size = '';
   String quality = '';
@@ -2015,7 +2086,6 @@ class ProductRow {
   bool showProductDropdown = false;
   int? productId;
 
-  // Store the full product details when selected
   Map<String, dynamic>? selectedProductDetails;
 
   final TextEditingController productSearchController = TextEditingController();
@@ -2033,15 +2103,15 @@ class ProductRow {
       final weight = double.tryParse(weightController.text) ?? 0;
       final quantity = double.tryParse(quantityController.text) ?? 0;
 
-      // Calculate TWGT: Weight * Quantity
       final twgt = weight * quantity;
       twgtController.text = twgt.toStringAsFixed(2);
 
-      // Update total amount
       updateTotal();
+      onChanged?.call(); // 👈 IMPORTANT
     } catch (e) {
       twgtController.text = '0';
       amountController.text = '0';
+      onChanged?.call();
     }
   }
 
@@ -2052,16 +2122,15 @@ class ProductRow {
       final cov = double.tryParse(covController.text) ?? 0;
       final discount = double.tryParse(discountController.text) ?? 0;
 
-      // Apply discount to rate first
       final discountedRate = rate * (1 - discount / 100);
-      // Then calculate base amount with quantity
       final baseAmount = discountedRate * quantity;
-      // Finally apply COV factor
       final finalAmount = baseAmount * cov;
 
       amountController.text = finalAmount.toStringAsFixed(2);
+      onChanged?.call(); // 👈 IMPORTANT
     } catch (e) {
       amountController.text = '0';
+      onChanged?.call();
     }
   }
 

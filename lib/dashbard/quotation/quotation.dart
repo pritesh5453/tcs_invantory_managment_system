@@ -62,6 +62,9 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
   String searchQuery = '';
   String projectNameQuery = '';
 
+  // Priority filter
+  int? _selectedPriority; // null = all priorities
+
   final ScrollController _scrollController = ScrollController();
   Timer? _searchTimer;
   bool _isDownloadingPdf = false;
@@ -69,7 +72,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
   @override
   void initState() {
     super.initState();
-    _loadUserData(); // Load user data first, then quotations
+    _loadUserData();
     _scrollController.addListener(_scrollListener);
   }
 
@@ -90,20 +93,17 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
       _userId = prefs.getInt('userId');
       _userDataLoaded = true;
     });
-    // Now load the quotations
     _loadAllQuotations();
   }
 
   bool _isEmployee() => _userRole == 'employee';
   int _getEmployeeId() => _userId ?? 0;
 
-  /// Loads the appropriate tab data when tab changes
   void _onTabSelected(String tab) {
     if (_selectedTab == tab) return;
     setState(() {
       _selectedTab = tab;
     });
-    // If the selected tab's list is empty, trigger loading
     if (tab == "All" && _allQuotations.isEmpty) {
       _loadAllQuotations();
     } else if (tab == "My" && _myQuotations.isEmpty) {
@@ -111,7 +111,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
-  /// Fetch All Quotations (existing API)
+  /// Fetch All Quotations
   Future<void> _loadAllQuotations({bool isLoadMore = false}) async {
     if (!isLoadMore) {
       setState(() {
@@ -133,6 +133,8 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
       if (searchQuery.isNotEmpty) queryParams['search'] = searchQuery;
       if (projectNameQuery.isNotEmpty)
         queryParams['projectName'] = projectNameQuery;
+      if (_selectedPriority != null)
+        queryParams['priority'] = _selectedPriority;
 
       final response = await dio.get(
         "/Quotation/list",
@@ -169,7 +171,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
-  /// Fetch My Quotations (new API with employeeId)
+  /// Fetch My Quotations
   Future<void> _loadMyQuotations({bool isLoadMore = false}) async {
     if (!isLoadMore) {
       setState(() {
@@ -192,6 +194,8 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
       if (searchQuery.isNotEmpty) queryParams['search'] = searchQuery;
       if (projectNameQuery.isNotEmpty)
         queryParams['projectName'] = projectNameQuery;
+      if (_selectedPriority != null)
+        queryParams['priority'] = _selectedPriority;
 
       final response = await dio.get(
         "/Quotation/Quatation",
@@ -228,7 +232,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
-  /// Unified fetch based on current tab (used by search/pagination)
   void _fetchCurrentTab({bool isLoadMore = false}) {
     if (_selectedTab == "All") {
       _loadAllQuotations(isLoadMore: isLoadMore);
@@ -237,7 +240,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
-  /// Scroll listener for pagination
   void _scrollListener() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 100) {
@@ -266,7 +268,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
-  /// Edit quotation
   Future<void> _openEditQuotation(int quotationId) async {
     try {
       debugPrint("Fetching quotation details for ID: $quotationId");
@@ -292,7 +293,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
-  /// Download PDF
   Future<void> _downloadAndOpenPdf(String pdfType, int quotationId) async {
     try {
       setState(() => _isDownloadingPdf = true);
@@ -339,14 +339,12 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
-  /// Search handlers
   void _onSearchChanged(String query) {
     _searchTimer?.cancel();
     setState(() {
       searchQuery = query;
     });
     _searchTimer = Timer(const Duration(milliseconds: 500), () {
-      // Reset to first page and reload current tab
       if (_selectedTab == "All") {
         _allCurrentPage = 1;
         _loadAllQuotations();
@@ -373,14 +371,28 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     });
   }
 
+  void _onPriorityChanged(int? priority) {
+    setState(() {
+      _selectedPriority = priority;
+    });
+    // Reset pagination and reload current tab
+    if (_selectedTab == "All") {
+      _allCurrentPage = 1;
+      _loadAllQuotations();
+    } else {
+      _myCurrentPage = 1;
+      _loadMyQuotations();
+    }
+  }
+
   void _clearSearch() {
     _searchController.clear();
     _projectNameController.clear();
     setState(() {
       searchQuery = '';
       projectNameQuery = '';
+      _selectedPriority = null;
     });
-    // Refresh current tab
     if (_selectedTab == "All") {
       _allCurrentPage = 1;
       _loadAllQuotations();
@@ -401,7 +413,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
   }
 
   Future<void> _refreshQuotations() async {
-    // Refresh current tab
     if (_selectedTab == "All") {
       _allCurrentPage = 1;
       await _loadAllQuotations();
@@ -411,10 +422,86 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
+  // ================= DELETE QUOTATION =================
+  Future<void> _deleteQuotation(int quotationId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Delete Quotation'),
+            content: Text(
+              'Are you sure you want to delete quotation #$quotationId? This action cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final response = await dio.delete("/Quotation/delete/$quotationId");
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data['success'] == true) {
+          _showSnackbar('Quotation deleted successfully!', isError: false);
+          await _refreshQuotations();
+        } else {
+          _showSnackbar(
+            data['message'] ?? 'Failed to delete quotation',
+            isError: true,
+          );
+        }
+      } else {
+        _showSnackbar('Server error (${response.statusCode})', isError: true);
+      }
+    } on DioException catch (e) {
+      debugPrint("Delete DioException: $e");
+      if (e.response != null) {
+        // Server responded with error status
+        final statusCode = e.response?.statusCode;
+        final data = e.response?.data;
+        String errorMsg = 'Server error';
+        if (statusCode == 500) {
+          errorMsg =
+              'Server error (500). Please try again later or contact support.';
+        } else if (data != null && data['message'] != null) {
+          errorMsg = data['message'];
+        } else {
+          errorMsg = 'Error ${statusCode ?? ''}';
+        }
+        _showSnackbar(errorMsg, isError: true);
+      } else if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        _showSnackbar(
+          'Connection timeout. Please check your internet.',
+          isError: true,
+        );
+      } else if (e.type == DioExceptionType.connectionError) {
+        _showSnackbar('No internet connection.', isError: true);
+      } else {
+        _showSnackbar('Network error: $e', isError: true);
+      }
+    } catch (e) {
+      debugPrint("Delete error: $e");
+      _showSnackbar('Unexpected error: $e', isError: true);
+    }
+  }
+
   // ================= UI BUILD =================
   @override
   Widget build(BuildContext context) {
-    // Wait for user data to load
     if (!_userDataLoaded) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -444,7 +531,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                   children: [
                     _buildHeader(),
 
-                    // Tabs (only if employee)
                     if (isEmployee) ...[
                       const SizedBox(height: 16),
                       _buildTabs(),
@@ -452,7 +538,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
 
                     const SizedBox(height: 20),
 
-                    // Content based on selected tab
                     if (_selectedTab == "All")
                       _buildAllQuotationsList()
                     else
@@ -540,7 +625,6 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     );
   }
 
-  // ================= PAYMENT HISTORY DIALOG HELPER =================
   void _showPaymentHistory(int quotationId) {
     showDialog(
       context: context,
@@ -631,7 +715,8 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                       (pdfType) =>
                           _downloadAndOpenPdf(pdfType, entry.value['id']),
                   onPaymentHistory:
-                      () => _showPaymentHistory(entry.value['id']), // 👈 new
+                      () => _showPaymentHistory(entry.value['id']),
+                  onDelete: _deleteQuotation, // 👈 added delete callback
                 ),
               )
               .toList(),
@@ -742,7 +827,8 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                       (pdfType) =>
                           _downloadAndOpenPdf(pdfType, entry.value['id']),
                   onPaymentHistory:
-                      () => _showPaymentHistory(entry.value['id']), // 👈 new
+                      () => _showPaymentHistory(entry.value['id']),
+                  onDelete: _deleteQuotation, // 👈 added delete callback
                 ),
               )
               .toList(),
@@ -767,6 +853,28 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
   }
 
   Widget _buildEmptyState() {
+    String filterDesc = '';
+    if (searchQuery.isNotEmpty) filterDesc += "'$searchQuery'";
+    if (projectNameQuery.isNotEmpty) {
+      filterDesc +=
+          filterDesc.isEmpty
+              ? "'$projectNameQuery'"
+              : " in project '$projectNameQuery'";
+    }
+    if (_selectedPriority != null) {
+      String priorityText = '';
+      if (_selectedPriority == 1)
+        priorityText = 'Low';
+      else if (_selectedPriority == 2)
+        priorityText = 'Medium';
+      else if (_selectedPriority == 3)
+        priorityText = 'Urgent';
+      filterDesc +=
+          filterDesc.isEmpty
+              ? 'priority: $priorityText'
+              : ', priority: $priorityText';
+    }
+
     return Container(
       height: MediaQuery.of(context).size.height * 0.6,
       child: Center(
@@ -774,7 +882,9 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              searchQuery.isEmpty && projectNameQuery.isEmpty
+              searchQuery.isEmpty &&
+                      projectNameQuery.isEmpty &&
+                      _selectedPriority == null
                   ? Icons.receipt_long_outlined
                   : Icons.search_off,
               size: 60,
@@ -782,12 +892,15 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
             ),
             const SizedBox(height: 16),
             Text(
-              searchQuery.isEmpty && projectNameQuery.isEmpty
+              filterDesc.isEmpty
                   ? "No quotations found"
-                  : "No results for '$searchQuery'${projectNameQuery.isNotEmpty ? " in project '$projectNameQuery'" : ""}",
+                  : "No results for $filterDesc",
               style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
             ),
-            if (searchQuery.isEmpty && projectNameQuery.isEmpty)
+            if (searchQuery.isEmpty &&
+                projectNameQuery.isEmpty &&
+                _selectedPriority == null)
               TextButton.icon(
                 onPressed: _refreshQuotations,
                 icon: const Icon(Icons.refresh),
@@ -817,6 +930,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // First row: search + add button
           Row(
             children: [
               Expanded(
@@ -844,7 +958,9 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                           ),
                         ),
                       ),
-                      if (searchQuery.isNotEmpty || projectNameQuery.isNotEmpty)
+                      if (searchQuery.isNotEmpty ||
+                          projectNameQuery.isNotEmpty ||
+                          _selectedPriority != null)
                         IconButton(
                           icon: const Icon(Icons.close, size: 18),
                           onPressed: _clearSearch,
@@ -880,32 +996,94 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
             ],
           ),
           const SizedBox(height: 12),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: Row(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.only(left: 12),
-                  child: Icon(Icons.folder, color: Colors.grey),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _projectNameController,
-                    onChanged: _onProjectNameChanged,
-                    decoration: const InputDecoration(
-                      hintText: "Filter by project name...",
-                      hintStyle: TextStyle(color: Colors.grey),
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(vertical: 12),
-                    ),
+          // Second row: project name filter + priority dropdown side by side
+          Row(
+            children: [
+              // Project name filter (slightly smaller)
+              Expanded(
+                flex: 3,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: Row(
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(left: 12),
+                        child: Icon(Icons.folder, color: Colors.grey),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _projectNameController,
+                          onChanged: _onProjectNameChanged,
+                          decoration: const InputDecoration(
+                            hintText: "Project name...",
+                            hintStyle: TextStyle(color: Colors.grey),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              // Priority dropdown (takes remaining space)
+              Expanded(
+                flex: 2,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: Row(
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(left: 12),
+                        child: Icon(Icons.priority_high, color: Colors.grey),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<int?>(
+                            value: _selectedPriority,
+                            hint: const Text(
+                              "Priority",
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                            icon: const Icon(Icons.arrow_drop_down),
+                            isExpanded: true,
+                            items: [
+                              const DropdownMenuItem<int?>(
+                                value: null,
+                                child: Text("All"),
+                              ),
+                              const DropdownMenuItem<int?>(
+                                value: 1,
+                                child: Text("Low"),
+                              ),
+                              const DropdownMenuItem<int?>(
+                                value: 2,
+                                child: Text("Medium"),
+                              ),
+                              const DropdownMenuItem<int?>(
+                                value: 3,
+                                child: Text("Urgent"),
+                              ),
+                            ],
+                            onChanged: _onPriorityChanged,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8), // for spacing
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -913,7 +1091,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
   }
 }
 
-// ================= INVOICE CARD WIDGET (with Payment History) =================
+// ================= INVOICE CARD WIDGET =================
 class InvoiceCard extends StatelessWidget {
   final Map<String, dynamic> quotation;
   final VoidCallback onEdit;
@@ -921,7 +1099,8 @@ class InvoiceCard extends StatelessWidget {
   final VoidCallback onDispatch;
   final VoidCallback? onFollowUp;
   final Function(String) onDownloadPdf;
-  final VoidCallback? onPaymentHistory; // 👈 new callback
+  final VoidCallback? onPaymentHistory;
+  final Function(int quotationId) onDelete; // 👈 new callback
 
   const InvoiceCard({
     super.key,
@@ -931,7 +1110,8 @@ class InvoiceCard extends StatelessWidget {
     required this.onDispatch,
     this.onFollowUp,
     required this.onDownloadPdf,
-    this.onPaymentHistory, // 👈 new
+    this.onPaymentHistory,
+    required this.onDelete, // 👈 required
   });
 
   String _formatDate(String dateString) {
@@ -971,7 +1151,7 @@ class InvoiceCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
-        type[0].toUpperCase() + type.substring(1), // Capitalize first letter
+        type[0].toUpperCase() + type.substring(1),
         style: TextStyle(
           color: isFinal ? const Color(0xFF2E7D32) : const Color(0xFFF57C00),
           fontWeight: FontWeight.w600,
@@ -1118,8 +1298,10 @@ class InvoiceCard extends StatelessWidget {
                   } else if (value == "Name") {
                     onDownloadPdf("Name");
                   } else if (value == "payment_history") {
-                    // 👈 new case
                     onPaymentHistory?.call();
+                  } else if (value == "delete") {
+                    // 👈 new case
+                    onDelete(quotation['id']);
                   }
                 },
                 itemBuilder:
@@ -1165,13 +1347,22 @@ class InvoiceCard extends StatelessWidget {
                         ),
                       ),
                       const PopupMenuItem(
-                        // 👈 new menu item
                         value: "payment_history",
                         child: Row(
                           children: [
                             Icon(Icons.history, size: 18),
                             SizedBox(width: 8),
                             Text("Payment History"),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: "delete", // 👈 new delete option
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, size: 18, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text("Delete", style: TextStyle(color: Colors.red)),
                           ],
                         ),
                       ),
@@ -1240,7 +1431,7 @@ class InvoiceCard extends StatelessWidget {
   }
 }
 
-/// ================= PAYMENT HISTORY DIALOG =================
+// ================= PAYMENT HISTORY DIALOG =================
 class PaymentHistoryDialog extends StatefulWidget {
   final int quotationId;
   const PaymentHistoryDialog({super.key, required this.quotationId});

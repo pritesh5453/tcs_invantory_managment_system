@@ -231,6 +231,8 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
 
   int page = 1;
   String searchQuery = '';
+  bool _lowStockFilter = false; // 👈 new low stock toggle
+
   List<Product> products = [];
 
   @override
@@ -303,6 +305,9 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
       if (searchQuery.isNotEmpty) {
         queryParams["search"] = searchQuery;
       }
+      if (_lowStockFilter) {
+        queryParams["lowStock"] = true; // 👈 low stock parameter
+      }
 
       print('Fetching products with query: $queryParams');
 
@@ -361,6 +366,29 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     fetchProducts();
   }
 
+  /// ================= LOW STOCK TOGGLE =================
+  void _toggleLowStock() {
+    setState(() {
+      _lowStockFilter = !_lowStockFilter;
+      page = 1;
+      hasMore = true;
+      products.clear();
+    });
+    fetchProducts();
+  }
+
+  /// ================= CLEAR FILTERS =================
+  void _clearFilters() {
+    setState(() {
+      searchQuery = '';
+      _lowStockFilter = false;
+      page = 1;
+      hasMore = true;
+      products.clear();
+    });
+    fetchProducts();
+  }
+
   /// ================= DELETE PRODUCT =================
   Future<void> deleteProduct(int productId) async {
     try {
@@ -382,11 +410,21 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
       }
     } catch (e) {
       debugPrint("DELETE ERROR: $e");
+
+      String errorMessage = "Delete failed";
+
+      if (e is DioException) {
+        final response = e.response;
+
+        if (response != null &&
+            response.data != null &&
+            response.data['message'] != null) {
+          errorMessage = response.data['message'];
+        }
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Delete failed"),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
       );
     }
   }
@@ -438,7 +476,7 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              /// TOP BAR WITH SEARCH
+              /// TOP BAR WITH SEARCH, LOW STOCK BUTTON & ADD BUTTON
               Container(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
                 decoration: const BoxDecoration(
@@ -448,48 +486,120 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
                     bottomRight: Radius.circular(26),
                   ),
                 ),
-                child: Row(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: ProductSearchBarWidget(
-                        onSearchChanged: onSearchChanged,
-                        initialValue: searchQuery,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    InkWell(
-                      onTap:
-                          canAddProduct
-                              ? () {
-                                showModalBottomSheet(
-                                  context: context,
-                                  isScrollControlled: true,
-                                  builder: (_) => const AddProductSheet(),
-                                );
-                              }
-                              : () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      "You don't have permission to add product.",
-                                    ),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              },
-                      child: Opacity(
-                        opacity: canAddProduct ? 1 : 0.4,
-                        child: Container(
-                          height: 42,
-                          width: 42,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white),
-                            borderRadius: BorderRadius.circular(12),
+                    Row(
+                      children: [
+                        // Search bar (flex 2)
+                        Expanded(
+                          flex: 2,
+                          child: ProductSearchBarWidget(
+                            onSearchChanged: onSearchChanged,
+                            initialValue: searchQuery,
                           ),
-                          child: const Icon(Icons.add, color: Colors.white),
+                        ),
+                        const SizedBox(width: 8),
+                        // Low Stock toggle button (fixed width)
+                        InkWell(
+                          onTap: _toggleLowStock,
+                          borderRadius: BorderRadius.circular(24),
+                          child: Container(
+                            height: 42,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color:
+                                  _lowStockFilter
+                                      ? const Color(
+                                        0xFFFFA54A,
+                                      ) // orange when active
+                                      : Colors.white,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color:
+                                    _lowStockFilter
+                                        ? Colors.transparent
+                                        : Colors.grey.shade300,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.inventory,
+                                  size: 18,
+                                  color:
+                                      _lowStockFilter
+                                          ? Colors.white
+                                          : Colors.grey,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  "Low Stock",
+                                  style: TextStyle(
+                                    color:
+                                        _lowStockFilter
+                                            ? Colors.white
+                                            : Colors.grey.shade700,
+                                    fontWeight:
+                                        _lowStockFilter
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Add button
+                        InkWell(
+                          onTap:
+                              canAddProduct
+                                  ? () {
+                                    showModalBottomSheet(
+                                      context: context,
+                                      isScrollControlled: true,
+                                      builder: (_) => const AddProductSheet(),
+                                    );
+                                  }
+                                  : () {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          "You don't have permission to add product.",
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  },
+                          child: Opacity(
+                            opacity: canAddProduct ? 1 : 0.4,
+                            child: Container(
+                              height: 42,
+                              width: 42,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.white),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.add, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Clear filters button (if any filter active)
+                    if (searchQuery.isNotEmpty || _lowStockFilter)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _clearFilters,
+                          icon: const Icon(Icons.clear, color: Colors.white),
+                          label: const Text(
+                            "Clear Filters",
+                            style: TextStyle(color: Colors.white),
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -570,7 +680,14 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
   }
 
   Widget _buildEmptyState() {
-    if (searchQuery.isNotEmpty) {
+    // Build filter description
+    List<String> filters = [];
+    if (searchQuery.isNotEmpty) filters.add("'$searchQuery'");
+    if (_lowStockFilter) filters.add("low stock");
+
+    String filterDesc = filters.join(', ');
+
+    if (filterDesc.isNotEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -578,12 +695,13 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
             Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
-              "No products found for '$searchQuery'",
+              "No products found for $filterDesc",
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              "Try searching with different keywords",
+              "Try adjusting filters",
               style: TextStyle(fontSize: 14, color: Colors.grey[500]),
             ),
           ],

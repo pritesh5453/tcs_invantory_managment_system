@@ -10,155 +10,196 @@ class AddOrderScreen extends StatefulWidget {
 }
 
 class _AddOrderScreenState extends State<AddOrderScreen> {
-  /// ================= CONTROLLERS =================
-  final TextEditingController productController = TextEditingController();
-  final TextEditingController brandController = TextEditingController();
-  final TextEditingController sizeController = TextEditingController();
-  final TextEditingController qualityController = TextEditingController();
-  final TextEditingController quantityController = TextEditingController();
-  final TextEditingController dateController = TextEditingController();
+  final Dio dio = Dio();
+
+  /// Controllers
+  final productCtrl = TextEditingController();
+  final quantityCtrl = TextEditingController();
+  final dateCtrl = TextEditingController();
+
+  /// Product Data
+  List products = [];
+  List filteredProducts = [];
+
+  bool showDropdown = false;
+  Timer? debounce;
+
+  /// Selected Values
+  String productName = "";
+  String selectedSize = "";
+  String selectedQuality = "";
+  String selectedBrand = "";
 
   DateTime? selectedDate;
-  bool isLoading = false;
 
-  /// ================= PRODUCT SEARCH =================
-  final Dio _dio = Dio();
-  List<dynamic> _products = [];
-  List<dynamic> _filteredProducts = [];
-  bool _showProductDropdown = false;
-  Timer? _productSearchDebounce;
-
-  /// ================= DATE PICKER =================
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-    );
-
-    if (picked != null) {
-      selectedDate = picked;
-      dateController.text =
-          "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
-      setState(() {});
-    }
-  }
+  bool loading = false;
 
   /// ================= FETCH PRODUCTS =================
-  Future<void> _fetchProducts(String search) async {
+  Future<void> fetchProducts(String search) async {
     if (search.trim().isEmpty) {
       setState(() {
-        _filteredProducts = [];
-        _showProductDropdown = false;
+        showDropdown = false;
       });
       return;
     }
 
     try {
-      final response = await _dio.get(
-        'https://dashboard.theceramicstudio.in/api/product/list',
-        queryParameters: {'search': search},
+      final res = await dio.get(
+        "https://dashboard.theceramicstudio.in/api/product/list",
+        queryParameters: {"search": search},
       );
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
+      if (res.data["success"] == true) {
+        products = res.data["products"];
+
         setState(() {
-          _products = response.data['products'];
-          // Filter locally by name (API already searches, but we keep it)
-          _filteredProducts =
-              _products
-                  .where(
-                    (p) => p['name'].toString().toLowerCase().contains(
-                      search.toLowerCase(),
-                    ),
-                  )
-                  .toList();
-          _showProductDropdown = _filteredProducts.isNotEmpty;
+          filteredProducts = products;
+          showDropdown = true;
         });
-      } else {
-        _filteredProducts = [];
-        _showProductDropdown = false;
       }
     } catch (e) {
-      debugPrint('Product search error: $e');
-      _filteredProducts = [];
-      _showProductDropdown = false;
+      debugPrint("Product fetch error $e");
     }
   }
 
-  /// ================= CREATE ORDER API =================
-  Future<void> _createOrder() async {
-    if (productController.text.isEmpty ||
-        brandController.text.isEmpty ||
-        sizeController.text.isEmpty ||
-        qualityController.text.isEmpty ||
-        quantityController.text.isEmpty ||
-        selectedDate == null) {
+  /// ================= DROPDOWN DATA =================
+
+  List<String> getSizes() {
+    return products
+        .where((p) => p["name"] == productName)
+        .map((e) => e["size"].toString())
+        .toSet()
+        .toList();
+  }
+
+  List<String> getQualities() {
+    return products
+        .where(
+          (p) =>
+              p["name"] == productName && p["size"].toString() == selectedSize,
+        )
+        .map((e) => e["quality"].toString())
+        .toSet()
+        .toList();
+  }
+
+  List<String> getBrands() {
+    return products
+        .where(
+          (p) =>
+              p["name"] == productName &&
+              p["size"].toString() == selectedSize &&
+              p["quality"].toString() == selectedQuality,
+        )
+        .map((e) => e["brand"].toString())
+        .toSet()
+        .toList();
+  }
+
+  /// ================= DATE =================
+
+  Future pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2030),
+    );
+
+    if (picked != null) {
+      selectedDate = picked;
+
+      dateCtrl.text =
+          "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+
+      setState(() {});
+    }
+  }
+
+  /// ================= CREATE ORDER =================
+
+  Future createOrder() async {
+    if (productName.isEmpty ||
+        selectedSize.isEmpty ||
+        selectedQuality.isEmpty ||
+        selectedBrand.isEmpty ||
+        quantityCtrl.text.isEmpty ||
+        dateCtrl.text.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
+      ).showSnackBar(const SnackBar(content: Text("Fill all fields")));
       return;
     }
 
-    setState(() => isLoading = true);
+    setState(() => loading = true);
 
     try {
-      await Dio().post(
+      await dio.post(
         "https://dashboard.theceramicstudio.in/api/orderBook/create",
         data: {
-          "name": productController.text.trim(),
-          "size": sizeController.text.trim(),
-          "quality": qualityController.text.trim(),
-          "date": dateController.text.trim(),
-          "quantity": quantityController.text.trim(),
-          "brand": brandController.text.trim(), // brand name
+          "name": productName,
+          "size": selectedSize,
+          "quality": selectedQuality,
+          "brand": selectedBrand,
+          "date": dateCtrl.text,
+          "quantity": quantityCtrl.text,
         },
       );
 
       if (!mounted) return;
 
+      Navigator.pop(context, true);
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Order created successfully"),
+          content: Text("Order Created Successfully"),
           backgroundColor: Colors.green,
         ),
       );
-
-      Navigator.pop(context, true); // refresh list
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Failed to create order"),
+          content: Text("Order Failed"),
           backgroundColor: Colors.red,
         ),
       );
-    } finally {
-      setState(() => isLoading = false);
     }
+
+    setState(() => loading = false);
   }
 
   /// ================= UI =================
+
   @override
   Widget build(BuildContext context) {
+    final sizes = getSizes();
+    final qualities = getQualities();
+    final brands = getBrands();
+
     return Scaffold(
       backgroundColor: const Color(0xffF6F6F6),
+
       body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 150),
+            const SizedBox(height: 120),
 
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
+
                 child: Container(
                   padding: const EdgeInsets.all(16),
+
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: Colors.grey.shade300),
                   ),
+
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+
                     children: [
                       /// HEADER
                       Row(
@@ -171,6 +212,7 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
+
                           GestureDetector(
                             onTap: () => Navigator.pop(context),
                             child: const Icon(Icons.close, color: Colors.red),
@@ -180,14 +222,15 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
 
                       const SizedBox(height: 16),
 
-                      /// PRODUCT SEARCH FIELD (with dropdown)
-                      _label("Product Name"),
-                      const SizedBox(height: 4),
+                      /// PRODUCT SEARCH
+                      _label("Product"),
+
                       Container(
                         decoration: BoxDecoration(
                           border: Border.all(color: Colors.grey.shade300),
                           borderRadius: BorderRadius.circular(12),
                         ),
+
                         child: Column(
                           children: [
                             Padding(
@@ -201,33 +244,22 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                                     size: 18,
                                     color: Colors.grey,
                                   ),
+
                                   const SizedBox(width: 8),
+
                                   Expanded(
                                     child: TextField(
-                                      controller: productController,
-                                      onChanged: (value) {
-                                        // Clear dependent fields when search changes
-                                        brandController.clear();
-                                        sizeController.clear();
-                                        qualityController.clear();
+                                      controller: productCtrl,
 
-                                        if (_productSearchDebounce?.isActive ??
-                                            false) {
-                                          _productSearchDebounce!.cancel();
-                                        }
+                                      onChanged: (v) {
+                                        debounce?.cancel();
 
-                                        _productSearchDebounce = Timer(
+                                        debounce = Timer(
                                           const Duration(milliseconds: 400),
-                                          () => _fetchProducts(value),
+                                          () => fetchProducts(v),
                                         );
                                       },
-                                      onTap: () {
-                                        if (productController.text.isNotEmpty) {
-                                          _fetchProducts(
-                                            productController.text,
-                                          );
-                                        }
-                                      },
+
                                       decoration: const InputDecoration(
                                         hintText: "Search product...",
                                         border: InputBorder.none,
@@ -238,8 +270,8 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                                 ],
                               ),
                             ),
-                            if (_showProductDropdown &&
-                                _filteredProducts.isNotEmpty)
+
+                            if (showDropdown)
                               Container(
                                 height: 200,
                                 decoration: BoxDecoration(
@@ -248,32 +280,35 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                                       color: Colors.grey.shade200,
                                     ),
                                   ),
-                                  borderRadius: const BorderRadius.only(
-                                    bottomLeft: Radius.circular(12),
-                                    bottomRight: Radius.circular(12),
-                                  ),
                                 ),
+
                                 child: ListView.builder(
-                                  itemCount: _filteredProducts.length,
-                                  itemBuilder: (context, index) {
-                                    final product = _filteredProducts[index];
+                                  itemCount: filteredProducts.length,
+                                  itemBuilder: (c, i) {
+                                    final p = filteredProducts[i];
+
                                     return ListTile(
-                                      title: Text(product['name'] ?? ''),
+                                      title: Text(p["name"]),
+
                                       subtitle: Text(
-                                        'Size: ${product['size']} | Quality: ${product['quality']} | Brand: ${product['brand']}',
+                                        "${p["size"]} | ${p["quality"]} | ${p["brand"]}",
                                       ),
+
                                       onTap: () {
                                         setState(() {
-                                          productController.text =
-                                              product['name'] ?? '';
-                                          brandController.text =
-                                              product['brand'] ?? '';
-                                          sizeController.text =
-                                              product['size']?.toString() ?? '';
-                                          qualityController.text =
-                                              product['quality']?.toString() ??
-                                              '';
-                                          _showProductDropdown = false;
+                                          productName = p["name"];
+
+                                          selectedSize = p["size"].toString();
+
+                                          selectedQuality =
+                                              p["quality"].toString();
+
+                                          selectedBrand = p["brand"].toString();
+
+                                          productCtrl.text = productName;
+
+                                          showDropdown = false;
+
                                           FocusScope.of(context).unfocus();
                                         });
                                       },
@@ -285,57 +320,59 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                         ),
                       ),
 
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
 
-                      /// BRAND NAME
-                      _label("Brand Name"),
-                      const SizedBox(height: 4),
-                      TextField(
-                        controller: brandController,
-                        readOnly: true,
-                        decoration: _decoration("Brand"),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      /// SIZE + QUALITY (read-only)
                       Row(
                         children: [
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _label("Size"),
-                                const SizedBox(height: 4),
-                                TextField(
-                                  controller: sizeController,
-                                  readOnly: true,
-                                  decoration: _decoration("Eg. 1200x1800"),
-                                ),
-                              ],
+                            child: _dropdownBox(
+                              "Size",
+                              sizes,
+                              sizes.contains(selectedSize)
+                                  ? selectedSize
+                                  : null,
+                              (v) {
+                                selectedSize = v!;
+                                selectedQuality = "";
+                                selectedBrand = "";
+                                setState(() {});
+                              },
                             ),
                           ),
+
                           const SizedBox(width: 12),
+
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _label("Quality"),
-                                const SizedBox(height: 4),
-                                TextField(
-                                  controller: qualityController,
-                                  readOnly: true,
-                                  decoration: _decoration("PREMIUM"),
-                                ),
-                              ],
+                            child: _dropdownBox(
+                              "Quality",
+                              qualities,
+                              qualities.contains(selectedQuality)
+                                  ? selectedQuality
+                                  : null,
+                              (v) {
+                                selectedQuality = v!;
+                                selectedBrand = "";
+                                setState(() {});
+                              },
                             ),
                           ),
                         ],
                       ),
 
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
 
-                      /// DATE + QUANTITY
+                      _dropdownBox(
+                        "Brand",
+                        brands,
+                        brands.contains(selectedBrand) ? selectedBrand : null,
+                        (v) {
+                          selectedBrand = v!;
+                          setState(() {});
+                        },
+                      ),
+
+                      const SizedBox(height: 14),
+
                       Row(
                         children: [
                           Expanded(
@@ -343,28 +380,32 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _label("Order Date"),
+
                                 TextField(
-                                  controller: dateController,
+                                  controller: dateCtrl,
                                   readOnly: true,
-                                  onTap: _pickDate,
+                                  onTap: pickDate,
                                   decoration: _decoration(
                                     "YYYY-MM-DD",
-                                    icon: Icons.calendar_month,
+                                    Icons.calendar_month,
                                   ),
                                 ),
                               ],
                             ),
                           ),
+
                           const SizedBox(width: 12),
+
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _label("Quantity"),
+
                                 TextField(
-                                  controller: quantityController,
+                                  controller: quantityCtrl,
                                   keyboardType: TextInputType.number,
-                                  decoration: _decoration("Eg. 1"),
+                                  decoration: _decoration("Eg.100"),
                                 ),
                               ],
                             ),
@@ -372,44 +413,37 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                         ],
                       ),
 
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 24),
 
-                      /// BUTTONS
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text("Discard"),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xffFFA54A),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: isLoading ? null : _createOrder,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFFFA54A),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                              ),
-                              child:
-                                  isLoading
-                                      ? const SizedBox(
-                                        height: 18,
-                                        width: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                      : const Text(
-                                        "Add Order",
-                                        style: TextStyle(color: Colors.white),
-                                      ),
-                            ),
-                          ),
-                        ],
+
+                          onPressed: loading ? null : createOrder,
+
+                          child:
+                              loading
+                                  ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                  : const Text(
+                                    "Add Order",
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                        ),
                       ),
                     ],
                   ),
@@ -423,6 +457,7 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
   }
 
   /// ================= HELPERS =================
+
   Widget _label(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
     child: Text(
@@ -431,7 +466,7 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
     ),
   );
 
-  InputDecoration _decoration(String hint, {IconData? icon}) {
+  InputDecoration _decoration(String hint, [IconData? icon]) {
     return InputDecoration(
       hintText: hint,
       suffixIcon: icon != null ? Icon(icon) : null,
@@ -440,15 +475,48 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
     );
   }
 
+  Widget _dropdownBox(
+    String label,
+    List<String> items,
+    String? value,
+    Function(String?) onChanged,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label(label),
+
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(12),
+          ),
+
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: value,
+              hint: Text("Select $label"),
+              items:
+                  items
+                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                      .toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   void dispose() {
-    _productSearchDebounce?.cancel();
-    productController.dispose();
-    brandController.dispose();
-    sizeController.dispose();
-    qualityController.dispose();
-    quantityController.dispose();
-    dateController.dispose();
+    productCtrl.dispose();
+    quantityCtrl.dispose();
+    dateCtrl.dispose();
+    debounce?.cancel();
     super.dispose();
   }
 }

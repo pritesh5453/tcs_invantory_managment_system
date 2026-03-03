@@ -35,6 +35,10 @@ class AddCustomerScreen extends StatefulWidget {
 class _AddCustomerScreenState extends State<AddCustomerScreen> {
   // ===== FORM KEY FOR VALIDATION =====
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  bool _isValidEmail(String email) {
+    final emailRegex = RegExp(r'^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$');
+    return emailRegex.hasMatch(email);
+  }
 
   // ===== CONTROLLERS =====
   final firstNameCtrl = TextEditingController();
@@ -189,6 +193,17 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
   bool _validateMandatoryFields() {
     bool isValid = true;
 
+    // Check email format (optional but must be valid)
+    if (emailCtrl.text.trim().isNotEmpty &&
+        !_isValidEmail(emailCtrl.text.trim())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please enter a valid email address"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      isValid = false;
+    }
     // Check customer name (first and last)
     if (firstNameCtrl.text.trim().isEmpty || lastNameCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(

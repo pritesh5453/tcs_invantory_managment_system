@@ -188,7 +188,11 @@ class _EditProductSheetState extends State<EditProductSheet> {
     // Check if values exist in dropdown lists
     // BRAND: Only select if value exists in brands list
     if (originalBrand != null && originalBrand!.isNotEmpty) {
-      final brandExists = brands.any((brand) => brand['name'] == originalBrand);
+      final brandExists = brands.any(
+        (brand) =>
+            brand['name'].toString().trim().toLowerCase() ==
+            originalBrand!.trim().toLowerCase(),
+      );
       if (brandExists) {
         selectedBrand = originalBrand;
       } else {

@@ -18,6 +18,7 @@ class Customer {
   final String lastName;
   final String phone;
   final String email;
+  final String? walletAmount;
   final String? assignedEmployee;
   final String? assignedEmployeeId;
   final String? assignedArchitect;
@@ -34,6 +35,7 @@ class Customer {
     required this.lastName,
     required this.phone,
     required this.email,
+    this.walletAmount,
     this.assignedEmployee,
     this.assignedEmployeeId,
     this.assignedArchitect,
@@ -52,6 +54,7 @@ class Customer {
       lastName: json['Last_Name'] ?? '',
       phone: json['phone'] ?? '',
       email: json['email'] ?? '',
+      walletAmount: json['wallet_amount']?.toString(),
       assignedEmployee: json['assignedEmployee'],
       assignedEmployeeId: json['assignedEmployeeId']?.toString(),
       assignedArchitect: json['assignedArchitect']?.toString(),
@@ -874,6 +877,11 @@ class CustomerCard extends StatelessWidget {
                 "Customer Info",
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
+
+              const SizedBox(width: 120),
+              _walletWidget(customer.walletAmount),
+
+              const SizedBox(width: 1),
               // 🚫 DELETE – SIRF ADMIN KO DIKHEGA, EMPLOYEE KE LIYE COMPLETELY HIDDEN
               if (isAdmin && canDeleteThisCustomer)
                 PopupMenuButton<String>(
@@ -1026,6 +1034,28 @@ class CustomerCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _walletWidget(String? amount) {
+    double wallet = double.tryParse(amount ?? "0") ?? 0;
+
+    bool isNegative = wallet < 0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isNegative ? Colors.red.shade100 : Colors.green.shade100,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        "₹ ${wallet.toStringAsFixed(2)}",
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: isNegative ? Colors.red.shade800 : Colors.green.shade800,
+        ),
       ),
     );
   }

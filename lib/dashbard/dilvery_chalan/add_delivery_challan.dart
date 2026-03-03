@@ -9,7 +9,7 @@ class Quotation {
   final String clientName;
   final String contactNo;
   final String address;
-  final String clientId; // 👈 new field
+  final String clientId;
   final List<QuotationItem> items;
 
   Quotation({
@@ -31,7 +31,7 @@ class Quotation {
       clientName: json['clientName'] ?? '',
       contactNo: json['contactNo'] ?? '',
       address: json['address'] ?? '',
-      clientId: json['clientId']?.toString() ?? '', // 👈
+      clientId: json['clientId']?.toString() ?? '',
       items: items,
     );
   }
@@ -44,7 +44,6 @@ class QuotationItem {
   final int remainingBoxes;
   final List<Batch> batches;
   final int currentStock;
-  // 👇 new fields
   final double rate;
   final double cov;
   final String size;
@@ -107,8 +106,6 @@ class AdditionalProductRow {
   String godown = 'KKW';
   bool showProductDropdown = false;
   int? productId;
-
-  // Store the full product details when selected
   Map<String, dynamic>? selectedProductDetails;
 
   final TextEditingController productSearchController = TextEditingController();
@@ -141,7 +138,6 @@ class AdditionalProductRow {
       final cov = double.tryParse(covController.text) ?? 0;
       final discount = double.tryParse(discountController.text) ?? 0;
 
-      // Calculate base amount: Rate * QUANTITY
       final baseAmount = rate * quantity;
       final covAmount = baseAmount * cov;
       final discountAmount = covAmount * (discount / 100);
@@ -185,8 +181,9 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   // Search
   final TextEditingController _searchController = TextEditingController();
 
-  // Selected quotation
+  // Selected quotation and its items (displayed list)
   Quotation? _selectedQuotation;
+  List<QuotationItem> _displayedQuotationItems = [];
 
   // Payment summary data
   double? _quotationAmount;
@@ -194,19 +191,21 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   double? _customerWalletAmount;
   bool _isLoadingSummary = false;
 
-  // Black/White challan toggle (true = Black, false = White)
-  bool _isBlackChallan = false; // default White
+  // Black/White challan toggle
+  bool? _isBlackChallan;
 
   // Dispatch logistics
   final TextEditingController _driverNameController = TextEditingController();
   final TextEditingController _driverContactController =
       TextEditingController();
   final TextEditingController _vehicleNoController = TextEditingController();
+  final TextEditingController _note1Controller = TextEditingController();
+  final TextEditingController _note2Controller = TextEditingController();
 
   // Dispatch boxes controllers for each quotation item
   final Map<int, TextEditingController> _dispatchBoxesControllers = {};
 
-  // Additional product rows (manually added)
+  // Additional product rows
   List<AdditionalProductRow> _additionalRows = [];
 
   // Additional discount
@@ -220,22 +219,17 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   // Quotations list for search
   List<Quotation> _quotations = [];
 
-  // Search with debounce
+  // Debounce timers
   Timer? _searchDebounce;
+  Timer? _productSearchDebounce;
 
   // Product search data (for manual rows)
   List<dynamic> _products = [];
   List<dynamic> _filteredProducts = [];
-  Timer? _productSearchDebounce;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_selectedQuotation != null) {
-        _initializeControllers();
-      }
-    });
   }
 
   @override
@@ -246,27 +240,22 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     _driverNameController.dispose();
     _driverContactController.dispose();
     _vehicleNoController.dispose();
+    _note1Controller.dispose();
+    _note2Controller.dispose();
     _additionalDiscountController.dispose();
-
-    // Dispose all dispatch boxes controllers
     _dispatchBoxesControllers.forEach((key, controller) {
       controller.dispose();
     });
-
-    // Dispose all additional rows
     for (var row in _additionalRows) {
       row.dispose();
     }
-
     super.dispose();
   }
 
   void _initializeControllers() {
-    if (_selectedQuotation == null) return;
-
-    for (var item in _selectedQuotation!.items) {
+    for (var item in _displayedQuotationItems) {
       if (!_dispatchBoxesControllers.containsKey(item.id)) {
-        _dispatchBoxesControllers[item.id] = TextEditingController(text: '0');
+        _dispatchBoxesControllers[item.id] = TextEditingController();
       }
     }
   }
@@ -279,18 +268,13 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       return;
     }
 
-    if (_searchDebounce?.isActive ?? false) {
-      _searchDebounce!.cancel();
-    }
-
+    _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
       setState(() => _isSearching = true);
-
       try {
         final response = await dio.get(
           "https://dashboard.theceramicstudio.in/api/Quotation/search/$query",
         );
-
         if (response.statusCode == 200 && response.data['success'] == true) {
           final List data = response.data['quotations'] ?? [];
           setState(() {
@@ -309,11 +293,15 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   void _selectQuotation(Quotation quotation) async {
     setState(() {
       _selectedQuotation = quotation;
-      _quotations = []; // Clear search results
+      _displayedQuotationItems = List.from(quotation.items); // copy
+      _quotations = [];
       _searchController.text = '';
       _driverNameController.clear();
       _driverContactController.clear();
       _vehicleNoController.clear();
+      _note1Controller.clear();
+      _note2Controller.clear();
+      _isBlackChallan = null;
     });
 
     _initializeControllers();
@@ -345,6 +333,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   void _clearSelection() {
     setState(() {
       _selectedQuotation = null;
+      _displayedQuotationItems = [];
       _dispatchBoxesControllers.clear();
       _quotationAmount = null;
       _quotationPaidAmount = null;
@@ -355,9 +344,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   // ---------- Product search for manual rows ----------
   Future<void> _fetchProducts({required String search}) async {
     if (search.trim().isEmpty) {
-      setState(() {
-        _filteredProducts = [];
-      });
+      setState(() => _filteredProducts = []);
       return;
     }
 
@@ -435,10 +422,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     setState(() {
       _additionalRows.add(AdditionalProductRow());
     });
-    // Scroll to bottom after adding
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // You can add scroll controller logic if needed
-    });
   }
 
   void _removeAdditionalRow(int index) {
@@ -448,15 +431,21 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     });
   }
 
+  // ---------- Delete quotation item ----------
+  void _deleteQuotationItem(int itemId) {
+    setState(() {
+      _displayedQuotationItems.removeWhere((item) => item.id == itemId);
+      _dispatchBoxesControllers.remove(itemId);
+    });
+  }
+
   // ---------- Calculations ----------
   double _calculateQuotationItemsTotal() {
     double total = 0;
-    if (_selectedQuotation != null) {
-      for (var item in _selectedQuotation!.items) {
-        final controller = _dispatchBoxesControllers[item.id];
-        final dispatchBoxes = double.tryParse(controller?.text ?? '0') ?? 0;
-        total += dispatchBoxes * item.rate; // use item.rate
-      }
+    for (var item in _displayedQuotationItems) {
+      final controller = _dispatchBoxesControllers[item.id];
+      final dispatchBoxes = double.tryParse(controller?.text ?? '0') ?? 0;
+      total += dispatchBoxes * item.rate;
     }
     return total;
   }
@@ -484,6 +473,11 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     return subtotal;
   }
 
+  // ---------- Refresh grand total (called after any change in additional rows) ----------
+  void _refreshGrandTotal() {
+    setState(() {});
+  }
+
   // ---------- Validation ----------
   bool _validateForm() {
     if (_selectedQuotation == null && _additionalRows.isEmpty) {
@@ -506,25 +500,25 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       return false;
     }
 
-    // Validate quotation items have at least one dispatch box > 0 if quotation exists
-    if (_selectedQuotation != null) {
-      bool hasQuotationDispatch = false;
-      for (var item in _selectedQuotation!.items) {
-        final controller = _dispatchBoxesControllers[item.id];
-        final value = int.tryParse(controller?.text ?? '0') ?? 0;
-        if (value > 0) {
-          hasQuotationDispatch = true;
-          break;
-        }
-      }
-      // If there are no additional rows, we need at least one quotation dispatch
-      if (!hasQuotationDispatch && _additionalRows.isEmpty) {
-        _showError("Please enter dispatch boxes for at least one product");
-        return false;
-      }
+    if (_isBlackChallan == null) {
+      _showError("Please select Challan Type (Blue or Red)");
+      return false;
     }
 
-    // Validate additional rows
+    bool hasQuotationDispatch = false;
+    for (var item in _displayedQuotationItems) {
+      final controller = _dispatchBoxesControllers[item.id];
+      final value = int.tryParse(controller?.text ?? '0') ?? 0;
+      if (value > 0) {
+        hasQuotationDispatch = true;
+        break;
+      }
+    }
+    if (!hasQuotationDispatch && _additionalRows.isEmpty) {
+      _showError("Please enter dispatch boxes for at least one product");
+      return false;
+    }
+
     for (int i = 0; i < _additionalRows.length; i++) {
       final row = _additionalRows[i];
       if (row.productName.isEmpty) {
@@ -565,55 +559,50 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- API Submission (UPDATED) ----------
+  // ---------- API Submission ----------
   Future<void> _generateDeliveryChallan() async {
     if (!_validateForm()) return;
 
     setState(() => _isSubmitting = true);
 
     try {
-      // Build items list
       final List<Map<String, dynamic>> items = [];
 
       // Quotation items (isExtra: 0)
-      if (_selectedQuotation != null) {
-        int rowId = 1;
-        for (var item in _selectedQuotation!.items) {
-          final controller = _dispatchBoxesControllers[item.id];
-          final dispatchBoxes = int.tryParse(controller?.text ?? '0') ?? 0;
-          if (dispatchBoxes > 0) {
-            items.add({
-              "rowId": rowId++,
-              "productId": item.productId,
-              "productName": item.productName,
-              "dispatchBoxes": dispatchBoxes,
-              "rate": item.rate,
-              "cov": item.cov,
-              "currentStock": item.currentStock,
-              "isExtra": 0,
-              "size": item.size,
-              "quality": item.quality,
-              "batches":
-                  item.batches
-                      .map(
-                        (b) => {
-                          "batch_no": b.batchNo,
-                          "qty": b.qty,
-                          "location": b.location,
-                        },
-                      )
-                      .toList(),
-            });
-          }
+      int rowId = 1;
+      for (var item in _displayedQuotationItems) {
+        final controller = _dispatchBoxesControllers[item.id];
+        final dispatchBoxes = int.tryParse(controller?.text ?? '0') ?? 0;
+        if (dispatchBoxes > 0) {
+          items.add({
+            "rowId": rowId++,
+            "productId": item.productId,
+            "productName": item.productName,
+            "dispatchBoxes": dispatchBoxes,
+            "rate": item.rate,
+            "cov": item.cov,
+            "currentStock": item.currentStock,
+            "isExtra": 0,
+            "size": item.size,
+            "quality": item.quality,
+            "batches":
+                item.batches
+                    .map(
+                      (b) => {
+                        "batch_no": b.batchNo,
+                        "qty": b.qty,
+                        "location": b.location,
+                      },
+                    )
+                    .toList(),
+          });
         }
       }
 
       // Additional items (isExtra: 1)
-      int rowId = (_selectedQuotation?.items.length ?? 0) + 1;
       for (var row in _additionalRows) {
         final productDetails = row.selectedProductDetails;
         if (productDetails == null) continue;
-
         items.add({
           "rowId": rowId++,
           "productId": productDetails['id'] ?? row.productId,
@@ -621,11 +610,12 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           "dispatchBoxes": int.tryParse(row.quantityController.text) ?? 0,
           "rate": double.tryParse(row.rateController.text) ?? 0,
           "cov": double.tryParse(row.covController.text) ?? 0,
+          "wight": double.tryParse(row.weightController.text.trim()) ?? 0.0,
           "currentStock": 0,
           "isExtra": 1,
           "size": row.size,
           "quality": row.quality,
-          "batches": [], // no batches for extra items
+          "batches": [],
         });
       }
 
@@ -639,6 +629,8 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
         "address": _selectedQuotation?.address ?? "",
         "walletDifference": grandTotal,
         "isBlackChallan": _isBlackChallan,
+        "transportation": _note1Controller.text.trim(),
+        "unloading": _note2Controller.text.trim(),
         "driverDetails": {
           "deliveryBoy": _driverNameController.text.trim(),
           "contact": _driverContactController.text.trim(),
@@ -718,7 +710,310 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  Widget _buildAdditionalProductRow(int index, AdditionalProductRow row) {
+  // ---------- Updated Product Card with Size & Quality ----------
+  Widget _buildProductItem(QuotationItem item) {
+    final controller =
+        _dispatchBoxesControllers[item.id] ?? TextEditingController(text: '0');
+    final remaining =
+        item.remainingBoxes > 0 ? item.remainingBoxes : item.currentStock;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Product name and IN STOCK badge
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  item.productName,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFA9C42).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  "IN STOCK: ${item.currentStock} qty",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: const Color(0xFFFA9C42),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+
+          // Size and Quality
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  "Size: ${item.size}",
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  "Quality: ${item.quality}",
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // COV, RATE, REMAINING, DISPATCH BOXES, DELETE
+          Row(
+            children: [
+              // COV
+              Expanded(
+                flex: 1,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "COV",
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade500,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.cov.toStringAsFixed(2),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // RATE
+              Expanded(
+                flex: 1,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "RATE",
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade500,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "₹${item.rate.toStringAsFixed(2)}",
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // REMAINING
+              Expanded(
+                flex: 1,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "REMAINING",
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade500,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "$remaining qty",
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // DISPATCH BOXES
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "DISPATCH BOXES",
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade500,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      height: 40,
+                      child: TextField(
+                        controller: controller,
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        onChanged: (_) {
+                          setState(() {});
+                        },
+                        decoration: InputDecoration(
+                          hintText: "",
+                          hintStyle: const TextStyle(color: Colors.grey),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.grey.shade400),
+                          ),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 8,
+                            horizontal: 8,
+                          ),
+                        ),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // DELETE button
+              Container(
+                margin: const EdgeInsets.only(left: 8),
+                child: IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                  onPressed: () => _deleteQuotationItem(item.id),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Batches section
+          if (item.batches.isNotEmpty) ...[
+            const Text(
+              "Batches:",
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children:
+                  item.batches.map((batch) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              "B#${batch.batchNo}",
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            "Qty: ${batch.qty} (${batch.location.toUpperCase()})",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+            ),
+          ] else ...[
+            Text(
+              "No batches available",
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade500,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ---------- Additional Product Row with auto-update callback ----------
+  Widget _buildAdditionalProductRow(
+    int index,
+    AdditionalProductRow row,
+    VoidCallback onUpdate,
+  ) {
     final sizes = _getSizesForProduct(row.productName);
     final qualities = _getQualitiesForProduct(row.productName, row.size);
 
@@ -732,7 +1027,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       ),
       child: Column(
         children: [
-          // Product Name Search
           _buildLabel('PRODUCT'),
           const SizedBox(height: 4),
           Container(
@@ -754,8 +1048,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                           onChanged: (value) {
                             row.productName = value;
                             row.showProductDropdown = value.isNotEmpty;
-
-                            // Reset dependent fields
                             row.size = '';
                             row.quality = '';
                             row.weightController.clear();
@@ -765,29 +1057,21 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                             row.amountController.clear();
                             row.selectedProductDetails = null;
 
-                            if (_productSearchDebounce?.isActive ?? false) {
-                              _productSearchDebounce!.cancel();
-                            }
-
+                            _productSearchDebounce?.cancel();
                             _productSearchDebounce = Timer(
                               const Duration(milliseconds: 400),
                               () {
                                 if (value.trim().isNotEmpty) {
                                   _fetchProducts(search: value.trim());
                                 } else {
-                                  setState(() {
-                                    _filteredProducts = [];
-                                  });
+                                  setState(() => _filteredProducts = []);
                                 }
                               },
                             );
-
                             setState(() {});
                           },
                           onTap: () {
-                            setState(() {
-                              row.showProductDropdown = true;
-                            });
+                            setState(() => row.showProductDropdown = true);
                           },
                           decoration: const InputDecoration(
                             hintText: 'Search product...',
@@ -850,6 +1134,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                               row.selectedProductDetails = product;
                               row.showProductDropdown = false;
                               row.updateTotal();
+                              onUpdate();
                               FocusScope.of(context).unfocus();
                             });
                           },
@@ -863,7 +1148,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
 
           const SizedBox(height: 12),
 
-          // Size and Quality Dropdowns
           Row(
             children: [
               Expanded(
@@ -906,6 +1190,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                               row.amountController.clear();
                               row.selectedProductDetails = null;
                               row.updateTotal();
+                              onUpdate();
                             });
                           },
                         ),
@@ -966,6 +1251,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                                 row.covController.clear();
                               }
                               row.updateTotal();
+                              onUpdate();
                             });
                           },
                         ),
@@ -979,7 +1265,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
 
           const SizedBox(height: 12),
 
-          // Rate, COV, AREA
           Row(
             children: [
               Expanded(
@@ -991,7 +1276,10 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                     _buildTextField(
                       row.rateController,
                       '0',
-                      onChanged: (_) => row.updateTotal(),
+                      onChanged: (_) {
+                        row.updateTotal();
+                        onUpdate();
+                      },
                     ),
                   ],
                 ),
@@ -1006,7 +1294,10 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                     _buildTextField(
                       row.covController,
                       '0',
-                      onChanged: (_) => row.updateTotal(),
+                      onChanged: (_) {
+                        row.updateTotal();
+                        onUpdate();
+                      },
                     ),
                   ],
                 ),
@@ -1016,7 +1307,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
 
           const SizedBox(height: 12),
 
-          // BOX, WEIGHT
           Row(
             children: [
               Expanded(
@@ -1029,7 +1319,10 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                       row.quantityController,
                       '0',
                       keyboardType: TextInputType.number,
-                      onChanged: (_) => row.updateTWGT(),
+                      onChanged: (_) {
+                        row.updateTWGT();
+                        onUpdate();
+                      },
                     ),
                   ],
                 ),
@@ -1045,7 +1338,10 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                       row.weightController,
                       '0',
                       keyboardType: TextInputType.number,
-                      onChanged: (_) => row.updateTWGT(),
+                      onChanged: (_) {
+                        row.updateTWGT();
+                        onUpdate();
+                      },
                     ),
                   ],
                 ),
@@ -1053,7 +1349,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             ],
           ),
 
-          // Delete button
           Align(
             alignment: Alignment.centerRight,
             child: Material(
@@ -1091,7 +1386,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- New UI Section: Payment Summary & Delivery Challan Amount ----------
+  // ---------- Payment Summary Section ----------
   Widget _buildPaymentSummarySection() {
     if (_selectedQuotation == null) return const SizedBox();
 
@@ -1177,7 +1472,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- Toggle for Black/White Challan ----------
+  // ---------- Challan Type Toggle ----------
   Widget _buildChallanTypeToggle() {
     return Container(
       width: double.infinity,
@@ -1215,14 +1510,19 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
                       color:
-                          _isBlackChallan ? Colors.blue : Colors.grey.shade200,
+                          _isBlackChallan == true
+                              ? Colors.blue
+                              : Colors.blue.shade100,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Center(
                       child: Text(
                         '',
                         style: TextStyle(
-                          color: _isBlackChallan ? Colors.white : Colors.black,
+                          color:
+                              _isBlackChallan == true
+                                  ? Colors.white
+                                  : Colors.black,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -1238,14 +1538,19 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
                       color:
-                          !_isBlackChallan ? Colors.red : Colors.grey.shade200,
+                          _isBlackChallan == false
+                              ? Colors.red
+                              : Colors.red.shade100,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Center(
                       child: Text(
                         '',
                         style: TextStyle(
-                          color: !_isBlackChallan ? Colors.white : Colors.black,
+                          color:
+                              _isBlackChallan == false
+                                  ? Colors.white
+                                  : Colors.black,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -1260,279 +1565,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- Main Build ----------
-  @override
-  Widget build(BuildContext context) {
-    final subtotal = _calculateTotalAmount();
-    final additionalDiscount =
-        double.tryParse(_additionalDiscountController.text) ?? 0;
-    final discountAmount = subtotal * (additionalDiscount / 100);
-    final grandTotal = _calculateGrandTotal();
-
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        title: const Text(
-          "Create Delivery Challan",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-        elevation: 0,
-        backgroundColor: const Color(0xFFFA9C42),
-      ),
-      body: GestureDetector(
-        onTap: () {
-          // Close dropdowns when tapping outside
-          for (var row in _additionalRows) {
-            row.showProductDropdown = false;
-          }
-          FocusScope.of(context).unfocus();
-        },
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Search Bar
-              _buildSearchBar(),
-
-              const SizedBox(height: 20),
-
-              // Selected Quotation (if any)
-              if (_selectedQuotation != null) ...[
-                _buildSelectedQuotation(),
-                const SizedBox(height: 20),
-
-                // Payment Summary & Delivery Challan Amount (NEW)
-                _buildPaymentSummarySection(),
-                const SizedBox(height: 20),
-
-                // Challan Type Toggle (NEW)
-                _buildChallanTypeToggle(),
-                const SizedBox(height: 20),
-              ],
-
-              // Dispatch Logistics
-              _buildDispatchLogistics(),
-              const SizedBox(height: 24),
-
-              // Quotation Products (if any)
-              if (_selectedQuotation != null &&
-                  _selectedQuotation!.items.isNotEmpty) ...[
-                Text(
-                  "PRODUCTS FROM QUOTATION",
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ..._selectedQuotation!.items.map((item) {
-                  return _buildProductItem(item);
-                }).toList(),
-                const SizedBox(height: 24),
-              ],
-
-              // Additional Products Section
-              const Text(
-                "ADDITIONAL PRODUCTS",
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFFFA9C42),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Additional product rows
-              ..._additionalRows.asMap().entries.map((entry) {
-                return _buildAdditionalProductRow(entry.key, entry.value);
-              }),
-
-              // Add Product Row Button
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: _addAdditionalRow,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: const Color(0xFFFA9C42)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.add, color: Color(0xFFFA9C42), size: 18),
-                          SizedBox(width: 8),
-                          Text(
-                            "+ ADD PRODUCT ROW",
-                            style: TextStyle(
-                              color: Color(0xFFFA9C42),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Additional Discount
-              // Container(
-              //   padding: const EdgeInsets.all(16),
-              //   decoration: BoxDecoration(
-              //     border: Border.all(color: Colors.grey.shade300),
-              //     borderRadius: BorderRadius.circular(8),
-              //   ),
-              //   child: Column(
-              //     crossAxisAlignment: CrossAxisAlignment.start,
-              //     children: [
-              //       _buildLabel('ADDITIONAL DISCOUNT (%)'),
-              //       const SizedBox(height: 8),
-              //       _buildTextField(
-              //         _additionalDiscountController,
-              //         'Enter discount percentage...',
-              //       ),
-              //       const SizedBox(height: 8),
-              //       Text(
-              //         'This discount will be applied on the total amount',
-              //         style: TextStyle(
-              //           fontSize: 12,
-              //           color: Colors.grey.shade600,
-              //         ),
-              //       ),
-              //     ],
-              //   ),
-              // ),
-              const SizedBox(height: 24),
-
-              // Totals
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFA9C42).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: const Color(0xFFFA9C42).withOpacity(0.3),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Subtotal',
-                          style: TextStyle(fontSize: 16, color: Colors.black87),
-                        ),
-                        Text(
-                          '₹${subtotal.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (additionalDiscount > 0) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Additional Discount ($additionalDiscount%)',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.green,
-                            ),
-                          ),
-                          Text(
-                            '-₹${discountAmount.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.green,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                    const Divider(height: 24, thickness: 1),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Grand Total',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFFFA9C42),
-                          ),
-                        ),
-                        Text(
-                          '₹${grandTotal.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFFA9C42),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // Generate Button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _generateDeliveryChallan,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFA9C42),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child:
-                      _isSubmitting
-                          ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                          : const Text(
-                            'Generate Delivery Challan',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ---------- Existing UI methods (unchanged) ----------
+  // ---------- Search Bar ----------
   Widget _buildSearchBar() {
     return Container(
       decoration: BoxDecoration(
@@ -1624,6 +1657,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
+  // ---------- Selected Quotation Card ----------
   Widget _buildSelectedQuotation() {
     if (_selectedQuotation == null) return const SizedBox();
 
@@ -1714,6 +1748,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
+  // ---------- Dispatch Logistics ----------
   Widget _buildDispatchLogistics() {
     return Container(
       width: double.infinity,
@@ -1766,6 +1801,25 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             hintText: "Enter vehicle number",
             controller: _vehicleNoController,
             icon: Icons.local_shipping_outlined,
+          ),
+          const SizedBox(height: 10),
+          Divider(height: 50),
+          const SizedBox(height: 10),
+
+          _buildInputField(
+            label: "Transportation",
+            hintText: "Add transportation details (optional)",
+            controller: _note1Controller,
+            icon: Icons.note_alt_outlined,
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildInputField(
+            label: "Unloading",
+            hintText: "Add Unloading details (optional)",
+            controller: _note2Controller,
+            icon: Icons.sticky_note_2_outlined,
           ),
         ],
       ),
@@ -1823,176 +1877,236 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  Widget _buildProductItem(QuotationItem item) {
-    final controller =
-        _dispatchBoxesControllers[item.id] ?? TextEditingController(text: '0');
+  // ---------- Main Build ----------
+  @override
+  Widget build(BuildContext context) {
+    final subtotal = _calculateTotalAmount();
+    final additionalDiscount =
+        double.tryParse(_additionalDiscountController.text) ?? 0;
+    final discountAmount = subtotal * (additionalDiscount / 100);
+    final grandTotal = _calculateGrandTotal();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+    return Scaffold(
+      backgroundColor: Colors.grey.shade50,
+      appBar: AppBar(
+        title: const Text(
+          "Create Delivery Challan",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
+        elevation: 0,
+        backgroundColor: const Color(0xFFFA9C42),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: GestureDetector(
+        onTap: () {
+          for (var row in _additionalRows) {
+            row.showProductDropdown = false;
+          }
+          FocusScope.of(context).unfocus();
+        },
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SingleChildScrollView(
-                child: Text(
-                  item.productName,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+              _buildSearchBar(),
+              const SizedBox(height: 20),
+
+              // 👇 Everything below is shown only if a quotation is selected
+              if (_selectedQuotation != null) ...[
+                _buildSelectedQuotation(),
+                const SizedBox(height: 20),
+                _buildPaymentSummarySection(),
+                const SizedBox(height: 20),
+                _buildChallanTypeToggle(),
+                const SizedBox(height: 20),
+                _buildDispatchLogistics(),
+                const SizedBox(height: 24),
+
+                if (_displayedQuotationItems.isNotEmpty) ...[
+                  const Text(
+                    "PRODUCTS FROM QUOTATION",
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
                   ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFA9C42).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  "IN STOCK: ${item.currentStock} qty",
+                  const SizedBox(height: 16),
+                  ..._displayedQuotationItems.map(_buildProductItem).toList(),
+                  const SizedBox(height: 24),
+                ],
+
+                const Text(
+                  "ADDITIONAL PRODUCTS",
                   style: TextStyle(
-                    fontSize: 12,
-                    color: const Color(0xFFFA9C42),
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
+                    color: Color(0xFFFA9C42),
                   ),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(height: 16),
 
-          const SizedBox(height: 12),
+                ..._additionalRows.asMap().entries.map(
+                  (entry) => _buildAdditionalProductRow(
+                    entry.key,
+                    entry.value,
+                    _refreshGrandTotal,
+                  ),
+                ),
 
-          if (item.batches.isNotEmpty) ...[
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children:
-                  item.batches.map((batch) {
-                    final location = batch.location.toUpperCase();
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              "B#${batch.batchNo}",
-                              style: const TextStyle(
-                                fontSize: 12,
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _addAdditionalRow,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: const Color(0xFFFA9C42)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.add, color: Color(0xFFFA9C42), size: 18),
+                            SizedBox(width: 8),
+                            Text(
+                              "+ ADD PRODUCT",
+                              style: TextStyle(
+                                color: Color(0xFFFA9C42),
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            "Qty: ${batch.qty} ($location)",
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFA9C42).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFFA9C42).withOpacity(0.3),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Subtotal',
                             style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
+                              fontSize: 16,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          Text(
+                            '₹${subtotal.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.black87,
                             ),
                           ),
                         ],
                       ),
-                    );
-                  }).toList(),
-            ),
-            const SizedBox(height: 12),
-          ],
-
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "${item.currentStock} qty",
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      "REMAINING",
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey.shade500,
-                      ),
-                    ),
-                  ],
-                ),
-
-                Container(
-                  width: 120,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextField(
-                        controller: controller,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        decoration: InputDecoration(
-                          hintText: "0",
-                          hintStyle: const TextStyle(color: Colors.grey),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: Colors.grey.shade400),
+                      if (additionalDiscount > 0) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Additional Discount ($additionalDiscount%)',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.green,
+                              ),
+                            ),
+                            Text(
+                              '-₹${discountAmount.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const Divider(height: 24, thickness: 1),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Grand Total',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFFA9C42),
+                            ),
                           ),
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 8,
-                            horizontal: 12,
+                          Text(
+                            '₹${grandTotal.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFFA9C42),
+                            ),
                           ),
-                        ),
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "DISPATCH BOXES",
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey.shade500,
-                        ),
+                        ],
                       ),
                     ],
                   ),
                 ),
+
+                const SizedBox(height: 24),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isSubmitting ? null : _generateDeliveryChallan,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFA9C42),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child:
+                        _isSubmitting
+                            ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                            : const Text(
+                              'Generate Delivery Challan',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                  ),
+                ),
               ],
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

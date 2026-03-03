@@ -31,6 +31,10 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   final ScrollController _scrollController = ScrollController();
   final int _pageLimit = 10;
 
+  // ✅ PRODUCT MAP FOR LOOKUP (productId -> product details)
+  Map<int, dynamic> _productMap = {};
+  bool _isLoadingProducts = false;
+
   @override
   void initState() {
     super.initState();
@@ -43,8 +47,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     );
 
     fetchPurchases();
+    _fetchAllProducts(); // 👈 ek hi API hit – saare products fetch kar lo
 
-    // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
   }
 
@@ -109,7 +113,6 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
           filteredPurchases = newPurchases;
         }
 
-        // ✅ CHECK IF WE HAVE MORE DATA
         _hasMoreData = newPurchases.length >= _pageLimit;
         isLoading = false;
         loadingMore = false;
@@ -123,6 +126,27 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     }
   }
 
+  /// ================= FETCH ALL PRODUCTS (ONE API HIT) =================
+  Future<void> _fetchAllProducts() async {
+    if (_isLoadingProducts) return;
+    setState(() => _isLoadingProducts = true);
+    try {
+      final response = await _dio.get(
+        'https://dashboard.theceramicstudio.in/api/product/list',
+        queryParameters: {'search': ''}, // empty search = all products
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final List<dynamic> products = response.data['products'];
+        // productId -> product object
+        _productMap = {for (var p in products) p['id'] as int: p};
+      }
+    } catch (e) {
+      debugPrint('Error fetching products: $e');
+    } finally {
+      setState(() => _isLoadingProducts = false);
+    }
+  }
+
   /// ================= SCROLL LISTENER FOR PAGINATION =================
   void _scrollListener() {
     if (_scrollController.position.pixels >=
@@ -133,14 +157,9 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     }
   }
 
-  /// ================= LOAD MORE DATA =================
   Future<void> _loadMoreData() async {
     if (!_hasMoreData || loadingMore) return;
-
-    setState(() {
-      loadingMore = true;
-    });
-
+    setState(() => loadingMore = true);
     _currentPage++;
     await fetchPurchases(isLoadMore: true);
   }
@@ -160,7 +179,6 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
               final clientContact =
                   purchase['client_contact'].toString().toLowerCase();
               final searchLower = query.toLowerCase();
-
               return billNo.contains(searchLower) ||
                   clientName.contains(searchLower) ||
                   clientContact.contains(searchLower);
@@ -185,8 +203,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     Map<String, dynamic> purchase,
   ) {
     EditInventorySheet.show(context, purchase: purchase).then((_) {
-      // Refresh the list after editing
-      fetchPurchases();
+      fetchPurchases(); // refresh after edit
     });
   }
 
@@ -199,7 +216,6 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
           MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
           (route) => false,
         );
-
         return false;
       },
       child: Scaffold(
@@ -207,7 +223,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              // Top Bar
+              // Top Bar (search + add)
               Container(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
                 decoration: const BoxDecoration(
@@ -342,7 +358,6 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                                 (loadingMore ? 1 : 0) +
                                 (_hasMoreData && !loadingMore ? 1 : 0),
                             itemBuilder: (_, index) {
-                              // Loading more indicator
                               if (index >= filteredPurchases.length) {
                                 if (loadingMore) {
                                   return const Padding(
@@ -364,16 +379,18 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                                     ),
                                   );
                                 }
-                                return const SizedBox(); // For hasMore but not loading
+                                return const SizedBox();
                               }
 
                               final purchase = filteredPurchases[index];
                               return InventoryCard(
                                 purchase: purchase,
                                 canDelete: canDeleteInventory,
-                                onEdit: () {
-                                  _openEditInventorySheet(context, purchase);
-                                },
+                                onEdit:
+                                    () => _openEditInventorySheet(
+                                      context,
+                                      purchase,
+                                    ),
                                 onDelete: () {
                                   if (!canDeleteInventory) {
                                     ScaffoldMessenger.of(context).showSnackBar(
@@ -388,9 +405,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                                   }
                                   showDeleteDialog(context, purchase);
                                 },
-                                onView: () {
-                                  openInventoryView(context, purchase);
-                                },
+                                onView:
+                                    () => openInventoryView(context, purchase),
                               );
                             },
                           ),
@@ -403,72 +419,163 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     );
   }
 
+  /// ================= VIEW DIALOG – PRODUCT NAME DISPLAY =================
   void openInventoryView(BuildContext context, Map<String, dynamic> purchase) {
+    // Dialog ke andar state manage karne ke liye StatefulBuilder
     showDialog(
       context: context,
-      builder:
-          (_) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        "Purchase Details",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.red),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const Divider(),
-                  Text("Bill no: ${purchase['bill_no']}"),
-                  Text("Client: ${purchase['client_name']}"),
-                  Text("Contact: ${purchase['client_contact']}"),
-                  Text("Date: ${formatDate(purchase['purchase_date'])}"),
+      builder: (context) {
+        // Local map to store fetched product details for this dialog
+        final Map<int, dynamic> localProductMap = {};
+        final Set<int> missingProductIds = {};
 
-                  // Show all items
-                  const SizedBox(height: 16),
-                  const Text(
-                    "Items:",
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  ...(purchase['items'] as List).map(
-                    (item) => Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+        // Pehle check karte hain ki kaun se product IDs global map mein nahi hain
+        for (var item in purchase['items']) {
+          final productId = item['product_id'] as int?;
+          if (productId != null) {
+            if (_productMap.containsKey(productId)) {
+              localProductMap[productId] = _productMap[productId];
+            } else {
+              missingProductIds.add(productId);
+            }
+          }
+        }
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            // Agar missing products hain to unhe fetch karo
+            if (missingProductIds.isNotEmpty) {
+              // Ek baar hi fetch karo (jab dialog build ho raha ho)
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _fetchMissingProducts(missingProductIds).then((fetchedMap) {
+                  setState(() {
+                    localProductMap.addAll(fetchedMap);
+                    // Global map mein bhi add kar do cache ke liye
+                    _productMap.addAll(fetchedMap);
+                    missingProductIds.clear();
+                  });
+                });
+              });
+            }
+
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const SizedBox(height: 8),
-                        Text("• Product ID: ${item['product_id']}"),
-                        Text("  Batch: ${item['batch_no']}"),
-                        Text("  Quantity: ${item['qty']}"),
-                        Text("  Rate: ₹${item['rate']}"),
-                        Text("  Total: ₹${item['total']}"),
-                        Text("  Godown: ${item['godown']}"),
+                        const Text(
+                          "Purchase Details",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.red),
+                          onPressed: () => Navigator.pop(context),
+                        ),
                       ],
                     ),
-                  ),
+                    const Divider(),
+                    Text("Bill no: ${purchase['bill_no']}"),
+                    Text("Client: ${purchase['client_name']}"),
+                    Text("Contact: ${purchase['client_contact']}"),
+                    Text("Date: ${formatDate(purchase['purchase_date'])}"),
 
-                  const SizedBox(height: 16),
-                  Text("Sub Total: ₹${purchase['subtotal']}"),
-                ],
+                    const SizedBox(height: 16),
+                    const Text(
+                      "Items:",
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    ...(purchase['items'] as List).map((item) {
+                      final productId = item['product_id'] as int?;
+                      final product =
+                          productId != null ? localProductMap[productId] : null;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 8),
+                          if (product != null) ...[
+                            // Product details available
+                            Text("• Product: ${product['name']}"),
+                            Text(
+                              "  Size: ${product['size']} | Quality: ${product['quality']}",
+                            ),
+                          ] else if (missingProductIds.contains(productId)) ...[
+                            // Abhi fetch ho raha hai
+                            Text(
+                              "• Product ID: $productId (loading details...)",
+                            ),
+                          ] else ...[
+                            // Agar kisi reason se nahi mila (error case)
+                            Text("• Product ID: $productId"),
+                          ],
+                          Text("  Batch: ${item['batch_no']}"),
+                          Text("  Quantity: ${item['qty']}"),
+                          Text("  Rate: ₹${item['rate']}"),
+                          Text("  Total: ₹${item['total']}"),
+                          Text("  Godown: ${item['godown']}"),
+                        ],
+                      );
+                    }).toList(),
+
+                    const SizedBox(height: 16),
+                    Text("Sub Total: ₹${purchase['subtotal']}"),
+                  ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
+        );
+      },
     );
   }
 
+  /// Helper to fetch multiple product details by IDs
+  Future<Map<int, dynamic>> _fetchMissingProducts(Set<int> productIds) async {
+    final Map<int, dynamic> result = {};
+    try {
+      // Parallel mein saari IDs ke liye API call karo
+      final futures = productIds.map((id) => _fetchProductById(id));
+      final responses = await Future.wait(futures, eagerError: false);
+      for (var i = 0; i < productIds.length; i++) {
+        final id = productIds.elementAt(i);
+        final product = responses[i];
+        if (product != null) {
+          result[id] = product;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching products: $e');
+    }
+    return result;
+  }
+
+  /// Fetch single product by ID
+  Future<Map<String, dynamic>?> _fetchProductById(int productId) async {
+    try {
+      final response = await _dio.get(
+        'https://dashboard.theceramicstudio.in/api/product/list/$productId',
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return response.data['product'] as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('Error fetching product $productId: $e');
+    }
+    return null;
+  }
+
+  /// ================= DELETE DIALOG =================
   void showDeleteDialog(BuildContext context, Map<String, dynamic> purchase) {
     showDialog(
       context: context,
@@ -558,7 +665,6 @@ class InventoryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -572,9 +678,7 @@ class InventoryCard extends StatelessWidget {
               PopupMenuButton<String>(
                 onSelected: (value) {
                   if (value == 'view') onView();
-                  if (value == 'edit') {
-                    onEdit();
-                  }
+                  if (value == 'edit') onEdit();
                 },
                 itemBuilder:
                     (_) => const [
@@ -596,7 +700,6 @@ class InventoryCard extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 8),
           Text(purchase['client_name']),
           Text(purchase['client_contact']),
@@ -615,8 +718,6 @@ class InventoryCard extends StatelessWidget {
               ),
             ],
           ),
-
-          // Items summary
           if ((purchase['items'] as List).isNotEmpty)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,

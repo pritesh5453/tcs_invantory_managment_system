@@ -24,19 +24,15 @@ class Debouncer {
   }
 }
 
-/// ================= SEARCH BAR WIDGET =================
+/// ================= SEARCH BAR WIDGET (No + button) =================
 class DeliveryChallanSearchBarWidget extends StatefulWidget {
   final ValueChanged<String> onSearchChanged;
   final String initialValue;
-  final VoidCallback? onAddPressed;
-  final bool canAdd;
 
   const DeliveryChallanSearchBarWidget({
     super.key,
     required this.onSearchChanged,
     this.initialValue = '',
-    this.onAddPressed,
-    this.canAdd = true,
   });
 
   @override
@@ -78,77 +74,41 @@ class _DeliveryChallanSearchBarWidgetState
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.search, size: 20, color: Colors.grey),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: widget.onSearchChanged,
-                    decoration: InputDecoration(
-                      hintText: "Search..",
-                      hintStyle: const TextStyle(color: Colors.grey),
-                      border: InputBorder.none,
-                      suffixIcon:
-                          _searchController.text.isNotEmpty
-                              ? IconButton(
-                                icon: const Icon(Icons.clear, size: 16),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  widget.onSearchChanged('');
-                                },
-                              )
-                              : null,
-                    ),
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        InkWell(
-          onTap:
-              widget.canAdd && widget.onAddPressed != null
-                  ? widget.onAddPressed
-                  : () {
-                    if (!widget.canAdd) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            "You don't have permission to add delivery challan.",
-                          ),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                  },
-          child: Opacity(
-            opacity: widget.canAdd ? 1 : 0.4,
-            child: Container(
-              height: 42,
-              width: 42,
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.white, width: 1.5),
-                borderRadius: BorderRadius.circular(12),
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, size: 20, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              onChanged: widget.onSearchChanged,
+              decoration: InputDecoration(
+                hintText: "Search..",
+                hintStyle: const TextStyle(color: Colors.grey),
+                border: InputBorder.none,
+                suffixIcon:
+                    _searchController.text.isNotEmpty
+                        ? IconButton(
+                          icon: const Icon(Icons.clear, size: 16),
+                          onPressed: () {
+                            _searchController.clear();
+                            widget.onSearchChanged('');
+                          },
+                        )
+                        : null,
               ),
-              child: const Icon(Icons.add, color: Colors.white),
+              style: const TextStyle(fontSize: 14),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -157,31 +117,40 @@ class _DeliveryChallanSearchBarWidgetState
 class DeliveryChallan {
   final int id;
   final int quotationId;
+  final int seriesNumber;
   final String client;
   final String deliveryBoy;
   final String tempo;
   final int totalItems;
-  final bool isBlackChallan; // 👈 new field
+  final bool isBlackChallan;
+  final String priority; // 👈 new field
 
   DeliveryChallan({
     required this.id,
     required this.quotationId,
+    required this.seriesNumber,
     required this.client,
     required this.deliveryBoy,
     required this.tempo,
     required this.totalItems,
     required this.isBlackChallan,
+    required this.priority,
   });
 
   factory DeliveryChallan.fromJson(Map<String, dynamic> json) {
     return DeliveryChallan(
       id: json['id'],
       quotationId: json['quotationId'],
+      seriesNumber: int.tryParse(json['seriesNumber']?.toString() ?? '0') ?? 0,
       client: json['client'],
       deliveryBoy: json['deliveryBoy'] ?? "",
       tempo: json['tempo'] ?? "",
       totalItems: json['totalItems'],
-      isBlackChallan: (json['isBlackChallan'] ?? 0) == 1,
+      isBlackChallan:
+          json['isBlackChallan'] == 1 ||
+          json['isBlackChallan'] == "1" ||
+          json['isBlackChallan'] == true,
+      priority: json['priority'] ?? "",
     );
   }
 }
@@ -205,7 +174,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
 
   final Dio dio = Dio();
 
-  // Tab Controller – now 3 tabs: All, White, Black
+  // Tab Controller – 3 tabs: All, White, Black
   late TabController _tabController;
   int _currentTabIndex = 0; // 0 = All, 1 = White, 2 = Black
 
@@ -218,8 +187,9 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
   Map<int, bool> _hasMoreData = {0: true, 1: true, 2: true};
 
   String searchQuery = '';
-  final Debouncer _debouncer = Debouncer(milliseconds: 500);
+  String? _selectedPriority; // 👈 new: null = all priorities
 
+  final Debouncer _debouncer = Debouncer(milliseconds: 500);
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -238,7 +208,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
       "Delivery Challans_Return DC",
     );
 
-    _tabController = TabController(length: 3, vsync: this); // 👈 3 tabs
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_onTabChanged);
 
     // Load initial data for All tab (index 0)
@@ -280,7 +250,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     super.dispose();
   }
 
-  /// ================= FETCH API WITH TYPE & PAGINATION =================
+  /// ================= FETCH API WITH TYPE, SEARCH & PRIORITY =================
   Future<void> _fetchChallans({
     required String type,
     bool isLoadMore = false,
@@ -312,12 +282,15 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
         "page": _currentPage[tabIndex],
         "limit": 10,
       };
-      // Add challanType only if not ALL
       if (type != 'ALL') {
         queryParams['challanType'] = type;
       }
       if (searchQuery.isNotEmpty) {
         queryParams['search'] = searchQuery;
+      }
+      if (_selectedPriority != null) {
+        queryParams['priority'] =
+            _selectedPriority; // e.g., "LOW", "MEDIUM", "URGENT"
       }
 
       debugPrint('Fetching $type challans with query: $queryParams');
@@ -393,21 +366,36 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     });
   }
 
-  void _clearSearch() {
+  /// ================= PRIORITY FILTER =================
+  void _onPriorityChanged(String? priority) {
+    setState(() {
+      _selectedPriority = priority;
+    });
+    final type = _getTypeForIndex(_currentTabIndex);
+    _fetchChallans(type: type);
+  }
+
+  void _clearFilters() {
     setState(() {
       searchQuery = '';
+      _selectedPriority = null;
     });
+    // Also clear the search text field
+    // We'll access it via GlobalKey? For simplicity, we'll just reload.
     final type = _getTypeForIndex(_currentTabIndex);
     _fetchChallans(type: type);
   }
 
   /// ================= ADD =================
   void _onAddPressed() {
+    if (!canAddChallan) {
+      _showError("You don't have permission to add delivery challan.");
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const AddDeliveryChallanScreen()),
     ).then((_) {
-      // Refresh current tab after adding
       final type = _getTypeForIndex(_currentTabIndex);
       _fetchChallans(type: type);
     });
@@ -545,6 +533,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
   Future<void> _refreshChallans() async {
     setState(() {
       searchQuery = '';
+      _selectedPriority = null;
     });
     final type = _getTypeForIndex(_currentTabIndex);
     await _fetchChallans(type: type);
@@ -573,12 +562,12 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
         return false;
       },
       child: DefaultTabController(
-        length: 3, // 👈 3 tabs
+        length: 3,
         child: Scaffold(
           backgroundColor: const Color(0xFFF6F7F9),
           body: Column(
             children: [
-              /// ================= TOP SEARCH BAR =================
+              /// ================= TOP BAR WITH SEARCH, PRIORITY DROPDOWN & + BUTTON =================
               Container(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
                 decoration: const BoxDecoration(
@@ -595,16 +584,109 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                       const SizedBox(height: 14),
                       Row(
                         children: [
+                          // Search bar (flex 3)
                           Expanded(
+                            flex: 3,
                             child: DeliveryChallanSearchBarWidget(
                               onSearchChanged: _searchChallans,
                               initialValue: searchQuery,
-                              onAddPressed: _onAddPressed,
-                              canAdd: canAddChallan,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Priority dropdown (flex 2)
+                          Expanded(
+                            flex: 2,
+                            child: Container(
+                              height: 42,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.priority_high,
+                                    size: 20,
+                                    color: Colors.grey,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<String?>(
+                                        value: _selectedPriority,
+                                        hint: const Text(
+                                          "Priority",
+                                          style: TextStyle(color: Colors.grey),
+                                        ),
+                                        icon: const Icon(Icons.arrow_drop_down),
+                                        isExpanded: true,
+                                        items: const [
+                                          DropdownMenuItem<String?>(
+                                            value: null,
+                                            child: Text("All"),
+                                          ),
+                                          DropdownMenuItem<String?>(
+                                            value: "LOW",
+                                            child: Text("Low"),
+                                          ),
+                                          DropdownMenuItem<String?>(
+                                            value: "MEDIUM",
+                                            child: Text("Medium"),
+                                          ),
+                                          DropdownMenuItem<String?>(
+                                            value: "URGENT",
+                                            child: Text("Urgent"),
+                                          ),
+                                        ],
+                                        onChanged: _onPriorityChanged,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // + button
+                          InkWell(
+                            onTap: _onAddPressed,
+                            child: Opacity(
+                              opacity: canAddChallan ? 1 : 0.4,
+                              child: Container(
+                                height: 42,
+                                width: 42,
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 1.5,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.add,
+                                  color: Colors.white,
+                                ),
+                              ),
                             ),
                           ),
                         ],
                       ),
+                      // Optional clear button (if filters active)
+                      if (searchQuery.isNotEmpty || _selectedPriority != null)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: _clearFilters,
+                            icon: const Icon(Icons.clear, color: Colors.white),
+                            label: const Text(
+                              "Clear Filters",
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -617,7 +699,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                   controller: _tabController,
                   indicatorColor: Colors.orange,
                   tabs: [
-                    // All tab
                     Tab(
                       child: Container(
                         width: 100,
@@ -637,7 +718,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                         ),
                       ),
                     ),
-                    // White tab
                     Tab(
                       child: Container(
                         width: 100,
@@ -657,7 +737,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                         ),
                       ),
                     ),
-                    // Black tab
                     Tab(
                       child: Container(
                         width: 100,
@@ -761,7 +840,24 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
   }
 
   Widget _buildEmptyState(String type) {
-    if (searchQuery.isNotEmpty) {
+    // Build filter description
+    String filterDesc = '';
+    if (searchQuery.isNotEmpty) filterDesc += "'$searchQuery'";
+    if (_selectedPriority != null) {
+      String priorityText = '';
+      if (_selectedPriority == 'LOW')
+        priorityText = 'Low';
+      else if (_selectedPriority == 'MEDIUM')
+        priorityText = 'Medium';
+      else if (_selectedPriority == 'URGENT')
+        priorityText = 'Urgent';
+      filterDesc +=
+          filterDesc.isEmpty
+              ? 'priority: $priorityText'
+              : ', priority: $priorityText';
+    }
+
+    if (filterDesc.isNotEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -769,12 +865,13 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
             Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
-              "No results found for '$searchQuery'",
+              "No results for $filterDesc",
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              "Try searching with different keywords",
+              "Try adjusting filters",
               style: TextStyle(fontSize: 14, color: Colors.grey[500]),
             ),
           ],
@@ -814,6 +911,15 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
   /// ================= CHALAN CARD =================
   Widget _chalanCard(BuildContext context, DeliveryChallan chalan) {
     final bool isWhite = !chalan.isBlackChallan;
+    // Determine priority color
+    Color priorityColor = Colors.grey;
+    if (chalan.priority == 'URGENT')
+      priorityColor = Colors.red;
+    else if (chalan.priority == 'MEDIUM')
+      priorityColor = Colors.orange;
+    else if (chalan.priority == 'LOW')
+      priorityColor = Colors.green;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -826,7 +932,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
             offset: const Offset(0, 4),
           ),
         ],
-        // Left border color based on type
         border: Border(
           left: BorderSide(color: isWhite ? Colors.red : Colors.blue, width: 4),
         ),
@@ -838,51 +943,75 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                "Chalan no. : CH ${chalan.id}",
+                "Chalan no. : CH ${chalan.seriesNumber}",
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert),
-                onSelected: (value) {
-                  if (value == "dc") {
-                    if (!canPrint) {
-                      _showError("You don't have permission to print DC");
-                      return;
-                    }
-                    _printPdf(challanId: chalan.id, isReturn: false);
-                  } else if (value == "return") {
-                    if (!canReturnPrint) {
-                      _showError(
-                        "You don't have permission to print Return DC",
-                      );
-                      return;
-                    }
-                    _printPdf(challanId: chalan.id, isReturn: true);
-                  }
-                },
-                itemBuilder:
-                    (context) => const [
-                      PopupMenuItem(
-                        value: "dc",
-                        child: Row(
-                          children: [
-                            Icon(Icons.print),
-                            SizedBox(width: 8),
-                            Text("DC Print"),
-                          ],
-                        ),
+              Row(
+                children: [
+                  // Priority badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: priorityColor.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      chalan.priority,
+                      style: TextStyle(
+                        color: priorityColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
                       ),
-                      PopupMenuItem(
-                        value: "return",
-                        child: Row(
-                          children: [
-                            Icon(Icons.print),
-                            SizedBox(width: 8),
-                            Text("Return DC Print"),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert),
+                    onSelected: (value) {
+                      if (value == "dc") {
+                        if (!canPrint) {
+                          _showError("You don't have permission to print DC");
+                          return;
+                        }
+                        _printPdf(challanId: chalan.id, isReturn: false);
+                      } else if (value == "return") {
+                        if (!canReturnPrint) {
+                          _showError(
+                            "You don't have permission to print Return DC",
+                          );
+                          return;
+                        }
+                        _printPdf(challanId: chalan.id, isReturn: true);
+                      }
+                    },
+                    itemBuilder:
+                        (context) => const [
+                          PopupMenuItem(
+                            value: "dc",
+                            child: Row(
+                              children: [
+                                Icon(Icons.print),
+                                SizedBox(width: 8),
+                                Text("DC Print"),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: "return",
+                            child: Row(
+                              children: [
+                                Icon(Icons.print),
+                                SizedBox(width: 8),
+                                Text("Return DC Print"),
+                              ],
+                            ),
+                          ),
+                        ],
+                  ),
+                ],
               ),
             ],
           ),

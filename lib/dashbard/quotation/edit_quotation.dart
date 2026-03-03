@@ -18,7 +18,6 @@ class EditQuotationScreen extends StatefulWidget {
 }
 
 class _EditQuotationScreenState extends State<EditQuotationScreen> {
-  Timer? _productSearchDebounce;
   final Dio _dio = Dio();
 
   // Client Details Controllers
@@ -48,9 +47,14 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
   String? _selectedEmployeeId;
   String? _selectedEmployeeName;
 
-  // Products data
-  List<dynamic> _products = [];
+  // All products (full list, fetched once) – used for size/quality dropdowns and product details
+  List<dynamic> _allProducts = [];
+
+  // Filtered products from search API – used for the search dropdown
   List<dynamic> _filteredProducts = [];
+
+  // Debouncer for product search
+  Timer? _productSearchDebounce;
 
   // Product rows
   List<ProductRow> _productRows = [];
@@ -77,8 +81,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
       // Fetch employees
       await _fetchEmployees('');
 
-      // Fetch all products for dropdown
-      await _fetchProducts(search: '');
+      // Fetch ALL products once
+      await _fetchAllProducts();
 
       // Initialize form with existing data
       _populateFormData();
@@ -131,30 +135,54 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
     _productRows =
         items.map<ProductRow>((item) {
-          final row = ProductRow();
+          final row = ProductRow(
+            onChanged: () {
+              setState(() {}); // 👈 forces subtotal refresh
+            },
+          );
 
+          // Set all fields from item
           row.productId = item['productId'];
-          row.productName = item['productName'] ?? '';
-          row.size = item['size'] ?? '';
-          row.quality = item['quality'] ?? '';
+          row.productName = (item['productName'] ?? '').toString().trim();
+          row.size = (item['size'] ?? '').toString().trim();
+          row.quality = (item['quality'] ?? '').toString().trim();
           row.godown = 'KKW';
 
           row.rateController.text = item['rate']?.toString() ?? '0';
-
           row.covController.text = item['cov']?.toString() ?? '0';
-
-          row.areaController.text =
-              item['area']?.toString() ?? ''; // 👈 AREA ADDED
-
+          row.areaController.text = item['area']?.toString() ?? '';
           row.weightController.text = item['weight']?.toString() ?? '0';
-
           row.quantityController.text = item['box']?.toString() ?? '0';
-
           row.discountController.text = item['discount']?.toString() ?? '0';
-
           row.amountController.text = item['total']?.toString() ?? '0';
+          row.productSearchController.text = row.productName;
 
-          row.productSearchController.text = item['productName'] ?? '';
+          // Validate and correct product using _allProducts (if available)
+          if (_allProducts.isNotEmpty) {
+            final matchedProduct = _getProductDetails(
+              row.productName,
+              row.size,
+              row.quality,
+            );
+            print("fjdsk : ${row.productName} ${row.size} ${row.quality}");
+            if (matchedProduct != null) {
+              // Use the official product data from master list
+              row.productId = matchedProduct['id'];
+              row.productName =
+                  (matchedProduct['name'] ?? '').toString().trim();
+              row.size = (matchedProduct['size'] ?? '').toString().trim();
+              row.quality = (matchedProduct['quality'] ?? '').toString().trim();
+              row.rateController.text =
+                  matchedProduct['rate']?.toString() ?? row.rateController.text;
+              row.covController.text =
+                  matchedProduct['cov']?.toString() ?? row.covController.text;
+              row.productSearchController.text = row.productName;
+            } else {
+              debugPrint(
+                'No match found for product: ${row.productName} ${row.size} ${row.quality}',
+              );
+            }
+          }
 
           row.updateTWGT();
           row.updateTotal();
@@ -218,16 +246,43 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     }
   }
 
-  Future<void> _fetchProducts({required String search}) async {
+  // Fetch ALL products (no search filter) – for size/quality dropdowns
+  Future<void> _fetchAllProducts() async {
     try {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/product/list',
-        queryParameters: {'search': search},
+        queryParameters: {'search': ''},
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         setState(() {
-          _products = response.data['products'];
+          _allProducts = response.data['products'];
+          debugPrint('Fetched ${_allProducts.length} products');
+        });
+      }
+    } catch (e) {
+      debugPrint('Fetch all products error: $e');
+    }
+  }
+
+  // Search products API call – updates _filteredProducts
+  Future<void> _searchProducts(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _filteredProducts = [];
+      });
+      return;
+    }
+
+    try {
+      final response = await _dio.get(
+        'https://dashboard.theceramicstudio.in/api/product/list',
+        queryParameters: {'search': query.trim()},
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        setState(() {
+          _filteredProducts = response.data['products'];
         });
       }
     } catch (e) {
@@ -235,64 +290,66 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     }
   }
 
-  // Get unique sizes for a product name
+  // Helper: Get unique sizes for a product name (case-insensitive, trimmed)
   List<String> _getSizesForProduct(String productName) {
     if (productName.isEmpty) return [];
-
+    final normalizedName = productName.trim().toLowerCase();
     final productsWithSameName =
-        _products.where((p) => p['name'] == productName).toList();
+        _allProducts.where((p) {
+          final name = (p['name']?.toString() ?? '').trim().toLowerCase();
+          return name == normalizedName;
+        }).toList();
 
     if (productsWithSameName.isEmpty) return [];
 
-    final sizes =
-        productsWithSameName
-            .map((p) => p['size']?.toString() ?? '')
-            .where((size) => size.isNotEmpty)
-            .toSet()
-            .toList();
-
-    return sizes;
+    return productsWithSameName
+        .map((p) => p['size']?.toString().trim() ?? '')
+        .where((size) => size.isNotEmpty)
+        .toSet()
+        .toList();
   }
 
-  // Get unique qualities for a product name and size
+  // Helper: Get unique qualities for a product name and size (case-insensitive, trimmed)
   List<String> _getQualitiesForProduct(String productName, String size) {
     if (productName.isEmpty || size.isEmpty) return [];
+    final normalizedName = productName.trim().toLowerCase();
+    final normalizedSize = size.trim();
 
     final productsWithSameNameAndSize =
-        _products
-            .where(
-              (p) =>
-                  p['name'] == productName &&
-                  (p['size']?.toString() ?? '') == size,
-            )
-            .toList();
+        _allProducts.where((p) {
+          final name = (p['name']?.toString() ?? '').trim().toLowerCase();
+          final pSize = (p['size']?.toString() ?? '').trim();
+          return name == normalizedName && pSize == normalizedSize;
+        }).toList();
 
     if (productsWithSameNameAndSize.isEmpty) return [];
 
-    final qualities =
-        productsWithSameNameAndSize
-            .map((p) => p['quality']?.toString() ?? '')
-            .where((quality) => quality.isNotEmpty)
-            .toSet()
-            .toList();
-
-    return qualities;
+    return productsWithSameNameAndSize
+        .map((p) => p['quality']?.toString().trim() ?? '')
+        .where((quality) => quality.isNotEmpty)
+        .toSet()
+        .toList();
   }
 
-  // Get product details for name, size, and quality
+  // Helper: Get product details for name, size, quality (case-insensitive, trimmed)
   Map<String, dynamic>? _getProductDetails(
     String productName,
     String size,
     String quality,
   ) {
     try {
-      return _products.firstWhere(
-        (p) =>
-            p['name'] == productName &&
-            (p['size']?.toString() ?? '') == size &&
-            (p['quality']?.toString() ?? '') == quality,
-        orElse: () => null,
-      );
+      final normalizedName = productName.trim().toLowerCase();
+      final normalizedSize = size.trim();
+      final normalizedQuality = quality.trim();
+
+      return _allProducts.firstWhere((p) {
+        final name = (p['name']?.toString() ?? '').trim().toLowerCase();
+        final pSize = (p['size']?.toString() ?? '').trim();
+        final pQuality = (p['quality']?.toString() ?? '').trim();
+        return name == normalizedName &&
+            pSize == normalizedSize &&
+            pQuality == normalizedQuality;
+      });
     } catch (e) {
       return null;
     }
@@ -479,7 +536,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         "address": _siteAddressController.text.trim(),
         "architect": _selectedArchitectId ?? "",
         "attendedBy": _selectedEmployeeId ?? "",
-        "attended": "", // Empty as per your example
+        "attended": "",
       };
 
       // Prepare request body
@@ -496,7 +553,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
       debugPrint('Update Request Body: ${requestBody.toString()}');
 
-      // Make API call - UPDATED URL
       final response = await _dio.put(
         'https://dashboard.theceramicstudio.in/api/Quotation/updateQuotation/${widget.quotationId}',
         data: requestBody,
@@ -509,7 +565,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         final responseData = response.data;
 
         if (responseData['success'] == true) {
-          // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -519,9 +574,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
             ),
           );
 
-          // Close the screen after delay
           Future.delayed(const Duration(seconds: 1), () {
-            Navigator.pop(context, true); // Return success flag
+            Navigator.pop(context, true);
           });
         } else {
           throw Exception(
@@ -584,14 +638,9 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
   String? _getValidSize(ProductRow row, List<String> sizes) {
     if (row.size.isEmpty) return null;
 
-    final exists = sizes.contains(row.size);
-
-    if (!exists) {
-      debugPrint(
-        'Size ${row.size} not available for product ${row.productName}, resetting',
-      );
-      row.size = ''; // Reset invalid size
-      return null;
+    // EDIT MODE → keep quotation size
+    if (!sizes.contains(row.size)) {
+      return row.size;
     }
 
     return row.size;
@@ -600,14 +649,9 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
   String? _getValidQuality(ProductRow row, List<String> qualities) {
     if (row.quality.isEmpty) return null;
 
-    final exists = qualities.contains(row.quality);
-
-    if (!exists) {
-      debugPrint(
-        'Quality ${row.quality} not available for product ${row.productName} size ${row.size}, resetting',
-      );
-      row.quality = ''; // Reset invalid quality
-      return null;
+    // keep quotation quality
+    if (!qualities.contains(row.quality)) {
+      return row.quality;
     }
 
     return row.quality;
@@ -766,8 +810,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButton<String>(
                                       isExpanded: true,
-                                      value:
-                                          _getValidArchitectId(), // NULL SAFE
+                                      value: _getValidArchitectId(),
                                       hint:
                                           _isLoadingArchitects
                                               ? const Text('Loading...')
@@ -825,7 +868,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButton<String>(
                                       isExpanded: true,
-                                      value: _getValidEmployeeId(), // NULL SAFE
+                                      value: _getValidEmployeeId(),
                                       hint:
                                           _isLoadingEmployees
                                               ? const Text('Loading...')
@@ -976,6 +1019,11 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                             _buildClientTextField(
                               _additionalDiscountController,
                               'Enter discount percentage...',
+                              onChanged: (_) {
+                                setState(
+                                  () {},
+                                ); // 👈 This will refresh totals instantly
+                              },
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -989,9 +1037,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                         ),
                       ),
 
-                      const SizedBox(height: 20),
-
-                      // BOTTOM SECTION (Bank Details & Terms)
                       const SizedBox(height: 20),
 
                       // FINAL QUOTATION VALUE SECTION
@@ -1144,6 +1189,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     TextEditingController controller,
     String hintText, {
     int maxLines = 1,
+    void Function(String)? onChanged,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1161,13 +1207,26 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
           border: InputBorder.none,
           isDense: true,
         ),
+        onChanged: onChanged,
       ),
     );
   }
 
   Widget _buildProductRow(int index, ProductRow row) {
-    final sizes = _getSizesForProduct(row.productName);
-    final qualities = _getQualitiesForProduct(row.productName, row.size);
+    final sizes =
+        row.size.isNotEmpty
+            ? [
+              row.size,
+              ..._getSizesForProduct(row.productName),
+            ].toSet().toList()
+            : _getSizesForProduct(row.productName);
+    final qualities =
+        row.quality.isNotEmpty
+            ? [
+              row.quality,
+              ..._getQualitiesForProduct(row.productName, row.size),
+            ].toSet().toList()
+            : _getQualitiesForProduct(row.productName, row.size);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1198,38 +1257,37 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                         child: TextField(
                           controller: row.productSearchController,
                           onChanged: (value) {
-                            row.productName = value;
-                            row.showProductDropdown = value.isNotEmpty;
+                            setState(() {
+                              row.productName = value;
+                              row.showProductDropdown = value.isNotEmpty;
 
-                            // Reset dependent fields
-                            row.size = '';
-                            row.quality = '';
-                            row.weightController.clear();
-                            row.twgtController.clear();
-                            row.covController.clear();
-                            row.rateController.clear();
-                            row.amountController.clear();
+                              // Reset dependent fields
+                              row.size = '';
+                              row.quality = '';
+                              row.weightController.clear();
+                              row.twgtController.clear();
+                              row.covController.clear();
+                              row.rateController.clear();
+                              row.amountController.clear();
+                            });
 
                             // Debounce API call
                             if (_productSearchDebounce?.isActive ?? false) {
                               _productSearchDebounce!.cancel();
                             }
-
                             _productSearchDebounce = Timer(
                               const Duration(milliseconds: 400),
-                              () {
-                                if (value.trim().isNotEmpty) {
-                                  _fetchProducts(search: value.trim());
-                                }
-                              },
+                              () => _searchProducts(value),
                             );
-
-                            setState(() {});
                           },
                           onTap: () {
                             setState(() {
                               row.showProductDropdown = true;
                             });
+                            // Immediately search for the current query
+                            if (row.productName.isNotEmpty) {
+                              _searchProducts(row.productName);
+                            }
                           },
                           decoration: const InputDecoration(
                             hintText: 'Search product...',
@@ -1253,25 +1311,9 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       ),
                     ),
                     child: ListView.builder(
-                      itemCount:
-                          _products
-                              .where(
-                                (p) => p['name']
-                                    .toString()
-                                    .toLowerCase()
-                                    .contains(row.productName.toLowerCase()),
-                              )
-                              .length,
+                      itemCount: _filteredProducts.length,
                       itemBuilder: (context, idx) {
-                        final product =
-                            _products
-                                .where(
-                                  (p) => p['name']
-                                      .toString()
-                                      .toLowerCase()
-                                      .contains(row.productName.toLowerCase()),
-                                )
-                                .toList()[idx];
+                        final product = _filteredProducts[idx];
                         return ListTile(
                           title: Text(product['name'] ?? ''),
                           subtitle: Text(
@@ -1280,13 +1322,18 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                           onTap: () {
                             setState(() {
                               row.productId = product['id'];
-                              row.productName = product['name'];
-                              row.size = product['size'].toString();
-                              row.quality = product['quality'].toString();
+                              row.productName =
+                                  (product['name'] ?? '').toString().trim();
+                              row.size =
+                                  (product['size'] ?? '').toString().trim();
+                              row.quality =
+                                  (product['quality'] ?? '').toString().trim();
                               row.productSearchController.text =
-                                  product['name'];
-                              row.rateController.text = product['rate'] ?? '0';
-                              row.covController.text = product['cov'] ?? '0';
+                                  row.productName;
+                              row.rateController.text =
+                                  product['rate']?.toString() ?? '0';
+                              row.covController.text =
+                                  product['cov']?.toString() ?? '0';
                               row.showProductDropdown = false;
                               row.updateTotal();
                               FocusScope.of(context).unfocus();
@@ -1322,7 +1369,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,
-                          value: _getValidSize(row, sizes), // NULL SAFE
+                          value: _getValidSize(row, sizes),
                           hint: const Text('Select Size'),
                           items:
                               sizes.map((size) {
@@ -1369,7 +1416,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,
-                          value: _getValidQuality(row, qualities), // NULL SAFE
+                          value: _getValidQuality(row, qualities),
                           hint: const Text('Select Quality'),
                           items:
                               qualities.map((quality) {
@@ -1421,6 +1468,9 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                     _buildTextField(
                       row.rateController,
                       '0',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       onChanged: (_) => row.updateTotal(),
                     ),
                   ],
@@ -1437,13 +1487,16 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                     _buildTextField(
                       row.covController,
                       '0',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       onChanged: (_) => row.updateTotal(),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              // AREA (NEW FIELD)
+              // AREA
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1451,7 +1504,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                     _buildLabel('AREA'),
                     const SizedBox(height: 4),
                     _buildTextField(
-                      row.areaController, // 👈 NEW CONTROLLER
+                      row.areaController,
                       '0',
                       keyboardType: TextInputType.text,
                       onChanged: (_) => row.updateTotal(),
@@ -1667,6 +1720,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
   @override
   void dispose() {
+    _productSearchDebounce?.cancel();
     _clientNameController.dispose();
     _clientGstController.dispose();
     _contactNumberController.dispose();
@@ -1685,6 +1739,10 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 }
 
 class ProductRow {
+  final VoidCallback? onChanged;
+
+  ProductRow({this.onChanged});
+
   String productName = '';
   String size = '';
   String quality = '';
@@ -1695,8 +1753,7 @@ class ProductRow {
   final TextEditingController productSearchController = TextEditingController();
   final TextEditingController rateController = TextEditingController();
   final TextEditingController covController = TextEditingController();
-  final TextEditingController areaController =
-      TextEditingController(); // 👈 NEW
+  final TextEditingController areaController = TextEditingController();
   final TextEditingController weightController = TextEditingController();
   final TextEditingController twgtController = TextEditingController();
   final TextEditingController quantityController = TextEditingController();
@@ -1708,15 +1765,15 @@ class ProductRow {
       final weight = double.tryParse(weightController.text) ?? 0;
       final quantity = double.tryParse(quantityController.text) ?? 0;
 
-      // Calculate TWGT: Weight * Quantity
       final twgt = weight * quantity;
       twgtController.text = twgt.toStringAsFixed(2);
 
-      // Update total amount
       updateTotal();
+      onChanged?.call(); // 👈 ADD THIS
     } catch (e) {
       twgtController.text = '0';
       amountController.text = '0';
+      onChanged?.call();
     }
   }
 
@@ -1727,16 +1784,15 @@ class ProductRow {
       final cov = double.tryParse(covController.text) ?? 0;
       final discount = double.tryParse(discountController.text) ?? 0;
 
-      // Apply discount to rate first
       final discountedRate = rate * (1 - discount / 100);
-      // Then calculate base amount with quantity
       final baseAmount = discountedRate * quantity;
-      // Finally apply COV factor
       final finalAmount = baseAmount * cov;
 
       amountController.text = finalAmount.toStringAsFixed(2);
+      onChanged?.call(); // 👈 ADD THIS
     } catch (e) {
       amountController.text = '0';
+      onChanged?.call();
     }
   }
 
@@ -1748,7 +1804,7 @@ class ProductRow {
     productSearchController.dispose();
     rateController.dispose();
     covController.dispose();
-    areaController.dispose(); // 👈 NEW
+    areaController.dispose();
     weightController.dispose();
     twgtController.dispose();
     quantityController.dispose();
