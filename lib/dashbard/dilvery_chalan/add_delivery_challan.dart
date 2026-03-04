@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'dart:math';
 
 /// ================= MODEL CLASSES =================
 class Quotation {
@@ -10,6 +11,9 @@ class Quotation {
   final String contactNo;
   final String address;
   final String clientId;
+  final double transportation;
+  final double unloading;
+  final double additionalDiscount;
   final List<QuotationItem> items;
 
   Quotation({
@@ -18,6 +22,9 @@ class Quotation {
     required this.contactNo,
     required this.address,
     required this.clientId,
+    required this.transportation,
+    required this.unloading,
+    required this.additionalDiscount,
     required this.items,
   });
 
@@ -32,6 +39,11 @@ class Quotation {
       contactNo: json['contactNo'] ?? '',
       address: json['address'] ?? '',
       clientId: json['clientId']?.toString() ?? '',
+      transportation:
+          double.tryParse(json['transportation']?.toString() ?? '0') ?? 0,
+      unloading: double.tryParse(json['unloading']?.toString() ?? '0') ?? 0,
+      additionalDiscount:
+          double.tryParse(json['additionalDiscount']?.toString() ?? '0') ?? 0,
       items: items,
     );
   }
@@ -45,6 +57,7 @@ class QuotationItem {
   final List<Batch> batches;
   final int currentStock;
   final double rate;
+  final double disRate;
   final double cov;
   final String size;
   final String quality;
@@ -57,6 +70,7 @@ class QuotationItem {
     required this.batches,
     required this.currentStock,
     required this.rate,
+    required this.disRate,
     required this.cov,
     required this.size,
     required this.quality,
@@ -75,6 +89,7 @@ class QuotationItem {
       batches: batches,
       currentStock: json['currentStock'] ?? 0,
       rate: double.tryParse(json['rate']?.toString() ?? '0') ?? 0,
+      disRate: double.tryParse(json['disRate']?.toString() ?? '0') ?? 0,
       cov: double.tryParse(json['cov']?.toString() ?? '0') ?? 0,
       size: json['size']?.toString() ?? '',
       quality: json['quality']?.toString() ?? '',
@@ -138,12 +153,10 @@ class AdditionalProductRow {
       final cov = double.tryParse(covController.text) ?? 0;
       final discount = double.tryParse(discountController.text) ?? 0;
 
-      final baseAmount = rate * quantity;
-      final covAmount = baseAmount * cov;
-      final discountAmount = covAmount * (discount / 100);
-      final finalAmount = covAmount - discountAmount;
+      final discountedRate = rate * (1 - discount / 100);
+      final total = discountedRate * quantity * cov;
 
-      amountController.text = finalAmount.toStringAsFixed(2);
+      amountController.text = total.toStringAsFixed(2);
     } catch (e) {
       amountController.text = '0';
     }
@@ -168,7 +181,9 @@ class AdditionalProductRow {
 
 /// ================= MAIN SCREEN =================
 class AddDeliveryChallanScreen extends StatefulWidget {
-  const AddDeliveryChallanScreen({super.key});
+  final int? quotationId; // 👈 optional parameter
+
+  const AddDeliveryChallanScreen({super.key, this.quotationId});
 
   @override
   State<AddDeliveryChallanScreen> createState() =>
@@ -189,16 +204,24 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   double? _quotationAmount;
   double? _quotationPaidAmount;
   double? _customerWalletAmount;
+  double? _additionalDiscount;
   bool _isLoadingSummary = false;
 
   // Black/White challan toggle
   bool? _isBlackChallan;
 
-  // Dispatch logistics
+  // Dispatch logistics (now optional)
   final TextEditingController _driverNameController = TextEditingController();
   final TextEditingController _driverContactController =
       TextEditingController();
   final TextEditingController _vehicleNoController = TextEditingController();
+  final TextEditingController _transportationController = TextEditingController(
+    text: '',
+  );
+  final TextEditingController _unloadingController = TextEditingController(
+    text: '',
+  );
+  // Note fields (optional)
   final TextEditingController _note1Controller = TextEditingController();
   final TextEditingController _note2Controller = TextEditingController();
 
@@ -210,11 +233,12 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
 
   // Additional discount
   final TextEditingController _additionalDiscountController =
-      TextEditingController(text: '0');
+      TextEditingController(text: '');
 
   // Loading states
   bool _isSearching = false;
   bool _isSubmitting = false;
+  bool _isLoadingQuotation = false; // 👈 new loading state for initial fetch
 
   // Quotations list for search
   List<Quotation> _quotations = [];
@@ -230,6 +254,31 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.quotationId != null) {
+      _loadQuotationById(widget.quotationId!);
+    }
+  }
+
+  /// Fetch a single quotation by ID and pre‑fill the form
+  Future<void> _loadQuotationById(int id) async {
+    setState(() => _isLoadingQuotation = true);
+    try {
+      final response = await dio.get(
+        "https://dashboard.theceramicstudio.in/api/Quotation/list/$id",
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final quotationData = response.data['quotation'];
+        final quotation = Quotation.fromJson(quotationData);
+        _selectQuotation(quotation);
+      } else {
+        _showError("Failed to load quotation");
+      }
+    } catch (e) {
+      debugPrint("Load quotation by ID error: $e");
+      _showError("Error loading quotation");
+    } finally {
+      setState(() => _isLoadingQuotation = false);
+    }
   }
 
   @override
@@ -240,6 +289,8 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     _driverNameController.dispose();
     _driverContactController.dispose();
     _vehicleNoController.dispose();
+    _transportationController.dispose();
+    _unloadingController.dispose();
     _note1Controller.dispose();
     _note2Controller.dispose();
     _additionalDiscountController.dispose();
@@ -255,7 +306,11 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   void _initializeControllers() {
     for (var item in _displayedQuotationItems) {
       if (!_dispatchBoxesControllers.containsKey(item.id)) {
-        _dispatchBoxesControllers[item.id] = TextEditingController();
+        // If remainingBoxes > 0, prefill; otherwise leave empty.
+        final initialText =
+            item.remainingBoxes > 0 ? item.remainingBoxes.toString() : '';
+        final controller = TextEditingController(text: initialText);
+        _dispatchBoxesControllers[item.id] = controller;
       }
     }
   }
@@ -299,6 +354,11 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       _driverNameController.clear();
       _driverContactController.clear();
       _vehicleNoController.clear();
+      _transportationController.text = quotation.transportation.toString();
+      _unloadingController.text = quotation.unloading.toString();
+      _additionalDiscountController.text =
+          quotation.additionalDiscount.toString();
+      _additionalDiscount = quotation.additionalDiscount; // set from quotation
       _note1Controller.clear();
       _note2Controller.clear();
       _isBlackChallan = null;
@@ -321,6 +381,15 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           _quotationPaidAmount = (data['quotationPaidAmount'] ?? 0).toDouble();
           _customerWalletAmount =
               (data['customerWalletAmount'] ?? 0).toDouble();
+          // If payment summary includes additionalDiscount, use it; otherwise keep existing
+          if (data.containsKey('additionalDiscount')) {
+            _additionalDiscount =
+                double.tryParse(
+                  data['additionalDiscount']?.toString() ?? '0',
+                ) ??
+                0;
+            _additionalDiscountController.text = _additionalDiscount.toString();
+          }
         });
       }
     } catch (e) {
@@ -338,6 +407,10 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       _quotationAmount = null;
       _quotationPaidAmount = null;
       _customerWalletAmount = null;
+      _additionalDiscount = null;
+      _additionalDiscountController.text = '';
+      _transportationController.text = '';
+      _unloadingController.text = '';
     });
   }
 
@@ -445,7 +518,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     for (var item in _displayedQuotationItems) {
       final controller = _dispatchBoxesControllers[item.id];
       final dispatchBoxes = double.tryParse(controller?.text ?? '0') ?? 0;
-      total += dispatchBoxes * item.rate;
+      total += dispatchBoxes * item.disRate * item.cov;
     }
     return total;
   }
@@ -466,11 +539,16 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     double subtotal = _calculateTotalAmount();
     double additionalDiscount =
         double.tryParse(_additionalDiscountController.text) ?? 0;
+    double transportation =
+        double.tryParse(_transportationController.text) ?? 0;
+    double unloading = double.tryParse(_unloadingController.text) ?? 0;
+
+    double totalBeforeDiscount = subtotal + transportation + unloading;
     if (additionalDiscount > 0) {
-      double discountAmount = subtotal * (additionalDiscount / 100);
-      return subtotal - discountAmount;
+      double discountAmount = totalBeforeDiscount * (additionalDiscount / 100);
+      return totalBeforeDiscount - discountAmount;
     }
-    return subtotal;
+    return totalBeforeDiscount;
   }
 
   // ---------- Refresh grand total (called after any change in additional rows) ----------
@@ -485,18 +563,17 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       return false;
     }
 
-    if (_driverNameController.text.isEmpty) {
-      _showError("Please enter driver name");
+    // Driver fields are optional – validation removed.
+
+    if (_transportationController.text.isEmpty ||
+        double.tryParse(_transportationController.text) == null) {
+      _showError("Please enter a valid transportation amount");
       return false;
     }
 
-    if (_driverContactController.text.isEmpty) {
-      _showError("Please enter driver contact");
-      return false;
-    }
-
-    if (_vehicleNoController.text.isEmpty) {
-      _showError("Please enter vehicle number");
+    if (_unloadingController.text.isEmpty ||
+        double.tryParse(_unloadingController.text) == null) {
+      _showError("Please enter a valid unloading amount");
       return false;
     }
 
@@ -560,6 +637,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   }
 
   // ---------- API Submission ----------
+  // ---------- API Submission ----------
   Future<void> _generateDeliveryChallan() async {
     if (!_validateForm()) return;
 
@@ -579,7 +657,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             "productId": item.productId,
             "productName": item.productName,
             "dispatchBoxes": dispatchBoxes,
-            "rate": item.rate,
+            "rate": item.disRate,
             "cov": item.cov,
             "currentStock": item.currentStock,
             "isExtra": 0,
@@ -628,9 +706,12 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
         "contact": _selectedQuotation?.contactNo ?? "",
         "address": _selectedQuotation?.address ?? "",
         "walletDifference": grandTotal,
+        "grandTotalAmount": grandTotal,
+        "additionalDis":
+            double.tryParse(_additionalDiscountController.text) ?? 0,
         "isBlackChallan": _isBlackChallan,
-        "transportation": _note1Controller.text.trim(),
-        "unloading": _note2Controller.text.trim(),
+        "transportation": double.tryParse(_transportationController.text) ?? 0,
+        "unloading": double.tryParse(_unloadingController.text) ?? 0,
         "driverDetails": {
           "deliveryBoy": _driverNameController.text.trim(),
           "contact": _driverContactController.text.trim(),
@@ -710,12 +791,14 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- Updated Product Card with Size & Quality ----------
+  // ---------- Updated Product Card with conditional prefilled dispatch boxes ----------
   Widget _buildProductItem(QuotationItem item) {
     final controller =
-        _dispatchBoxesControllers[item.id] ?? TextEditingController(text: '0');
-    final remaining =
-        item.remainingBoxes > 0 ? item.remainingBoxes : item.currentStock;
+        _dispatchBoxesControllers[item.id] ??
+        TextEditingController(
+          text: item.remainingBoxes > 0 ? item.remainingBoxes.toString() : '',
+        );
+    final remaining = max(0, item.remainingBoxes);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -837,14 +920,14 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                   ],
                 ),
               ),
-              // RATE
+              // RATE (Discounted Rate)
               Expanded(
                 flex: 1,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "RATE",
+                      "DISC. RATE",
                       style: TextStyle(
                         fontSize: 10,
                         color: Colors.grey.shade500,
@@ -853,7 +936,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      "₹${item.rate.toStringAsFixed(2)}",
+                      "₹${item.disRate.toStringAsFixed(2)}",
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -912,7 +995,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                           setState(() {});
                         },
                         decoration: InputDecoration(
-                          hintText: "",
                           hintStyle: const TextStyle(color: Colors.grey),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
@@ -1276,6 +1358,9 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                     _buildTextField(
                       row.rateController,
                       '0',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       onChanged: (_) {
                         row.updateTotal();
                         onUpdate();
@@ -1294,6 +1379,9 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                     _buildTextField(
                       row.covController,
                       '0',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       onChanged: (_) {
                         row.updateTotal();
                         onUpdate();
@@ -1343,6 +1431,34 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                         onUpdate();
                       },
                     ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('TWGT'),
+                    const SizedBox(height: 4),
+                    _buildTextField(row.twgtController, '0', enabled: false),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('AMOUNT (₹)'),
+                    const SizedBox(height: 4),
+                    _buildTextField(row.amountController, '0', enabled: false),
                   ],
                 ),
               ),
@@ -1433,6 +1549,11 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               "Wallet Balance",
               "₹${_customerWalletAmount!.toStringAsFixed(2)}",
             ),
+            if (_additionalDiscount != null)
+              _buildSummaryRow(
+                "Additional Discount",
+                "${_additionalDiscount!.toStringAsFixed(0)}%",
+              ),
           ],
 
           const Divider(height: 24),
@@ -1768,7 +1889,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "DISPATCH LOGISTICS",
+            "DISPATCH LOGISTICS (Optional)",
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.bold,
@@ -1778,7 +1899,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           const SizedBox(height: 16),
 
           _buildInputField(
-            label: "Driver Name",
+            label: "Driver Name (Optional)",
             hintText: "Enter driver name",
             controller: _driverNameController,
             icon: Icons.person_outline,
@@ -1787,7 +1908,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           const SizedBox(height: 12),
 
           _buildInputField(
-            label: "Contact",
+            label: "Contact (Optional)",
             hintText: "Enter contact number",
             controller: _driverContactController,
             icon: Icons.phone_outlined,
@@ -1797,29 +1918,31 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           const SizedBox(height: 12),
 
           _buildInputField(
-            label: "Vehicle No (e.g. MH-15-AB-1234)",
+            label: "Vehicle No (Optional)",
             hintText: "Enter vehicle number",
             controller: _vehicleNoController,
             icon: Icons.local_shipping_outlined,
           ),
           const SizedBox(height: 10),
-          Divider(height: 50),
-          const SizedBox(height: 10),
 
+          // Transportation
           _buildInputField(
-            label: "Transportation",
-            hintText: "Add transportation details (optional)",
-            controller: _note1Controller,
-            icon: Icons.note_alt_outlined,
+            label: "Transportation (₹)",
+            hintText: "Enter transportation amount",
+            controller: _transportationController,
+            icon: Icons.local_shipping_outlined,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
 
           const SizedBox(height: 12),
 
+          // Unloading
           _buildInputField(
-            label: "Unloading",
-            hintText: "Add Unloading details (optional)",
-            controller: _note2Controller,
-            icon: Icons.sticky_note_2_outlined,
+            label: "Unloading (₹)",
+            hintText: "Enter unloading amount",
+            controller: _unloadingController,
+            icon: Icons.unarchive_outlined,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
         ],
       ),
@@ -1861,6 +1984,9 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                 child: TextField(
                   controller: controller,
                   keyboardType: keyboardType,
+                  onChanged: (_) {
+                    setState(() {});
+                  },
                   decoration: InputDecoration(
                     hintText: hintText,
                     hintStyle: TextStyle(color: Colors.grey.shade500),
@@ -1883,8 +2009,12 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     final subtotal = _calculateTotalAmount();
     final additionalDiscount =
         double.tryParse(_additionalDiscountController.text) ?? 0;
-    final discountAmount = subtotal * (additionalDiscount / 100);
-    final grandTotal = _calculateGrandTotal();
+    final transportation = double.tryParse(_transportationController.text) ?? 0;
+    final unloading = double.tryParse(_unloadingController.text) ?? 0;
+
+    final totalBeforeDiscount = subtotal + transportation + unloading;
+    final discountAmount = totalBeforeDiscount * (additionalDiscount / 100);
+    final grandTotal = totalBeforeDiscount - discountAmount;
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
@@ -1897,217 +2027,275 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
         elevation: 0,
         backgroundColor: const Color(0xFFFA9C42),
       ),
-      body: GestureDetector(
-        onTap: () {
-          for (var row in _additionalRows) {
-            row.showProductDropdown = false;
-          }
-          FocusScope.of(context).unfocus();
-        },
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildSearchBar(),
-              const SizedBox(height: 20),
-
-              // 👇 Everything below is shown only if a quotation is selected
-              if (_selectedQuotation != null) ...[
-                _buildSelectedQuotation(),
-                const SizedBox(height: 20),
-                _buildPaymentSummarySection(),
-                const SizedBox(height: 20),
-                _buildChallanTypeToggle(),
-                const SizedBox(height: 20),
-                _buildDispatchLogistics(),
-                const SizedBox(height: 24),
-
-                if (_displayedQuotationItems.isNotEmpty) ...[
-                  const Text(
-                    "PRODUCTS FROM QUOTATION",
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ..._displayedQuotationItems.map(_buildProductItem).toList(),
-                  const SizedBox(height: 24),
-                ],
-
-                const Text(
-                  "ADDITIONAL PRODUCTS",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFFFA9C42),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                ..._additionalRows.asMap().entries.map(
-                  (entry) => _buildAdditionalProductRow(
-                    entry.key,
-                    entry.value,
-                    _refreshGrandTotal,
-                  ),
-                ),
-
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _addAdditionalRow,
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: const Color(0xFFFA9C42)),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.add, color: Color(0xFFFA9C42), size: 18),
-                            SizedBox(width: 8),
-                            Text(
-                              "+ ADD PRODUCT",
-                              style: TextStyle(
-                                color: Color(0xFFFA9C42),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                Container(
-                  width: double.infinity,
+      body:
+          _isLoadingQuotation // 👈 show loading while fetching initial quotation
+              ? const Center(
+                child: CircularProgressIndicator(color: Color(0xFFFA9C42)),
+              )
+              : GestureDetector(
+                onTap: () {
+                  for (var row in _additionalRows) {
+                    row.showProductDropdown = false;
+                  }
+                  FocusScope.of(context).unfocus();
+                },
+                child: SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFA9C42).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFFFA9C42).withOpacity(0.3),
-                    ),
-                  ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
+                      _buildSearchBar(),
+                      const SizedBox(height: 20),
+
+                      // 👇 Everything below is shown only if a quotation is selected
+                      if (_selectedQuotation != null) ...[
+                        _buildSelectedQuotation(),
+                        const SizedBox(height: 20),
+                        _buildPaymentSummarySection(),
+                        const SizedBox(height: 20),
+                        _buildChallanTypeToggle(),
+                        const SizedBox(height: 20),
+                        _buildDispatchLogistics(),
+                        const SizedBox(height: 24),
+
+                        if (_displayedQuotationItems.isNotEmpty) ...[
                           const Text(
-                            'Subtotal',
+                            "PRODUCTS FROM QUOTATION",
                             style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.black87,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey,
                             ),
                           ),
-                          Text(
-                            '₹${subtotal.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black87,
-                            ),
-                          ),
+                          const SizedBox(height: 16),
+                          ..._displayedQuotationItems
+                              .map(_buildProductItem)
+                              .toList(),
+                          const SizedBox(height: 24),
                         ],
-                      ),
-                      if (additionalDiscount > 0) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Additional Discount ($additionalDiscount%)',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Colors.green,
+
+                        const Text(
+                          "ADDITIONAL PRODUCTS",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFFA9C42),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        ..._additionalRows.asMap().entries.map(
+                          (entry) => _buildAdditionalProductRow(
+                            entry.key,
+                            entry.value,
+                            _refreshGrandTotal,
+                          ),
+                        ),
+
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: _addAdditionalRow,
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: const Color(0xFFFA9C42),
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add,
+                                      color: Color(0xFFFA9C42),
+                                      size: 18,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      "+ ADD PRODUCT",
+                                      style: TextStyle(
+                                        color: Color(0xFFFA9C42),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                            Text(
-                              '-₹${discountAmount.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.green,
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Grand Total Section
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFA9C42).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFFFA9C42).withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              // Subtotal
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Subtotal',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  Text(
+                                    '₹${subtotal.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              // Transportation
+                              if (transportation != 0)
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Transportation',
+                                      style: TextStyle(fontSize: 14),
+                                    ),
+                                    Text(
+                                      '+₹${transportation.toStringAsFixed(2)}',
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                  ],
+                                ),
+                              // Unloading
+                              if (unloading != 0)
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Unloading',
+                                      style: TextStyle(fontSize: 14),
+                                    ),
+                                    Text(
+                                      '+₹${unloading.toStringAsFixed(2)}',
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                  ],
+                                ),
+                              if (transportation != 0 || unloading != 0)
+                                const SizedBox(height: 8),
+
+                              // Additional Discount
+                              // if (additionalDiscount > 0) ...[
+                              //   Row(
+                              //     mainAxisAlignment:
+                              //         MainAxisAlignment.spaceBetween,
+                              //     children: [
+                              //       Text(
+                              //         'Additional Discount ($additionalDiscount%)',
+                              //         style: const TextStyle(
+                              //           fontSize: 14,
+                              //           color: Colors.green,
+                              //         ),
+                              //       ),
+                              //       Text(
+                              //         '-₹${discountAmount.toStringAsFixed(2)}',
+                              //         style: const TextStyle(
+                              //           fontSize: 14,
+                              //           fontWeight: FontWeight.w500,
+                              //           color: Colors.green,
+                              //         ),
+                              //       ),
+                              //     ],
+                              //   ),
+                              //   const SizedBox(height: 8),
+                              // ],
+                              const Divider(height: 24, thickness: 1),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Grand Total',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFFFA9C42),
+                                    ),
+                                  ),
+                                  Text(
+                                    '₹${grandTotal.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFFFA9C42),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed:
+                                _isSubmitting ? null : _generateDeliveryChallan,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFA9C42),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                          ],
+                            child:
+                                _isSubmitting
+                                    ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                    : const Text(
+                                      'Generate Delivery Challan',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                          ),
                         ),
                       ],
-                      const Divider(height: 24, thickness: 1),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Grand Total',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFFFA9C42),
-                            ),
-                          ),
-                          Text(
-                            '₹${grandTotal.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFFFA9C42),
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 24),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isSubmitting ? null : _generateDeliveryChallan,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFA9C42),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child:
-                        _isSubmitting
-                            ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                            : const Text(
-                              'Generate Delivery Challan',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+              ),
     );
   }
 }

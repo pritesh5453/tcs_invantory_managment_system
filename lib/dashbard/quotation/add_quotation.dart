@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
@@ -32,9 +31,15 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
   final TextEditingController _siteAddressController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
 
-  // Additional Discount
+  // Additional Discount & Charges
   final TextEditingController _additionalDiscountController =
       TextEditingController(text: '0');
+  final TextEditingController _transportationController = TextEditingController(
+    text: '0',
+  );
+  final TextEditingController _unloadingController = TextEditingController(
+    text: '0',
+  );
 
   // Architect Data
   List<dynamic> _architects = [];
@@ -45,14 +50,14 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
   List<dynamic> _filteredCustomers = [];
   bool _showCustomerDropdown = false;
   Timer? _customerSearchDebounce;
-  int? _selectedClientId; // 👈 new variable to store selected client ID
+  int? _selectedClientId;
 
   // Attended By Data
   List<dynamic> _employees = [];
   String? _selectedEmployeeId;
   String? _selectedEmployeeName;
 
-  // Products data (global search results, used for dropdowns and finding details)
+  // Products data
   List<dynamic> _products = [];
   List<dynamic> _filteredProducts = [];
 
@@ -73,7 +78,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     _productRows.add(
       ProductRow(
         onChanged: () {
-          setState(() {}); // 👈 subtotal refresh
+          setState(() {}); // refresh totals
         },
       ),
     );
@@ -84,17 +89,12 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
   bool _isLoadingArchitects = false;
   bool _isLoadingEmployees = false;
 
-  // Scroll controller for keyboard handling
   final ScrollController _scrollController = ScrollController();
 
   Future<void> _initializeData() async {
     try {
-      // Fetch architects
       await _fetchArchitects();
-
-      // Fetch employees
       await _fetchEmployees('');
-
       setState(() {
         _isLoading = false;
       });
@@ -107,26 +107,18 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
   }
 
   Future<void> _fetchArchitects() async {
-    setState(() {
-      _isLoadingArchitects = true;
-    });
-
+    setState(() => _isLoadingArchitects = true);
     try {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/architects/list',
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
-        setState(() {
-          _architects = response.data['architects'];
-        });
+        setState(() => _architects = response.data['architects']);
       }
     } catch (e) {
       debugPrint('Architect fetch error: $e');
     } finally {
-      setState(() {
-        _isLoadingArchitects = false;
-      });
+      setState(() => _isLoadingArchitects = false);
     }
   }
 
@@ -138,13 +130,11 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
       });
       return;
     }
-
     try {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/users/list',
         queryParameters: {'search': search},
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
         setState(() {
           _customers = response.data['customers'];
@@ -158,48 +148,35 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
   }
 
   Future<void> _fetchEmployees(String search) async {
-    setState(() {
-      _isLoadingEmployees = true;
-    });
-
+    setState(() => _isLoadingEmployees = true);
     try {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/employees/list',
         queryParameters: {'search': search},
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
-        setState(() {
-          _employees = response.data['employees'];
-        });
+        setState(() => _employees = response.data['employees']);
       }
     } catch (e) {
       debugPrint('Employees fetch error: $e');
     } finally {
-      setState(() {
-        _isLoadingEmployees = false;
-      });
+      setState(() => _isLoadingEmployees = false);
     }
   }
 
   Future<void> _fetchProducts({required String search}) async {
     if (search.trim().isEmpty) {
-      setState(() {
-        _filteredProducts = [];
-      });
+      setState(() => _filteredProducts = []);
       return;
     }
-
     try {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/product/list',
         queryParameters: {'search': search},
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
         setState(() {
           _filteredProducts = response.data['products'];
-          // Also update main products list for dropdowns
           _products = response.data['products'];
         });
       }
@@ -208,7 +185,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     }
   }
 
-  // Helper to find product details from the global _products list (used when quality changes)
   Map<String, dynamic>? _findProductDetails(
     String productName,
     String size,
@@ -227,29 +203,20 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     }
   }
 
-  // Get unique sizes for a product name (used for dropdown)
   List<String> _getSizesForProduct(String productName) {
     if (productName.isEmpty) return [];
-
     final productsWithSameName =
         _products.where((p) => p['name'] == productName).toList();
-
     if (productsWithSameName.isEmpty) return [];
-
-    final sizes =
-        productsWithSameName
-            .map((p) => p['size']?.toString() ?? '')
-            .where((size) => size.isNotEmpty)
-            .toSet()
-            .toList();
-
-    return sizes;
+    return productsWithSameName
+        .map((p) => p['size']?.toString() ?? '')
+        .where((size) => size.isNotEmpty)
+        .toSet()
+        .toList();
   }
 
-  // Get unique qualities for a product name and size (used for dropdown)
   List<String> _getQualitiesForProduct(String productName, String size) {
     if (productName.isEmpty || size.isEmpty) return [];
-
     final productsWithSameNameAndSize =
         _products
             .where(
@@ -258,40 +225,24 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                   (p['size']?.toString() ?? '') == size,
             )
             .toList();
-
     if (productsWithSameNameAndSize.isEmpty) return [];
-
-    final qualities =
-        productsWithSameNameAndSize
-            .map((p) => p['quality']?.toString() ?? '')
-            .where((quality) => quality.isNotEmpty)
-            .toSet()
-            .toList();
-
-    return qualities;
+    return productsWithSameNameAndSize
+        .map((p) => p['quality']?.toString() ?? '')
+        .where((quality) => quality.isNotEmpty)
+        .toSet()
+        .toList();
   }
 
   void _addProductRow() {
     setState(() {
-      _productRows.add(
-        ProductRow(
-          onChanged: () {
-            setState(() {});
-          },
-        ),
-      );
-      // Scroll to bottom after adding new row
-      Future.delayed(const Duration(milliseconds: 100), () {});
+      _productRows.add(ProductRow(onChanged: () => setState(() {})));
     });
   }
 
   void _removeProductRow(int index) {
-    setState(() {
-      _productRows.removeAt(index);
-    });
+    setState(() => _productRows.removeAt(index));
   }
 
-  // Calculate total of all product rows
   double _calculateTotalAmount() {
     double total = 0;
     for (var row in _productRows) {
@@ -300,73 +251,59 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     return total;
   }
 
-  // Calculate grand total after additional discount
   double _calculateGrandTotal() {
     double subtotal = _calculateTotalAmount();
     double additionalDiscount =
         double.tryParse(_additionalDiscountController.text) ?? 0;
+    double transportation =
+        double.tryParse(_transportationController.text) ?? 0;
+    double unloading = double.tryParse(_unloadingController.text) ?? 0;
 
-    // Apply additional discount as percentage
-    if (additionalDiscount > 0) {
-      double discountAmount = subtotal * (additionalDiscount / 100);
-      return subtotal - discountAmount;
-    }
-    return subtotal;
+    double discountAmount = subtotal * (additionalDiscount / 100);
+    double afterDiscount = subtotal - discountAmount;
+    return afterDiscount + transportation + unloading;
   }
 
-  // Validate form before submission
   bool _validateForm() {
-    // Validate client details
     if (_clientNameController.text.trim().isEmpty) {
       _showSnackBar('Please enter client name');
       return false;
     }
-
     if (_contactNumberController.text.trim().isEmpty) {
       _showSnackBar('Please enter contact number');
       return false;
     }
-
     if (_siteAddressController.text.trim().isEmpty) {
       _showSnackBar('Please enter site address');
       return false;
     }
-
     if (_selectedArchitectId == null) {
       _showSnackBar('Please select an architect');
       return false;
     }
-
     if (_selectedEmployeeId == null) {
       _showSnackBar('Please select attended by');
       return false;
     }
-
-    // Validate product rows
     for (int i = 0; i < _productRows.length; i++) {
       final row = _productRows[i];
-
       if (row.productName.isEmpty) {
         _showSnackBar('Please select product for row ${i + 1}');
         return false;
       }
-
       if (row.size.isEmpty) {
         _showSnackBar('Please select size for row ${i + 1}');
         return false;
       }
-
       if (row.quality.isEmpty) {
         _showSnackBar('Please select quality for row ${i + 1}');
         return false;
       }
-
       if (row.quantityController.text.trim().isEmpty ||
           double.tryParse(row.quantityController.text) == 0) {
         _showSnackBar('Please enter valid quantity for row ${i + 1}');
         return false;
       }
-
       if (row.productId == null && row.selectedProductDetails == null) {
         _showSnackBar(
           'Product ID not found for row ${i + 1}. Please reselect the product.',
@@ -374,60 +311,51 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
         return false;
       }
     }
-
     return true;
   }
 
-  // Show snackbar message
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
-  // Save quotation API call
   Future<void> _saveQuotation() async {
-    if (!_validateForm()) {
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-    });
+    if (!_validateForm()) return;
+    setState(() => _isSubmitting = true);
 
     try {
-      // Prepare rows data
       List<Map<String, dynamic>> rowsData = [];
-
       for (var row in _productRows) {
-        // Use the stored product details instead of searching global list
         final productDetails = row.selectedProductDetails;
         if (productDetails == null) {
           throw Exception('Product details not found for ${row.productName}');
         }
+        final rate = double.tryParse(row.rateController.text) ?? 0;
+        final discount = double.tryParse(row.discountController.text) ?? 0;
+        final discountedRate = rate * (1 - discount / 100);
 
-        final rowData = {
+        rowsData.add({
           "productId": productDetails['id'] ?? row.productId,
           "productName": row.productName,
           "size": row.size,
           "quality": row.quality,
-          "rate": double.tryParse(row.rateController.text) ?? 0,
+          "rate": rate,
+          "discount": discount,
+          "disRate": discountedRate,
           "box": int.tryParse(row.quantityController.text) ?? 0,
-          "area": row.areaController.text.trim().toString(),
+          "cov": double.tryParse(row.covController.text) ?? 0,
           "Weight": row.weightController.text,
           "TWgt": row.twgtController.text,
           "Coverage": row.covController.text,
-          "cov": double.tryParse(row.covController.text) ?? 0,
-          "discount": double.tryParse(row.discountController.text) ?? 0,
           "total": row.getTotalAmount().toStringAsFixed(2),
+          "area": row.areaController.text.trim(),
           "godown": row.godown,
-        };
-        rowsData.add(rowData);
+        });
       }
 
-      // Prepare client details – include clientid if selected, otherwise null
       final clientDetails = {
-        "clientid": _selectedClientId, // 👈 new field
+        "clientid": _selectedClientId,
         "name": _clientNameController.text.trim(),
         "contactNo": _contactNumberController.text.trim(),
         "altContactNo": _altNumberController.text.trim(),
@@ -436,10 +364,11 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
         "address": _siteAddressController.text.trim(),
         "architect": _selectedArchitectId ?? "",
         "attendedBy": _selectedEmployeeId ?? "",
-        "attended": "",
+        "Attended": "",
+        "transportation": _transportationController.text,
+        "unloading": _unloadingController.text,
       };
 
-      // Prepare request body
       final requestBody = {
         "additionalDiscount":
             double.tryParse(_additionalDiscountController.text) ?? 0,
@@ -450,20 +379,15 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
       debugPrint('Request Body: ${requestBody.toString()}');
 
-      // Make API call
       final response = await _dio.post(
         'https://dashboard.theceramicstudio.in/api/Quotation/saveQuotation',
         data: requestBody,
         options: Options(headers: {'Content-Type': 'application/json'}),
       );
 
-      debugPrint('Response: ${response.data}');
-
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = response.data;
-
         if (responseData['success'] == true) {
-          // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -472,48 +396,33 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
               backgroundColor: Colors.green,
             ),
           );
-
-          // Close the bottom sheet after delay
           Future.delayed(const Duration(seconds: 1), () {
             Navigator.pop(context, true);
           });
         } else {
-          // API returned success: false with an error message
           _showErrorSnackBar(
             responseData['message'] ?? 'Failed to save quotation',
           );
         }
       } else {
-        // Handle non-200 status codes
         _showErrorSnackBar(
           'Server error: ${response.statusCode}\n${response.statusMessage}',
         );
       }
     } on DioException catch (e) {
-      // Handle Dio errors specifically
       debugPrint('DioException: $e');
-      debugPrint('Response data: ${e.response?.data}');
-      debugPrint('Status code: ${e.response?.statusCode}');
-
       String errorMessage = 'Failed to save quotation';
-
       if (e.response != null) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
         final responseData = e.response?.data;
-
         if (responseData != null) {
-          // Try to extract error message from response
           if (responseData is Map) {
             if (responseData['message'] != null) {
               errorMessage = responseData['message'];
             } else if (responseData['error'] != null) {
               errorMessage = responseData['error'];
             } else if (responseData['errors'] != null) {
-              // Handle validation errors
               final errors = responseData['errors'];
               if (errors is Map) {
-                // Format validation errors
                 final errorStrings = errors.entries
                     .map((entry) {
                       final field = entry.key;
@@ -530,8 +439,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
               }
             }
           }
-
-          // Add status code for debugging
           errorMessage += '\n(Status: ${e.response?.statusCode})';
         } else {
           errorMessage = 'Server error (${e.response?.statusCode})';
@@ -547,27 +454,21 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
       } else if (e.type == DioExceptionType.connectionError) {
         errorMessage = 'No internet connection. Please check your network.';
       }
-
       _showErrorSnackBar(errorMessage);
     } catch (e) {
       debugPrint('Unexpected error: $e');
       _showErrorSnackBar('Unexpected error: ${e.toString()}');
     } finally {
-      setState(() {
-        _isSubmitting = false;
-      });
+      setState(() => _isSubmitting = false);
     }
   }
 
-  // Helper method to show error snackbar with better formatting
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: const TextStyle(fontSize: 14)),
         backgroundColor: Colors.red,
-        duration: const Duration(
-          seconds: 5,
-        ), // Longer duration for error messages
+        duration: const Duration(seconds: 5),
         action: SnackBarAction(
           label: 'Dismiss',
           textColor: Colors.white,
@@ -581,10 +482,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    final bottomPadding = mediaQuery.viewInsets.bottom;
-    final safeAreaBottom = mediaQuery.padding.bottom;
-
     final totalAmount = _calculateTotalAmount();
     final additionalDiscount =
         double.tryParse(_additionalDiscountController.text) ?? 0;
@@ -606,7 +503,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
           ),
           child: Column(
             children: [
-              // Header (Fixed)
+              // Header
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: const BoxDecoration(
@@ -635,11 +532,10 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                 ),
               ),
 
-              // Scrollable Content Area
+              // Scrollable Content
               Expanded(
                 child: GestureDetector(
                   onTap: () {
-                    // Close all dropdowns when tapping outside
                     setState(() {
                       for (var row in _productRows) {
                         row.showProductDropdown = false;
@@ -695,25 +591,19 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                           child: TextField(
                                             controller: _clientNameController,
                                             onChanged: (value) {
-                                              // Clear selected client ID when user types manually
                                               _selectedClientId = null;
-
                                               if (_customerSearchDebounce
                                                       ?.isActive ??
                                                   false) {
                                                 _customerSearchDebounce!
                                                     .cancel();
                                               }
-
                                               _customerSearchDebounce = Timer(
                                                 const Duration(
                                                   milliseconds: 400,
                                                 ),
-                                                () {
-                                                  _fetchCustomers(value);
-                                                },
+                                                () => _fetchCustomers(value),
                                               );
-
                                               setState(() {});
                                             },
                                             onTap: () {
@@ -730,8 +620,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                             ),
                                           ),
                                         ),
-
-                                        /// DROPDOWN
                                         if (_showCustomerDropdown &&
                                             _filteredCustomers.isNotEmpty)
                                           Container(
@@ -757,7 +645,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                                     _filteredCustomers[index];
                                                 final fullName =
                                                     "${customer['name']} ${customer['Last_Name'] ?? ''}";
-
                                                 return ListTile(
                                                   title: Text(fullName),
                                                   subtitle: Text(
@@ -782,16 +669,12 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                                               .text =
                                                           customer['siteName'] ??
                                                           '';
-
-                                                      // 👈 Store selected client ID
                                                       _selectedClientId =
                                                           customer['id'];
-
                                                       _showCustomerDropdown =
                                                           false;
 
-                                                      /// Optional: Architect & Employee Auto Assign
-                                                      // Architect Auto Select
+                                                      // Auto-select architect
                                                       final architectName =
                                                           customer['assignedArchitect'];
                                                       if (architectName !=
@@ -808,7 +691,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                                               orElse:
                                                                   () => null,
                                                             );
-
                                                         if (architect != null) {
                                                           _selectedArchitectId =
                                                               architect['id']
@@ -816,7 +698,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                                         }
                                                       }
 
-                                                      // Employee Auto Select
+                                                      // Auto-select employee
                                                       final employeeName =
                                                           customer['assignedEmployee'];
                                                       if (employeeName !=
@@ -834,7 +716,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                                               orElse:
                                                                   () => null,
                                                             );
-
                                                         if (employee != null) {
                                                           _selectedEmployeeId =
                                                               employee['id']
@@ -842,7 +723,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                                         }
                                                       }
                                                     });
-
                                                     FocusScope.of(
                                                       context,
                                                     ).unfocus();
@@ -866,7 +746,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                   ),
                                   const SizedBox(height: 12),
 
-                                  // Contact Number and Alt Number
+                                  // Contact Number and Alt Number (Phone keyboard)
                                   Row(
                                     children: [
                                       Expanded(
@@ -879,6 +759,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                             _buildClientTextField(
                                               _contactNumberController,
                                               '+91',
+                                              keyboardType: TextInputType.phone,
                                             ),
                                           ],
                                         ),
@@ -894,6 +775,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                             _buildClientTextField(
                                               _altNumberController,
                                               '+91',
+                                              keyboardType: TextInputType.phone,
                                             ),
                                           ],
                                         ),
@@ -921,10 +803,9 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                   ),
                                   const SizedBox(height: 12),
 
-                                  // Select Architect and Attended By
+                                  // Architect and Attended By
                                   Row(
                                     children: [
-                                      // Architect Dropdown (Expanded)
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
@@ -999,8 +880,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                           ],
                                         ),
                                       ),
-
-                                      // + Button (Orange)
                                       const SizedBox(width: 8),
                                       Padding(
                                         padding: const EdgeInsets.only(top: 20),
@@ -1020,7 +899,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                               size: 20,
                                             ),
                                             onPressed: () {
-                                              // Open Architect Management Screen
                                               Navigator.push(
                                                 context,
                                                 MaterialPageRoute(
@@ -1028,17 +906,12 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                                       (context) =>
                                                           const AddArchitectScreen(),
                                                 ),
-                                              ).then((_) {
-                                                _fetchArchitects();
-                                              });
+                                              ).then((_) => _fetchArchitects());
                                             },
                                           ),
                                         ),
                                       ),
-
                                       const SizedBox(width: 12),
-
-                                      // Attended By Dropdown (Expanded)
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
@@ -1118,7 +991,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                   const Divider(),
                                   const SizedBox(height: 16),
 
-                                  // Product Section Header
+                                  // PRODUCT DETAILS SECTION
                                   const Text(
                                     'PRODUCT DETAILS',
                                     style: TextStyle(
@@ -1127,7 +1000,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                       color: Color(0xffFFA54A),
                                     ),
                                   ),
-
                                   const SizedBox(height: 16),
 
                                   // Product Rows
@@ -1185,6 +1057,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
                                   const SizedBox(height: 20),
 
+                                  // Additional Discount Section
                                   Container(
                                     padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
@@ -1204,11 +1077,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                         _buildClientTextField(
                                           _additionalDiscountController,
                                           'Enter discount percentage...',
-                                          onChanged: (_) {
-                                            setState(
-                                              () {},
-                                            ); // 👈 This will refresh totals instantly
-                                          },
+                                          onChanged: (_) => setState(() {}),
                                         ),
                                         const SizedBox(height: 8),
                                         Text(
@@ -1222,10 +1091,94 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                     ),
                                   ),
 
-                                  // Additional Discount Section
                                   const SizedBox(height: 20),
 
-                                  // FINAL QUOTATION VALUE SECTION
+                                  // Transportation & Unloading Section
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'ADDITIONAL CHARGES',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  _buildClientLabel(
+                                                    'TRANSPORTATION (₹)',
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  _buildClientTextField(
+                                                    _transportationController,
+                                                    '0',
+                                                    onChanged:
+                                                        (_) => setState(() {}),
+                                                    keyboardType:
+                                                        const TextInputType.numberWithOptions(
+                                                          decimal: true,
+                                                        ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 16),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  _buildClientLabel(
+                                                    'UNLOADING (₹)',
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  _buildClientTextField(
+                                                    _unloadingController,
+                                                    '0',
+                                                    onChanged:
+                                                        (_) => setState(() {}),
+                                                    keyboardType:
+                                                        const TextInputType.numberWithOptions(
+                                                          decimal: true,
+                                                        ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'These charges will be added to the final total.',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 20),
+
+                                  // FINAL QUOTATION VALUE
                                   Container(
                                     width: double.infinity,
                                     padding: const EdgeInsets.all(16),
@@ -1243,6 +1196,28 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                     child: Column(
                                       children: [
                                         // Subtotal
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text(
+                                              'Subtotal',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                            Text(
+                                              '₹${totalAmount.toStringAsFixed(2)}',
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
 
                                         // Additional Discount
                                         if (additionalDiscount > 0)
@@ -1275,122 +1250,87 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                             ],
                                           ),
 
-                                        // Grand Total
-                                        Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.all(16),
-                                          decoration: BoxDecoration(
-                                            color: const Color(
-                                              0xffFFA54A,
-                                            ).withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                            border: Border.all(
-                                              color: const Color(
-                                                0xffFFA54A,
-                                              ).withOpacity(0.3),
-                                            ),
-                                          ),
-                                          child: Column(
+                                        // Transportation
+                                        if (double.tryParse(
+                                              _transportationController.text,
+                                            ) !=
+                                            0)
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              // Subtotal
-                                              Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment
-                                                        .spaceBetween,
-                                                children: [
-                                                  const Text(
-                                                    'Subtotal',
-                                                    style: TextStyle(
-                                                      fontSize: 16,
-                                                      color: Colors.black87,
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    '₹${totalAmount.toStringAsFixed(2)}',
-                                                    style: const TextStyle(
-                                                      fontSize: 16,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                      color: Colors.black87,
-                                                    ),
-                                                  ),
-                                                ],
+                                              const Text(
+                                                'Transportation',
+                                                style: TextStyle(fontSize: 14),
                                               ),
-                                              const SizedBox(height: 8),
-
-                                              // Additional Discount
-                                              if (additionalDiscount > 0)
-                                                Column(
-                                                  children: [
-                                                    Row(
-                                                      mainAxisAlignment:
-                                                          MainAxisAlignment
-                                                              .spaceBetween,
-                                                      children: [
-                                                        Text(
-                                                          'Additional Discount ($additionalDiscount%)',
-                                                          style:
-                                                              const TextStyle(
-                                                                fontSize: 14,
-                                                                color:
-                                                                    Colors
-                                                                        .green,
-                                                              ),
-                                                        ),
-                                                        Text(
-                                                          '-₹${discountAmount.toStringAsFixed(2)}',
-                                                          style:
-                                                              const TextStyle(
-                                                                fontSize: 14,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w500,
-                                                                color:
-                                                                    Colors
-                                                                        .green,
-                                                              ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    const SizedBox(height: 8),
-                                                  ],
+                                              Text(
+                                                '+₹${double.tryParse(_transportationController.text)?.toStringAsFixed(2) ?? '0'}',
+                                                style: const TextStyle(
+                                                  fontSize: 14,
                                                 ),
-
-                                              // Grand Total
-                                              Divider(
-                                                color: Colors.grey.shade400,
-                                                thickness: 1,
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment
-                                                        .spaceBetween,
-                                                children: [
-                                                  const Text(
-                                                    'Final Quotation Value',
-                                                    style: TextStyle(
-                                                      fontSize: 18,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Color(0xffFFA54A),
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    '₹${grandTotal.toStringAsFixed(2)}',
-                                                    style: const TextStyle(
-                                                      fontSize: 22,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Color(0xffFFA54A),
-                                                    ),
-                                                  ),
-                                                ],
                                               ),
                                             ],
                                           ),
+
+                                        // Unloading
+                                        if (double.tryParse(
+                                              _unloadingController.text,
+                                            ) !=
+                                            0)
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text(
+                                                'Unloading',
+                                                style: TextStyle(fontSize: 14),
+                                              ),
+                                              Text(
+                                                '+₹${double.tryParse(_unloadingController.text)?.toStringAsFixed(2) ?? '0'}',
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+
+                                        if (double.tryParse(
+                                                  _transportationController
+                                                      .text,
+                                                ) !=
+                                                0 ||
+                                            double.tryParse(
+                                                  _unloadingController.text,
+                                                ) !=
+                                                0)
+                                          const SizedBox(height: 8),
+
+                                        Divider(
+                                          color: Colors.grey.shade400,
+                                          thickness: 1,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text(
+                                              'Final Quotation Value',
+                                              style: TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xffFFA54A),
+                                              ),
+                                            ),
+                                            Text(
+                                              '₹${grandTotal.toStringAsFixed(2)}',
+                                              style: const TextStyle(
+                                                fontSize: 22,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xffFFA54A),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
@@ -1398,7 +1338,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
                                   const SizedBox(height: 24),
 
-                                  // Buttons (Always visible at bottom)
+                                  // Buttons
                                   Row(
                                     children: [
                                       Expanded(
@@ -1471,7 +1411,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                       ),
                                     ],
                                   ),
-
                                   const SizedBox(height: 20),
                                 ],
                               ),
@@ -1502,6 +1441,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     String hintText, {
     int maxLines = 1,
     void Function(String)? onChanged,
+    TextInputType keyboardType = TextInputType.text,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1512,6 +1452,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
       child: TextField(
         controller: controller,
         maxLines: maxLines,
+        keyboardType: keyboardType,
         style: const TextStyle(fontSize: 14),
         decoration: InputDecoration(
           hintText: hintText,
@@ -1524,6 +1465,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     );
   }
 
+  // ========== PRODUCT ROW UI ==========
   Widget _buildProductRow(int index, ProductRow row) {
     final sizes = _getSizesForProduct(row.productName);
     final qualities = _getQualitiesForProduct(row.productName, row.size);
@@ -1532,484 +1474,527 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade200,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLabel('PRODUCT'),
+          const SizedBox(height: 4),
+          _buildProductSearchField(row),
+
+          const SizedBox(height: 12),
+
+          // Row 1: Size | Quality | Rate
+          Row(
+            children: [
+              Expanded(child: _buildSizeDropdown(row, sizes)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildQualityDropdown(row, qualities)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildRateField(row)),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Row 2: Coverage | Area | Box
+          Row(
+            children: [
+              Expanded(child: _buildCoverageField(row)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildAreaField(row)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildBoxField(row)),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Row 3: Discount % | Weight | TWGT
+          Row(
+            children: [
+              Expanded(child: _buildDiscountField(row)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildWeightField(row)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildTwgtField(row)),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Row 4: Discounted Rate | Total Amount | Godown
+          Row(
+            children: [
+              Expanded(child: _buildDiscountedRateField(row)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildTotalAmountField(row)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildGodownDropdown(row)),
+            ],
+          ),
+
+          if (_productRows.length > 1) _buildDeleteButton(index),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductSearchField(ProductRow row) {
+    return Container(
+      decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         children: [
-          // Product Name Search
-          _buildLabel('PRODUCT'),
-          const SizedBox(height: 4),
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
               children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.search, size: 18, color: Colors.grey),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: row.productSearchController,
-                          onChanged: (value) {
-                            row.productName = value;
-                            row.showProductDropdown = value.isNotEmpty;
+                const Icon(Icons.search, size: 18, color: Colors.grey),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: row.productSearchController,
+                    onChanged: (value) {
+                      row.productName = value;
+                      row.showProductDropdown = value.isNotEmpty;
+                      row.size = '';
+                      row.quality = '';
+                      row.weightController.clear();
+                      row.twgtController.clear();
+                      row.covController.clear();
+                      row.rateController.clear();
+                      row.totalAmountController.clear();
+                      row.discountedRateController.clear();
+                      row.selectedProductDetails = null;
 
-                            // Reset dependent fields
-                            row.size = '';
-                            row.quality = '';
-                            row.weightController.clear();
-                            row.twgtController.clear();
-                            row.covController.clear();
-                            row.rateController.clear();
-                            row.amountController.clear();
-                            // Clear stored details
-                            row.selectedProductDetails = null;
+                      if (_productSearchDebounce?.isActive ?? false) {
+                        _productSearchDebounce!.cancel();
+                      }
 
-                            // Debounce API call
-                            if (_productSearchDebounce?.isActive ?? false) {
-                              _productSearchDebounce!.cancel();
-                            }
+                      _productSearchDebounce = Timer(
+                        const Duration(milliseconds: 400),
+                        () {
+                          if (value.trim().isNotEmpty) {
+                            _fetchProducts(search: value.trim());
+                          } else {
+                            setState(() => _filteredProducts = []);
+                          }
+                        },
+                      );
 
-                            _productSearchDebounce = Timer(
-                              const Duration(milliseconds: 400),
-                              () {
-                                if (value.trim().isNotEmpty) {
-                                  _fetchProducts(search: value.trim());
-                                } else {
-                                  setState(() {
-                                    _filteredProducts = [];
-                                  });
-                                }
-                              },
-                            );
-
-                            setState(() {});
-                          },
-                          onTap: () {
-                            setState(() {
-                              row.showProductDropdown = true;
-                            });
-                          },
-                          decoration: const InputDecoration(
-                            hintText: 'Search product...',
-                            hintStyle: TextStyle(fontSize: 14),
-                            border: InputBorder.none,
-                            isDense: true,
-                          ),
-                        ),
-                      ),
-                    ],
+                      setState(() {});
+                    },
+                    onTap: () => setState(() => row.showProductDropdown = true),
+                    decoration: const InputDecoration(
+                      hintText: 'Search product...',
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
                   ),
                 ),
-                if (row.showProductDropdown && row.productName.isNotEmpty)
-                  Container(
-                    height: 150,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade200),
-                      borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(8),
-                        bottomRight: Radius.circular(8),
-                      ),
-                    ),
-                    child: ListView.builder(
-                      itemCount:
-                          _filteredProducts
-                              .where(
-                                (p) => p['name']
-                                    .toString()
-                                    .toLowerCase()
-                                    .contains(row.productName.toLowerCase()),
-                              )
-                              .length,
-                      itemBuilder: (context, idx) {
-                        final product =
-                            _filteredProducts
-                                .where(
-                                  (p) => p['name']
-                                      .toString()
-                                      .toLowerCase()
-                                      .contains(row.productName.toLowerCase()),
-                                )
-                                .toList()[idx];
-                        return ListTile(
-                          title: Text(product['name'] ?? ''),
-                          subtitle: Text(
-                            'Size: ${product['size']} | Quality: ${product['quality']}',
-                          ),
-                          onTap: () {
-                            setState(() {
-                              row.productId = product['id'];
-                              row.productName = product['name'];
-                              row.size = product['size'].toString();
-                              row.quality = product['quality'].toString();
-                              row.productSearchController.text =
-                                  product['name'];
-                              row.rateController.text = product['rate'] ?? '0';
-                              row.covController.text = product['cov'] ?? '0';
-                              // Store full product details
-                              row.selectedProductDetails = product;
-                              row.showProductDropdown = false;
-                              row.updateTotal();
-                              FocusScope.of(context).unfocus();
-                            });
-                          },
-                        );
-                      },
-                    ),
-                  ),
               ],
             ),
           ),
-
-          const SizedBox(height: 12),
-
-          // Size and Quality Dropdowns
-          Row(
-            children: [
-              // Size Dropdown
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('SIZE'),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value:
-                              row.size.isNotEmpty && sizes.contains(row.size)
-                                  ? row.size
-                                  : null,
-                          hint: const Text('Select Size'),
-                          items:
-                              sizes.map((size) {
-                                return DropdownMenuItem<String>(
-                                  value: size,
-                                  child: Text(size),
-                                );
-                              }).toList(),
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setState(() {
-                              row.size = value;
-                              row.quality = '';
-                              row.weightController.clear();
-                              row.twgtController.clear();
-                              row.covController.clear();
-                              row.rateController.clear();
-                              row.amountController.clear();
-                              // Clear stored details since size changed
-                              row.selectedProductDetails = null;
-                              row.updateTotal();
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-
-              // Quality Dropdown
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('QUALITY'),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value:
-                              row.quality.isNotEmpty &&
-                                      qualities.contains(row.quality)
-                                  ? row.quality
-                                  : null,
-                          hint: const Text('Select Quality'),
-                          items:
-                              qualities.map((quality) {
-                                return DropdownMenuItem<String>(
-                                  value: quality,
-                                  child: Text(quality),
-                                );
-                              }).toList(),
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setState(() {
-                              row.quality = value;
-                              // Find product details for this combination
-                              final productDetails = _findProductDetails(
-                                row.productName,
-                                row.size,
-                                value,
-                              );
-                              if (productDetails != null) {
-                                row.productId = productDetails['id'];
-                                row.rateController.text =
-                                    productDetails['rate']?.toString() ?? '0';
-                                row.covController.text =
-                                    productDetails['cov']?.toString() ?? '0';
-                                // Store the full details
-                                row.selectedProductDetails = productDetails;
-                              } else {
-                                // Clear if not found
-                                row.selectedProductDetails = null;
-                                row.rateController.clear();
-                                row.covController.clear();
-                              }
-                              row.updateTotal();
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // Rate, COV, and AREA
-          Row(
-            children: [
-              // Rate
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('RATE (₹)'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.rateController,
-                      '0',
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      onChanged: (_) => row.updateTotal(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // COV
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('COVERAGE'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.covController,
-                      '0',
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      onChanged: (_) => row.updateTotal(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // AREA
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('AREA'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.areaController,
-                      '0',
-                      keyboardType: TextInputType.text,
-                      onChanged: (_) => row.updateTotal(),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // BOX, DISCOUNT, WEIGHT
-          Row(
-            children: [
-              // BOX
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('BOX'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.quantityController,
-                      '0',
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) => row.updateTWGT(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // DISCOUNT
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('DISCOUNT (%)'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.discountController,
-                      '0',
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) => row.updateTotal(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // WEIGHT
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('WEIGHT'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.weightController,
-                      '0',
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) => row.updateTWGT(),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // TWGT, AMOUNT, GODOWN
-          Row(
-            children: [
-              // TWGT
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('TWGT'),
-                    const SizedBox(height: 4),
-                    _buildTextField(row.twgtController, '0', enabled: false),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // AMOUNT
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('AMOUNT (₹)'),
-                    const SizedBox(height: 4),
-                    _buildTextField(row.amountController, '0', enabled: false),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // GODOWN
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('GODOWN'),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value: row.godown,
-                          items: const [
-                            DropdownMenuItem(value: 'KKW', child: Text('KKW')),
-                            DropdownMenuItem(value: 'TCS', child: Text('TCS')),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              row.godown = value!;
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          // Delete button for additional rows
-          if (_productRows.length > 1)
-            Align(
-              alignment: Alignment.centerRight,
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => _removeProductRow(index),
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      border: Border.all(color: Colors.red),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.delete, size: 16, color: Colors.red),
-                        SizedBox(width: 4),
-                        Text(
-                          'Delete Row',
-                          style: TextStyle(color: Colors.red, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          if (row.showProductDropdown && row.productName.isNotEmpty)
+            _buildProductDropdown(row),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProductDropdown(ProductRow row) {
+    final filtered =
+        _filteredProducts
+            .where(
+              (p) => p['name'].toString().toLowerCase().contains(
+                row.productName.toLowerCase(),
+              ),
+            )
+            .toList();
+    return Container(
+      height: 150,
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Colors.grey, width: 0.5)),
+      ),
+      child: ListView.builder(
+        itemCount: filtered.length,
+        itemBuilder: (context, idx) {
+          final product = filtered[idx];
+          return ListTile(
+            dense: true,
+            title: Text(product['name'] ?? ''),
+            subtitle: Text(
+              'Size: ${product['size']} | Quality: ${product['quality']}',
+            ),
+            onTap: () {
+              setState(() {
+                row.productId = product['id'];
+                row.productName = product['name'];
+                row.size = product['size'].toString();
+                row.quality = product['quality'].toString();
+                row.productSearchController.text = product['name'];
+                row.rateController.text = product['rate']?.toString() ?? '0';
+                row.covController.text = product['cov']?.toString() ?? '0';
+                row.selectedProductDetails = product;
+                row.showProductDropdown = false;
+                row.updateTotal();
+                FocusScope.of(context).unfocus();
+              });
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSizeDropdown(ProductRow row, List<String> sizes) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('SIZE'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: sizes.contains(row.size) ? row.size : null,
+              hint: const Text('Select'),
+              items:
+                  sizes.map((s) {
+                    return DropdownMenuItem<String>(value: s, child: Text(s));
+                  }).toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  row.size = value;
+                  row.quality = '';
+                  row.selectedProductDetails = null;
+                  row.rateController.clear();
+                  row.covController.clear();
+                  row.discountedRateController.clear();
+                  row.totalAmountController.clear();
+                });
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQualityDropdown(ProductRow row, List<String> qualities) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('QUALITY'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: qualities.contains(row.quality) ? row.quality : null,
+              hint: const Text('Select'),
+              items:
+                  qualities.map((q) {
+                    return DropdownMenuItem<String>(value: q, child: Text(q));
+                  }).toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  row.quality = value;
+                  final productDetails = _findProductDetails(
+                    row.productName,
+                    row.size,
+                    value,
+                  );
+                  if (productDetails != null) {
+                    row.productId = productDetails['id'];
+                    row.rateController.text =
+                        productDetails['rate']?.toString() ?? '0';
+                    row.covController.text =
+                        productDetails['cov']?.toString() ?? '0';
+                    row.selectedProductDetails = productDetails;
+                  } else {
+                    row.selectedProductDetails = null;
+                    row.rateController.clear();
+                    row.covController.clear();
+                  }
+                  row.updateTotal();
+                });
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRateField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('RATE (₹)'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.rateController,
+          '0',
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) => row.updateTotal(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCoverageField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('COVERAGE'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.covController,
+          '0',
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) => row.updateTotal(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAreaField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('AREA'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.areaController,
+          '0',
+          keyboardType: TextInputType.text,
+          onChanged: (_) => row.updateTotal(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBoxField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('BOX'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.quantityController,
+          '0',
+          keyboardType: TextInputType.number,
+          onChanged: (_) => row.updateTWGT(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDiscountField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('DISCOUNT (%)'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.discountController,
+          '0',
+          keyboardType: TextInputType.number,
+          onChanged: (_) => row.updateTotal(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDiscountedRateField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('DISC. RATE (₹)'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey.shade100,
+          ),
+          child: TextField(
+            controller: row.discountedRateController,
+            enabled: false,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWeightField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('WEIGHT'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.weightController,
+          '0',
+          keyboardType: TextInputType.number,
+          onChanged: (_) => row.updateTWGT(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTwgtField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('TWGT'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey.shade100,
+          ),
+          child: TextField(
+            controller: row.twgtController,
+            enabled: false,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTotalAmountField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('AMOUNT (₹)'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey.shade100,
+          ),
+          child: TextField(
+            controller: row.totalAmountController,
+            enabled: false,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGodownDropdown(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('GODOWN'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: row.godown,
+              items: const [
+                DropdownMenuItem(value: 'KKW', child: Text('KKW')),
+                DropdownMenuItem(value: 'TCS', child: Text('TCS')),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  row.godown = value!;
+                });
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDeleteButton(int index) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _removeProductRow(index),
+          child: Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              border: Border.all(color: Colors.red),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.delete, size: 16, color: Colors.red),
+                SizedBox(width: 4),
+                Text(
+                  'Delete Row',
+                  style: TextStyle(color: Colors.red, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2066,6 +2051,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     _siteAddressController.dispose();
     _emailController.dispose();
     _additionalDiscountController.dispose();
+    _transportationController.dispose();
+    _unloadingController.dispose();
     _scrollController.dispose();
     for (var row in _productRows) {
       row.dispose();
@@ -2075,8 +2062,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 }
 
 class ProductRow {
-  final VoidCallback? onChanged; // 👈 ADD THIS
-
+  final VoidCallback? onChanged;
   ProductRow({this.onChanged});
 
   String productName = '';
@@ -2085,7 +2071,6 @@ class ProductRow {
   String godown = 'KKW';
   bool showProductDropdown = false;
   int? productId;
-
   Map<String, dynamic>? selectedProductDetails;
 
   final TextEditingController productSearchController = TextEditingController();
@@ -2095,22 +2080,21 @@ class ProductRow {
   final TextEditingController weightController = TextEditingController();
   final TextEditingController twgtController = TextEditingController();
   final TextEditingController quantityController = TextEditingController();
-  final TextEditingController amountController = TextEditingController();
   final TextEditingController discountController = TextEditingController();
+  final TextEditingController discountedRateController =
+      TextEditingController();
+  final TextEditingController totalAmountController = TextEditingController();
 
   void updateTWGT() {
     try {
       final weight = double.tryParse(weightController.text) ?? 0;
       final quantity = double.tryParse(quantityController.text) ?? 0;
-
       final twgt = weight * quantity;
       twgtController.text = twgt.toStringAsFixed(2);
-
       updateTotal();
-      onChanged?.call(); // 👈 IMPORTANT
     } catch (e) {
       twgtController.text = '0';
-      amountController.text = '0';
+      totalAmountController.text = '0';
       onChanged?.call();
     }
   }
@@ -2123,19 +2107,21 @@ class ProductRow {
       final discount = double.tryParse(discountController.text) ?? 0;
 
       final discountedRate = rate * (1 - discount / 100);
-      final baseAmount = discountedRate * quantity;
-      final finalAmount = baseAmount * cov;
+      discountedRateController.text = discountedRate.toStringAsFixed(2);
 
-      amountController.text = finalAmount.toStringAsFixed(2);
-      onChanged?.call(); // 👈 IMPORTANT
+      final total = discountedRate * quantity * cov;
+      totalAmountController.text = total.toStringAsFixed(2);
+
+      onChanged?.call();
     } catch (e) {
-      amountController.text = '0';
+      discountedRateController.text = '0';
+      totalAmountController.text = '0';
       onChanged?.call();
     }
   }
 
   double getTotalAmount() {
-    return double.tryParse(amountController.text) ?? 0;
+    return double.tryParse(totalAmountController.text) ?? 0;
   }
 
   void dispose() {
@@ -2146,7 +2132,8 @@ class ProductRow {
     weightController.dispose();
     twgtController.dispose();
     quantityController.dispose();
-    amountController.dispose();
     discountController.dispose();
+    discountedRateController.dispose();
+    totalAmountController.dispose();
   }
 }

@@ -36,7 +36,6 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
   @override
   void didUpdateWidget(covariant PunchAttendanceWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-
     if (widget.employeeId != oldWidget.employeeId && widget.employeeId != 0) {
       print("🔥 EMPLOYEE ID UPDATED => ${widget.employeeId}");
       _fetchPunchStatus();
@@ -46,8 +45,7 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
   /// ================= FETCH STATUS =================
   Future<void> _fetchPunchStatus() async {
     final status = await _punchService.fetchPunchStatus(widget.employeeId);
-
-    debugPrint("🔥 API Punch Status: $status");
+    debugPrint("🔥 API Punch Status: $status"); // 👈 see what we actually get
 
     if (mounted) {
       setState(() {
@@ -60,7 +58,6 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
   Future<bool> _isOnOfficeWifi() async {
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
-
       if (connectivityResult != ConnectivityResult.wifi) {
         widget.showSnackBar("Please connect to Office WiFi");
         return false;
@@ -71,7 +68,6 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
           if (addr.type == InternetAddressType.IPv4) {
             final ip = addr.address;
             debugPrint("Device IP: $ip");
-
             if (ip.startsWith("192.168.1.")) {
               return true;
             }
@@ -102,7 +98,6 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
     }
 
     widget.showSnackBar(result['message'] ?? "");
-
     await _fetchPunchStatus();
     widget.onPunchSuccess();
   }
@@ -121,7 +116,6 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
     }
 
     widget.showSnackBar(result['message'] ?? "");
-
     await _fetchPunchStatus();
     widget.onPunchSuccess();
   }
@@ -140,52 +134,60 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
       return _refreshButton();
     }
 
-    final status = punchStatus!.toUpperCase().trim();
+    // Normalize: lowercase, trim, remove underscores/spaces
+    final normalized =
+        punchStatus!
+            .toLowerCase()
+            .replaceAll('_', '')
+            .replaceAll(' ', '')
+            .trim();
 
-    switch (status) {
-      case "IN":
-      case "PUNCHED_IN":
-        return Row(
-          children: [
-            _punchButton(
-              text: "Punch In",
-              color: Colors.grey,
-              onTap: null,
-              disabled: true,
-            ),
-            const SizedBox(width: 10),
-            _punchButton(
-              text: "Punch Out",
-              color: Colors.red,
-              onTap: _punchOut,
-              disabled: false,
-            ),
-          ],
-        );
-
-      case "OUT":
-      case "COMPLETE":
-      case "PUNCHED_OUT":
-        return _workFinishedBadge();
-
-      default:
-        return Row(
-          children: [
-            _punchButton(
-              text: "Punch In",
-              color: Colors.green,
-              onTap: _punchIn,
-              disabled: false,
-            ),
-            const SizedBox(width: 10),
-            _punchButton(
-              text: "Punch Out",
-              color: Colors.grey,
-              onTap: null,
-              disabled: true,
-            ),
-          ],
-        );
+    // Determine state
+    if (normalized == 'in' || normalized == 'punchedin') {
+      // Currently punched in → show Punch Out button
+      return Row(
+        children: [
+          _punchButton(
+            text: "Punch In",
+            color: Colors.grey,
+            onTap: null,
+            disabled: true,
+          ),
+          const SizedBox(width: 10),
+          _punchButton(
+            text: "Punch Out",
+            color: Colors.red,
+            onTap: _punchOut,
+            disabled: false,
+          ),
+        ],
+      );
+    } else if (normalized == 'out' ||
+        normalized == 'complete' ||
+        normalized == 'completed' ||
+        normalized == 'punchedout' ||
+        normalized.contains('finish')) {
+      // Work finished → show badge
+      return _workFinishedBadge();
+    } else {
+      // Default (likely no punch yet) → show Punch In
+      return Row(
+        children: [
+          _punchButton(
+            text: "Punch In",
+            color: Colors.green,
+            onTap: _punchIn,
+            disabled: false,
+          ),
+          const SizedBox(width: 10),
+          _punchButton(
+            text: "Punch Out",
+            color: Colors.grey,
+            onTap: null,
+            disabled: true,
+          ),
+        ],
+      );
     }
   }
 

@@ -88,7 +88,7 @@ class _AddProductSheetState extends State<AddProductSheet> {
   Future<void> fetchDropdowns() async {
     try {
       final res = await Future.wait([
-        dio.get("/brands/list"),
+        dio.get("/brands/GetAlllist"),
         dio.get("/qualities/list"),
         dio.get("/categories/list"),
       ]);

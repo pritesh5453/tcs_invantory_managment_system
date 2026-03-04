@@ -544,6 +544,8 @@ class MainScreenWidget extends StatelessWidget {
         return DeliveryChalanScreen();
       case "Reports":
         return AdvanceAnalyticsScreen();
+      case "Wallet":
+        return AdvanceAnalyticsScreen();
       case "Order Book":
         return OrderBookManagementScreen();
       case "Payment History":

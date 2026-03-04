@@ -394,7 +394,9 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     }
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const AddDeliveryChallanScreen()),
+      MaterialPageRoute(
+        builder: (_) => const AddDeliveryChallanScreen(quotationId: null),
+      ),
     ).then((_) {
       final type = _getTypeForIndex(_currentTabIndex);
       _fetchChallans(type: type);

@@ -33,9 +33,15 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
   final TextEditingController _headerController = TextEditingController();
   final TextEditingController _bottomController = TextEditingController();
 
-  // Additional Discount
+  // Additional Discount & Charges
   final TextEditingController _additionalDiscountController =
       TextEditingController(text: '0');
+  final TextEditingController _transportationController = TextEditingController(
+    text: '0',
+  );
+  final TextEditingController _unloadingController = TextEditingController(
+    text: '0',
+  );
 
   // Architect Data
   List<dynamic> _architects = [];
@@ -75,18 +81,10 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
   Future<void> _initializeData() async {
     try {
-      // Fetch architects
       await _fetchArchitects();
-
-      // Fetch employees
       await _fetchEmployees('');
-
-      // Fetch ALL products once
       await _fetchAllProducts();
-
-      // Initialize form with existing data
       _populateFormData();
-
       setState(() {
         _isLoading = false;
       });
@@ -105,27 +103,24 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
     /// ================= CLIENT DETAILS =================
     _clientNameController.text = quotationData['clientName']?.toString() ?? '';
-
     _contactNumberController.text =
         quotationData['contactNo']?.toString() ?? '';
-
     _altNumberController.text = quotationData['altContactNo']?.toString() ?? '';
-
     _emailController.text = quotationData['email']?.toString() ?? '';
-
     _clientGstController.text = quotationData['gstNo']?.toString() ?? '';
-
     _siteAddressController.text = quotationData['address']?.toString() ?? '';
 
+    /// ================= ADDITIONAL CHARGES =================
     _additionalDiscountController.text =
         quotationData['additionalDiscount']?.toString() ?? '0';
+    _transportationController.text =
+        quotationData['transportation']?.toString() ?? '0';
+    _unloadingController.text = quotationData['unloading']?.toString() ?? '0';
 
     _headerController.text = quotationData['headerSection']?.toString() ?? '';
-
     _bottomController.text = quotationData['bottomSection']?.toString() ?? '';
 
     _selectedArchitectId = quotationData['architect']?.toString();
-
     _selectedEmployeeId = quotationData['attendedBy']?.toString();
 
     /// ================= PRODUCT ROWS =================
@@ -137,7 +132,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         items.map<ProductRow>((item) {
           final row = ProductRow(
             onChanged: () {
-              setState(() {}); // 👈 forces subtotal refresh
+              setState(() {}); // refresh totals
             },
           );
 
@@ -154,8 +149,13 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
           row.weightController.text = item['weight']?.toString() ?? '0';
           row.quantityController.text = item['box']?.toString() ?? '0';
           row.discountController.text = item['discount']?.toString() ?? '0';
-          row.amountController.text = item['total']?.toString() ?? '0';
+          row.totalAmountController.text = item['total']?.toString() ?? '0';
           row.productSearchController.text = row.productName;
+
+          // If API provides disRate, set it, otherwise calculate later
+          if (item['disRate'] != null) {
+            row.discountedRateController.text = item['disRate'].toString();
+          }
 
           // Validate and correct product using _allProducts (if available)
           if (_allProducts.isNotEmpty) {
@@ -164,9 +164,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
               row.size,
               row.quality,
             );
-            print("fjdsk : ${row.productName} ${row.size} ${row.quality}");
             if (matchedProduct != null) {
-              // Use the official product data from master list
               row.productId = matchedProduct['id'];
               row.productName =
                   (matchedProduct['name'] ?? '').toString().trim();
@@ -191,69 +189,51 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         }).toList();
 
     if (_productRows.isEmpty) {
-      _productRows.add(ProductRow());
+      _productRows.add(ProductRow(onChanged: () => setState(() {})));
     }
 
     setState(() {});
   }
 
   Future<void> _fetchArchitects() async {
-    setState(() {
-      _isLoadingArchitects = true;
-    });
-
+    setState(() => _isLoadingArchitects = true);
     try {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/architects/list',
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
-        setState(() {
-          _architects = response.data['architects'];
-        });
+        setState(() => _architects = response.data['architects']);
       }
     } catch (e) {
       debugPrint('Architect fetch error: $e');
     } finally {
-      setState(() {
-        _isLoadingArchitects = false;
-      });
+      setState(() => _isLoadingArchitects = false);
     }
   }
 
   Future<void> _fetchEmployees(String search) async {
-    setState(() {
-      _isLoadingEmployees = true;
-    });
-
+    setState(() => _isLoadingEmployees = true);
     try {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/employees/list',
         queryParameters: {'search': search},
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
-        setState(() {
-          _employees = response.data['employees'];
-        });
+        setState(() => _employees = response.data['employees']);
       }
     } catch (e) {
       debugPrint('Employees fetch error: $e');
     } finally {
-      setState(() {
-        _isLoadingEmployees = false;
-      });
+      setState(() => _isLoadingEmployees = false);
     }
   }
 
-  // Fetch ALL products (no search filter) – for size/quality dropdowns
   Future<void> _fetchAllProducts() async {
     try {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/product/list',
         queryParameters: {'search': ''},
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
         setState(() {
           _allProducts = response.data['products'];
@@ -265,32 +245,24 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     }
   }
 
-  // Search products API call – updates _filteredProducts
   Future<void> _searchProducts(String query) async {
     if (query.trim().isEmpty) {
-      setState(() {
-        _filteredProducts = [];
-      });
+      setState(() => _filteredProducts = []);
       return;
     }
-
     try {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/product/list',
         queryParameters: {'search': query.trim()},
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
-        setState(() {
-          _filteredProducts = response.data['products'];
-        });
+        setState(() => _filteredProducts = response.data['products']);
       }
     } catch (e) {
       debugPrint('Product search error: $e');
     }
   }
 
-  // Helper: Get unique sizes for a product name (case-insensitive, trimmed)
   List<String> _getSizesForProduct(String productName) {
     if (productName.isEmpty) return [];
     final normalizedName = productName.trim().toLowerCase();
@@ -299,9 +271,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
           final name = (p['name']?.toString() ?? '').trim().toLowerCase();
           return name == normalizedName;
         }).toList();
-
     if (productsWithSameName.isEmpty) return [];
-
     return productsWithSameName
         .map((p) => p['size']?.toString().trim() ?? '')
         .where((size) => size.isNotEmpty)
@@ -309,21 +279,17 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         .toList();
   }
 
-  // Helper: Get unique qualities for a product name and size (case-insensitive, trimmed)
   List<String> _getQualitiesForProduct(String productName, String size) {
     if (productName.isEmpty || size.isEmpty) return [];
     final normalizedName = productName.trim().toLowerCase();
     final normalizedSize = size.trim();
-
     final productsWithSameNameAndSize =
         _allProducts.where((p) {
           final name = (p['name']?.toString() ?? '').trim().toLowerCase();
           final pSize = (p['size']?.toString() ?? '').trim();
           return name == normalizedName && pSize == normalizedSize;
         }).toList();
-
     if (productsWithSameNameAndSize.isEmpty) return [];
-
     return productsWithSameNameAndSize
         .map((p) => p['quality']?.toString().trim() ?? '')
         .where((quality) => quality.isNotEmpty)
@@ -331,7 +297,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         .toList();
   }
 
-  // Helper: Get product details for name, size, quality (case-insensitive, trimmed)
   Map<String, dynamic>? _getProductDetails(
     String productName,
     String size,
@@ -341,7 +306,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
       final normalizedName = productName.trim().toLowerCase();
       final normalizedSize = size.trim();
       final normalizedQuality = quality.trim();
-
       return _allProducts.firstWhere((p) {
         final name = (p['name']?.toString() ?? '').trim().toLowerCase();
         final pSize = (p['size']?.toString() ?? '').trim();
@@ -357,8 +321,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
   void _addProductRow() {
     setState(() {
-      _productRows.add(ProductRow());
-      // Scroll to bottom after adding new row
+      _productRows.add(ProductRow(onChanged: () => setState(() {})));
       Future.delayed(const Duration(milliseconds: 100), () {
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
@@ -372,12 +335,9 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
   }
 
   void _removeProductRow(int index) {
-    setState(() {
-      _productRows.removeAt(index);
-    });
+    setState(() => _productRows.removeAt(index));
   }
 
-  // Calculate total of all product rows
   double _calculateTotalAmount() {
     double total = 0;
     for (var row in _productRows) {
@@ -386,73 +346,59 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     return total;
   }
 
-  // Calculate grand total after additional discount
   double _calculateGrandTotal() {
     double subtotal = _calculateTotalAmount();
     double additionalDiscount =
         double.tryParse(_additionalDiscountController.text) ?? 0;
+    double transportation =
+        double.tryParse(_transportationController.text) ?? 0;
+    double unloading = double.tryParse(_unloadingController.text) ?? 0;
 
-    // Apply additional discount as percentage
-    if (additionalDiscount > 0) {
-      double discountAmount = subtotal * (additionalDiscount / 100);
-      return subtotal - discountAmount;
-    }
-    return subtotal;
+    double discountAmount = subtotal * (additionalDiscount / 100);
+    double afterDiscount = subtotal - discountAmount;
+    return afterDiscount + transportation + unloading;
   }
 
-  // Validate form before submission
   bool _validateForm() {
-    // Validate client details
     if (_clientNameController.text.trim().isEmpty) {
       _showSnackBar('Please enter client name');
       return false;
     }
-
     if (_contactNumberController.text.trim().isEmpty) {
       _showSnackBar('Please enter contact number');
       return false;
     }
-
     if (_siteAddressController.text.trim().isEmpty) {
       _showSnackBar('Please enter site address');
       return false;
     }
-
     if (_selectedArchitectId == null) {
       _showSnackBar('Please select an architect');
       return false;
     }
-
     if (_selectedEmployeeId == null) {
       _showSnackBar('Please select attended by');
       return false;
     }
-
-    // Validate product rows
     for (int i = 0; i < _productRows.length; i++) {
       final row = _productRows[i];
-
       if (row.productName.isEmpty) {
         _showSnackBar('Please select product for row ${i + 1}');
         return false;
       }
-
       if (row.size.isEmpty) {
         _showSnackBar('Please select size for row ${i + 1}');
         return false;
       }
-
       if (row.quality.isEmpty) {
         _showSnackBar('Please select quality for row ${i + 1}');
         return false;
       }
-
       if (row.quantityController.text.trim().isEmpty ||
           double.tryParse(row.quantityController.text) == 0) {
         _showSnackBar('Please enter valid quantity for row ${i + 1}');
         return false;
       }
-
       if (row.productId == null) {
         _showSnackBar(
           'Product ID not found for row ${i + 1}. Please reselect the product.',
@@ -460,73 +406,61 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         return false;
       }
     }
-
     return true;
   }
 
-  // Show snackbar message
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
-  // Update quotation API call
   Future<void> _updateQuotation() async {
-    if (!_validateForm()) {
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-    });
+    if (!_validateForm()) return;
+    setState(() => _isSubmitting = true);
 
     try {
-      // Prepare rows data
       List<Map<String, dynamic>> rowsData = [];
-
       for (var row in _productRows) {
         final productDetails = _getProductDetails(
           row.productName,
           row.size,
           row.quality,
         );
-
         if (productDetails == null && row.productId == null) {
           throw Exception('Product details not found for ${row.productName}');
         }
 
-        final rowData = {
+        final rate = double.tryParse(row.rateController.text) ?? 0;
+        final discount = double.tryParse(row.discountController.text) ?? 0;
+        final discountedRate = rate * (1 - discount / 100);
+
+        rowsData.add({
           "productId": row.productId ?? productDetails?['id'],
           "productName": row.productName,
           "size": row.size,
           "quality": row.quality,
-          "rate": double.tryParse(row.rateController.text) ?? 0,
+          "rate": rate,
           "box": int.tryParse(row.quantityController.text) ?? 0,
-
-          // FORCE STRING FORMAT
           "area": row.areaController.text.trim(),
-
           "Coverage": double.parse(
             row.covController.text.isEmpty ? "0" : row.covController.text,
           ).toStringAsFixed(2),
-
           "TWgt": double.parse(
             row.twgtController.text.isEmpty ? "0" : row.twgtController.text,
           ).toStringAsFixed(2),
-
           "total": double.parse(
-            row.amountController.text.isEmpty ? "0" : row.amountController.text,
+            row.totalAmountController.text.isEmpty
+                ? "0"
+                : row.totalAmountController.text,
           ).toStringAsFixed(2),
-
           "Weight": double.tryParse(row.weightController.text) ?? 0,
           "cov": double.tryParse(row.covController.text) ?? 0,
-          "discount": double.tryParse(row.discountController.text) ?? 0,
-        };
-        rowsData.add(rowData);
+          "discount": discount,
+          "disRate": discountedRate, // 👈 new field
+        });
       }
 
-      // Prepare client details
       final clientDetails = {
         "name": _clientNameController.text.trim(),
         "contactNo": _contactNumberController.text.trim(),
@@ -536,16 +470,14 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         "address": _siteAddressController.text.trim(),
         "architect": _selectedArchitectId ?? "",
         "attendedBy": _selectedEmployeeId ?? "",
-        "attended": "",
+        "Attended": "",
+        "transportation": _transportationController.text,
+        "unloading": _unloadingController.text,
       };
 
-      // Prepare request body
       final requestBody = {
-        "quotationId": int.parse(widget.quotationId),
         "additionalDiscount":
             double.tryParse(_additionalDiscountController.text) ?? 0,
-        "headerSection": _headerController.text.trim(),
-        "bottomSection": _bottomController.text.trim(),
         "clientDetails": clientDetails,
         "rows": rowsData,
         "grandTotal": double.parse(_calculateGrandTotal().toStringAsFixed(2)),
@@ -559,11 +491,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         options: Options(headers: {'Content-Type': 'application/json'}),
       );
 
-      debugPrint('Update Response: ${response.data}');
-
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = response.data;
-
         if (responseData['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -573,7 +502,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
               backgroundColor: Colors.green,
             ),
           );
-
           Future.delayed(const Duration(seconds: 1), () {
             Navigator.pop(context, true);
           });
@@ -594,66 +522,47 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         ),
       );
     } finally {
-      setState(() {
-        _isSubmitting = false;
-      });
+      setState(() => _isSubmitting = false);
     }
   }
 
-  // Helper methods for null-safe dropdown values
+  // Helper methods for dropdowns
   String? _getValidArchitectId() {
     if (_selectedArchitectId == null) return null;
-
     final exists = _architects.any(
       (a) => a['id'].toString() == _selectedArchitectId,
     );
-
     if (!exists) {
       debugPrint(
         'Architect ID $_selectedArchitectId not found in list, setting to null',
       );
       return null;
     }
-
     return _selectedArchitectId;
   }
 
   String? _getValidEmployeeId() {
     if (_selectedEmployeeId == null) return null;
-
     final exists = _employees.any(
       (e) => e['id'].toString() == _selectedEmployeeId,
     );
-
     if (!exists) {
       debugPrint(
         'Employee ID $_selectedEmployeeId not found in list, setting to null',
       );
       return null;
     }
-
     return _selectedEmployeeId;
   }
 
   String? _getValidSize(ProductRow row, List<String> sizes) {
     if (row.size.isEmpty) return null;
-
-    // EDIT MODE → keep quotation size
-    if (!sizes.contains(row.size)) {
-      return row.size;
-    }
-
+    // Keep quotation size even if not in master list
     return row.size;
   }
 
   String? _getValidQuality(ProductRow row, List<String> qualities) {
     if (row.quality.isEmpty) return null;
-
-    // keep quotation quality
-    if (!qualities.contains(row.quality)) {
-      return row.quality;
-    }
-
     return row.quality;
   }
 
@@ -663,6 +572,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     final additionalDiscount =
         double.tryParse(_additionalDiscountController.text) ?? 0;
     final discountAmount = totalAmount * (additionalDiscount / 100);
+    final transportation = double.tryParse(_transportationController.text) ?? 0;
+    final unloading = double.tryParse(_unloadingController.text) ?? 0;
     final grandTotal = _calculateGrandTotal();
 
     return Scaffold(
@@ -691,7 +602,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
               )
               : GestureDetector(
                 onTap: () {
-                  // Close all dropdowns when tapping outside
                   setState(() {
                     for (var row in _productRows) {
                       row.showProductDropdown = false;
@@ -734,7 +644,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       _buildClientTextField(_clientGstController, '27XXXXX...'),
                       const SizedBox(height: 12),
 
-                      // Contact Number and Alt Number
+                      // Contact Number and Alt Number (Phone keyboard)
                       Row(
                         children: [
                           Expanded(
@@ -746,6 +656,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                 _buildClientTextField(
                                   _contactNumberController,
                                   '+91',
+                                  keyboardType: TextInputType.phone,
                                 ),
                               ],
                             ),
@@ -760,6 +671,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                 _buildClientTextField(
                                   _altNumberController,
                                   '+91',
+                                  keyboardType: TextInputType.phone,
                                 ),
                               ],
                             ),
@@ -787,7 +699,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Select Architect and Attended By
+                      // Architect and Attended By
                       Row(
                         children: [
                           Expanded(
@@ -944,7 +856,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       const Divider(),
                       const SizedBox(height: 16),
 
-                      // Product Section Header
+                      // PRODUCT DETAILS SECTION
                       const Text(
                         'PRODUCT DETAILS',
                         style: TextStyle(
@@ -953,7 +865,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                           color: Color(0xffFFA54A),
                         ),
                       ),
-
                       const SizedBox(height: 16),
 
                       // Product Rows
@@ -1019,15 +930,87 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                             _buildClientTextField(
                               _additionalDiscountController,
                               'Enter discount percentage...',
-                              onChanged: (_) {
-                                setState(
-                                  () {},
-                                ); // 👈 This will refresh totals instantly
-                              },
+                              onChanged: (_) => setState(() {}),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               'This discount will be applied on the total amount',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Transportation & Unloading Section
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'ADDITIONAL CHARGES',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _buildClientLabel('TRANSPORTATION (₹)'),
+                                      const SizedBox(height: 4),
+                                      _buildClientTextField(
+                                        _transportationController,
+                                        '0',
+                                        onChanged: (_) => setState(() {}),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _buildClientLabel('UNLOADING (₹)'),
+                                      const SizedBox(height: 4),
+                                      _buildClientTextField(
+                                        _unloadingController,
+                                        '0',
+                                        onChanged: (_) => setState(() {}),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'These charges will be added to the final total.',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey.shade600,
@@ -1104,7 +1087,43 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                 ],
                               ),
 
-                            // Grand Total
+                            // Transportation
+                            if (transportation != 0)
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Transportation',
+                                    style: TextStyle(fontSize: 14),
+                                  ),
+                                  Text(
+                                    '+₹${transportation.toStringAsFixed(2)}',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ],
+                              ),
+
+                            // Unloading
+                            if (unloading != 0)
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Unloading',
+                                    style: TextStyle(fontSize: 14),
+                                  ),
+                                  Text(
+                                    '+₹${unloading.toStringAsFixed(2)}',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ],
+                              ),
+
+                            if (transportation != 0 || unloading != 0)
+                              const SizedBox(height: 8),
+
                             Divider(color: Colors.grey.shade400, thickness: 1),
                             const SizedBox(height: 8),
                             Row(
@@ -1190,6 +1209,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     String hintText, {
     int maxLines = 1,
     void Function(String)? onChanged,
+    TextInputType keyboardType = TextInputType.text,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1200,6 +1220,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
       child: TextField(
         controller: controller,
         maxLines: maxLines,
+        keyboardType: keyboardType,
         style: const TextStyle(fontSize: 14),
         decoration: InputDecoration(
           hintText: hintText,
@@ -1212,6 +1233,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     );
   }
 
+  // ========== PRODUCT ROW UI ==========
   Widget _buildProductRow(int index, ProductRow row) {
     final sizes =
         row.size.isNotEmpty
@@ -1232,447 +1254,519 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade200,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLabel('PRODUCT'),
+          const SizedBox(height: 4),
+          _buildProductSearchField(row),
+
+          const SizedBox(height: 12),
+
+          // Row 1: Size | Quality | Rate
+          Row(
+            children: [
+              Expanded(child: _buildSizeDropdown(row, sizes)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildQualityDropdown(row, qualities)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildRateField(row)),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Row 2: Coverage | Area | Box
+          Row(
+            children: [
+              Expanded(child: _buildCoverageField(row)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildAreaField(row)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildBoxField(row)),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Row 3: Discount % | Weight | TWGT
+          Row(
+            children: [
+              Expanded(child: _buildDiscountField(row)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildWeightField(row)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildTwgtField(row)), // read-only
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Row 4: Discounted Rate | Total Amount | Godown
+          Row(
+            children: [
+              Expanded(child: _buildDiscountedRateField(row)), // read-only
+              const SizedBox(width: 8),
+              Expanded(child: _buildTotalAmountField(row)), // read-only
+              const SizedBox(width: 8),
+              Expanded(child: _buildGodownDropdown(row)),
+            ],
+          ),
+
+          if (_productRows.length > 1) _buildDeleteButton(index),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductSearchField(ProductRow row) {
+    return Container(
+      decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         children: [
-          // Product Name Search
-          _buildLabel('PRODUCT'),
-          const SizedBox(height: 4),
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
               children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.search, size: 18, color: Colors.grey),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: row.productSearchController,
-                          onChanged: (value) {
-                            setState(() {
-                              row.productName = value;
-                              row.showProductDropdown = value.isNotEmpty;
+                const Icon(Icons.search, size: 18, color: Colors.grey),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: row.productSearchController,
+                    onChanged: (value) {
+                      setState(() {
+                        row.productName = value;
+                        row.showProductDropdown = value.isNotEmpty;
+                        row.size = '';
+                        row.quality = '';
+                        row.weightController.clear();
+                        row.twgtController.clear();
+                        row.covController.clear();
+                        row.rateController.clear();
+                        row.totalAmountController.clear();
+                        row.discountedRateController.clear();
+                      });
 
-                              // Reset dependent fields
-                              row.size = '';
-                              row.quality = '';
-                              row.weightController.clear();
-                              row.twgtController.clear();
-                              row.covController.clear();
-                              row.rateController.clear();
-                              row.amountController.clear();
-                            });
-
-                            // Debounce API call
-                            if (_productSearchDebounce?.isActive ?? false) {
-                              _productSearchDebounce!.cancel();
-                            }
-                            _productSearchDebounce = Timer(
-                              const Duration(milliseconds: 400),
-                              () => _searchProducts(value),
-                            );
-                          },
-                          onTap: () {
-                            setState(() {
-                              row.showProductDropdown = true;
-                            });
-                            // Immediately search for the current query
-                            if (row.productName.isNotEmpty) {
-                              _searchProducts(row.productName);
-                            }
-                          },
-                          decoration: const InputDecoration(
-                            hintText: 'Search product...',
-                            hintStyle: TextStyle(fontSize: 14),
-                            border: InputBorder.none,
-                            isDense: true,
-                          ),
-                        ),
-                      ),
-                    ],
+                      if (_productSearchDebounce?.isActive ?? false) {
+                        _productSearchDebounce!.cancel();
+                      }
+                      _productSearchDebounce = Timer(
+                        const Duration(milliseconds: 400),
+                        () => _searchProducts(value),
+                      );
+                    },
+                    onTap: () {
+                      setState(() {
+                        row.showProductDropdown = true;
+                      });
+                      if (row.productName.isNotEmpty) {
+                        _searchProducts(row.productName);
+                      }
+                    },
+                    decoration: const InputDecoration(
+                      hintText: 'Search product...',
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
                   ),
                 ),
-                if (row.showProductDropdown && row.productName.isNotEmpty)
-                  Container(
-                    height: 150,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade200),
-                      borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(8),
-                        bottomRight: Radius.circular(8),
-                      ),
-                    ),
-                    child: ListView.builder(
-                      itemCount: _filteredProducts.length,
-                      itemBuilder: (context, idx) {
-                        final product = _filteredProducts[idx];
-                        return ListTile(
-                          title: Text(product['name'] ?? ''),
-                          subtitle: Text(
-                            'Size: ${product['size']} | Quality: ${product['quality']}',
-                          ),
-                          onTap: () {
-                            setState(() {
-                              row.productId = product['id'];
-                              row.productName =
-                                  (product['name'] ?? '').toString().trim();
-                              row.size =
-                                  (product['size'] ?? '').toString().trim();
-                              row.quality =
-                                  (product['quality'] ?? '').toString().trim();
-                              row.productSearchController.text =
-                                  row.productName;
-                              row.rateController.text =
-                                  product['rate']?.toString() ?? '0';
-                              row.covController.text =
-                                  product['cov']?.toString() ?? '0';
-                              row.showProductDropdown = false;
-                              row.updateTotal();
-                              FocusScope.of(context).unfocus();
-                            });
-                          },
-                        );
-                      },
-                    ),
-                  ),
               ],
             ),
           ),
-
-          const SizedBox(height: 12),
-
-          // Size and Quality Dropdowns
-          Row(
-            children: [
-              // Size Dropdown
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('SIZE'),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value: _getValidSize(row, sizes),
-                          hint: const Text('Select Size'),
-                          items:
-                              sizes.map((size) {
-                                return DropdownMenuItem<String>(
-                                  value: size,
-                                  child: Text(size),
-                                );
-                              }).toList(),
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setState(() {
-                              row.size = value;
-                              row.quality = '';
-                              row.weightController.clear();
-                              row.twgtController.clear();
-                              row.covController.clear();
-                              row.rateController.clear();
-                              row.amountController.clear();
-                              row.updateTotal();
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-
-              // Quality Dropdown
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('QUALITY'),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value: _getValidQuality(row, qualities),
-                          hint: const Text('Select Quality'),
-                          items:
-                              qualities.map((quality) {
-                                return DropdownMenuItem<String>(
-                                  value: quality,
-                                  child: Text(quality),
-                                );
-                              }).toList(),
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setState(() {
-                              row.quality = value;
-                              final productDetails = _getProductDetails(
-                                row.productName,
-                                row.size,
-                                value,
-                              );
-                              if (productDetails != null) {
-                                row.productId = productDetails['id'];
-                                row.rateController.text =
-                                    productDetails['rate']?.toString() ?? '0';
-                                row.covController.text =
-                                    productDetails['cov']?.toString() ?? '0';
-                              }
-                              row.updateTotal();
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // Rate, COV, and AREA
-          Row(
-            children: [
-              // Rate
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('RATE (₹)'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.rateController,
-                      '0',
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      onChanged: (_) => row.updateTotal(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // COV
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('COVERAGE'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.covController,
-                      '0',
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      onChanged: (_) => row.updateTotal(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // AREA
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('AREA'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.areaController,
-                      '0',
-                      keyboardType: TextInputType.text,
-                      onChanged: (_) => row.updateTotal(),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // BOX, DISCOUNT, WEIGHT
-          Row(
-            children: [
-              // BOX
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('BOX'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.quantityController,
-                      '0',
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) => row.updateTWGT(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // DISCOUNT
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('DISCOUNT (%)'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.discountController,
-                      '0',
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) => row.updateTotal(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // WEIGHT
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('WEIGHT'),
-                    const SizedBox(height: 4),
-                    _buildTextField(
-                      row.weightController,
-                      '0',
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) => row.updateTWGT(),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // TWGT, AMOUNT, GODOWN
-          Row(
-            children: [
-              // TWGT
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('TWGT'),
-                    const SizedBox(height: 4),
-                    _buildTextField(row.twgtController, '0', enabled: false),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // AMOUNT
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('AMOUNT (₹)'),
-                    const SizedBox(height: 4),
-                    _buildTextField(row.amountController, '0', enabled: false),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // GODOWN
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('GODOWN'),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value: row.godown,
-                          items: const [
-                            DropdownMenuItem(value: 'KKW', child: Text('KKW')),
-                            DropdownMenuItem(value: 'TCS', child: Text('TCS')),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              row.godown = value!;
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          // Delete button for additional rows
-          if (_productRows.length > 1)
-            Align(
-              alignment: Alignment.centerRight,
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => _removeProductRow(index),
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      border: Border.all(color: Colors.red),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.delete, size: 16, color: Colors.red),
-                        SizedBox(width: 4),
-                        Text(
-                          'Delete Row',
-                          style: TextStyle(color: Colors.red, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          if (row.showProductDropdown && row.productName.isNotEmpty)
+            _buildProductDropdown(row),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProductDropdown(ProductRow row) {
+    final filtered =
+        _filteredProducts
+            .where(
+              (p) => p['name'].toString().toLowerCase().contains(
+                row.productName.toLowerCase(),
+              ),
+            )
+            .toList();
+    return Container(
+      height: 150,
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Colors.grey, width: 0.5)),
+      ),
+      child: ListView.builder(
+        itemCount: filtered.length,
+        itemBuilder: (context, idx) {
+          final product = filtered[idx];
+          return ListTile(
+            dense: true,
+            title: Text(product['name'] ?? ''),
+            subtitle: Text(
+              'Size: ${product['size']} | Quality: ${product['quality']}',
+            ),
+            onTap: () {
+              setState(() {
+                row.productId = product['id'];
+                row.productName = (product['name'] ?? '').toString().trim();
+                row.size = (product['size'] ?? '').toString().trim();
+                row.quality = (product['quality'] ?? '').toString().trim();
+                row.productSearchController.text = row.productName;
+                row.rateController.text = product['rate']?.toString() ?? '0';
+                row.covController.text = product['cov']?.toString() ?? '0';
+                row.showProductDropdown = false;
+                row.updateTotal();
+                FocusScope.of(context).unfocus();
+              });
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSizeDropdown(ProductRow row, List<String> sizes) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('SIZE'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: _getValidSize(row, sizes),
+              hint: const Text('Select'),
+              items:
+                  sizes.map((s) {
+                    return DropdownMenuItem<String>(value: s, child: Text(s));
+                  }).toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  row.size = value;
+                  row.quality = '';
+                  row.rateController.clear();
+                  row.covController.clear();
+                  row.discountedRateController.clear();
+                  row.totalAmountController.clear();
+                });
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQualityDropdown(ProductRow row, List<String> qualities) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('QUALITY'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: _getValidQuality(row, qualities),
+              hint: const Text('Select'),
+              items:
+                  qualities.map((q) {
+                    return DropdownMenuItem<String>(value: q, child: Text(q));
+                  }).toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  row.quality = value;
+                  final productDetails = _getProductDetails(
+                    row.productName,
+                    row.size,
+                    value,
+                  );
+                  if (productDetails != null) {
+                    row.productId = productDetails['id'];
+                    row.rateController.text =
+                        productDetails['rate']?.toString() ?? '0';
+                    row.covController.text =
+                        productDetails['cov']?.toString() ?? '0';
+                  }
+                  row.updateTotal();
+                });
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRateField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('RATE (₹)'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.rateController,
+          '0',
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) => row.updateTotal(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCoverageField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('COVERAGE'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.covController,
+          '0',
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) => row.updateTotal(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAreaField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('AREA'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.areaController,
+          '0',
+          keyboardType: TextInputType.text,
+          onChanged: (_) => row.updateTotal(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBoxField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('BOX'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.quantityController,
+          '0',
+          keyboardType: TextInputType.number,
+          onChanged: (_) => row.updateTWGT(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDiscountField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('DISCOUNT (%)'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.discountController,
+          '0',
+          keyboardType: TextInputType.number,
+          onChanged: (_) => row.updateTotal(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDiscountedRateField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('DISC. RATE (₹)'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey.shade100,
+          ),
+          child: TextField(
+            controller: row.discountedRateController,
+            enabled: false,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWeightField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('WEIGHT'),
+        const SizedBox(height: 4),
+        _buildTextField(
+          row.weightController,
+          '0',
+          keyboardType: TextInputType.number,
+          onChanged: (_) => row.updateTWGT(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTwgtField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('TWGT'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey.shade100,
+          ),
+          child: TextField(
+            controller: row.twgtController,
+            enabled: false,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTotalAmountField(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('AMOUNT (₹)'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey.shade100,
+          ),
+          child: TextField(
+            controller: row.totalAmountController,
+            enabled: false,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGodownDropdown(ProductRow row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('GODOWN'),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: row.godown,
+              items: const [
+                DropdownMenuItem(value: 'KKW', child: Text('KKW')),
+                DropdownMenuItem(value: 'TCS', child: Text('TCS')),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  row.godown = value!;
+                });
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDeleteButton(int index) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _removeProductRow(index),
+          child: Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              border: Border.all(color: Colors.red),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.delete, size: 16, color: Colors.red),
+                SizedBox(width: 4),
+                Text(
+                  'Delete Row',
+                  style: TextStyle(color: Colors.red, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1730,6 +1824,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     _headerController.dispose();
     _bottomController.dispose();
     _additionalDiscountController.dispose();
+    _transportationController.dispose();
+    _unloadingController.dispose();
     _scrollController.dispose();
     for (var row in _productRows) {
       row.dispose();
@@ -1757,22 +1853,22 @@ class ProductRow {
   final TextEditingController weightController = TextEditingController();
   final TextEditingController twgtController = TextEditingController();
   final TextEditingController quantityController = TextEditingController();
-  final TextEditingController amountController = TextEditingController();
   final TextEditingController discountController = TextEditingController();
+  final TextEditingController discountedRateController =
+      TextEditingController(); // new
+  final TextEditingController totalAmountController =
+      TextEditingController(); // renamed
 
   void updateTWGT() {
     try {
       final weight = double.tryParse(weightController.text) ?? 0;
       final quantity = double.tryParse(quantityController.text) ?? 0;
-
       final twgt = weight * quantity;
       twgtController.text = twgt.toStringAsFixed(2);
-
       updateTotal();
-      onChanged?.call(); // 👈 ADD THIS
     } catch (e) {
       twgtController.text = '0';
-      amountController.text = '0';
+      totalAmountController.text = '0';
       onChanged?.call();
     }
   }
@@ -1785,19 +1881,21 @@ class ProductRow {
       final discount = double.tryParse(discountController.text) ?? 0;
 
       final discountedRate = rate * (1 - discount / 100);
-      final baseAmount = discountedRate * quantity;
-      final finalAmount = baseAmount * cov;
+      discountedRateController.text = discountedRate.toStringAsFixed(2);
 
-      amountController.text = finalAmount.toStringAsFixed(2);
-      onChanged?.call(); // 👈 ADD THIS
+      final total = discountedRate * quantity * cov;
+      totalAmountController.text = total.toStringAsFixed(2);
+
+      onChanged?.call();
     } catch (e) {
-      amountController.text = '0';
+      discountedRateController.text = '0';
+      totalAmountController.text = '0';
       onChanged?.call();
     }
   }
 
   double getTotalAmount() {
-    return double.tryParse(amountController.text) ?? 0;
+    return double.tryParse(totalAmountController.text) ?? 0;
   }
 
   void dispose() {
@@ -1808,7 +1906,8 @@ class ProductRow {
     weightController.dispose();
     twgtController.dispose();
     quantityController.dispose();
-    amountController.dispose();
     discountController.dispose();
+    discountedRateController.dispose();
+    totalAmountController.dispose();
   }
 }

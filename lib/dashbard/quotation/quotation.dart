@@ -670,6 +670,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
               .map(
                 (entry) => InvoiceCard(
                   quotation: entry.value,
+                  userRole: _userRole, // 👈 pass user role
                   onEdit: () => _openEditQuotation(entry.value['id']),
                   onPay:
                       () => Navigator.push(
@@ -692,7 +693,10 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                       () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => AddDeliveryChallanScreen(),
+                          builder:
+                              (context) => AddDeliveryChallanScreen(
+                                quotationId: entry.value['id'],
+                              ),
                         ),
                       ),
                   onFollowUp: () {
@@ -716,7 +720,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                           _downloadAndOpenPdf(pdfType, entry.value['id']),
                   onPaymentHistory:
                       () => _showPaymentHistory(entry.value['id']),
-                  onDelete: _deleteQuotation, // 👈 added delete callback
+                  onDelete: _deleteQuotation,
                 ),
               )
               .toList(),
@@ -778,6 +782,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
               .map(
                 (entry) => InvoiceCard(
                   quotation: entry.value,
+                  userRole: _userRole, // 👈 pass user role
                   onEdit: () => _openEditQuotation(entry.value['id']),
                   onPay:
                       () => Navigator.push(
@@ -801,9 +806,8 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                         context,
                         MaterialPageRoute(
                           builder:
-                              (context) => DispatchChallanScreen(
+                              (context) => AddDeliveryChallanScreen(
                                 quotationId: entry.value['id'],
-                                quotationData: entry.value,
                               ),
                         ),
                       ),
@@ -828,7 +832,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                           _downloadAndOpenPdf(pdfType, entry.value['id']),
                   onPaymentHistory:
                       () => _showPaymentHistory(entry.value['id']),
-                  onDelete: _deleteQuotation, // 👈 added delete callback
+                  onDelete: _deleteQuotation,
                 ),
               )
               .toList(),
@@ -1094,24 +1098,26 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
 // ================= INVOICE CARD WIDGET =================
 class InvoiceCard extends StatelessWidget {
   final Map<String, dynamic> quotation;
+  final String? userRole; // 👈 new parameter
   final VoidCallback onEdit;
   final VoidCallback onPay;
   final VoidCallback onDispatch;
   final VoidCallback? onFollowUp;
   final Function(String) onDownloadPdf;
   final VoidCallback? onPaymentHistory;
-  final Function(int quotationId) onDelete; // 👈 new callback
+  final Function(int quotationId) onDelete;
 
   const InvoiceCard({
     super.key,
     required this.quotation,
+    required this.userRole, // 👈 required
     required this.onEdit,
     required this.onPay,
     required this.onDispatch,
     this.onFollowUp,
     required this.onDownloadPdf,
     this.onPaymentHistory,
-    required this.onDelete, // 👈 required
+    required this.onDelete,
   });
 
   String _formatDate(String dateString) {
@@ -1163,6 +1169,9 @@ class InvoiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Determine if user is admin or superadmin
+    final bool canDelete = userRole == 'admin' || userRole == 'superadmin';
+
     return Container(
       margin: const EdgeInsets.all(12),
       padding: const EdgeInsets.all(14),
@@ -1300,64 +1309,68 @@ class InvoiceCard extends StatelessWidget {
                   } else if (value == "payment_history") {
                     onPaymentHistory?.call();
                   } else if (value == "delete") {
-                    // 👈 new case
                     onDelete(quotation['id']);
                   }
                 },
-                itemBuilder:
-                    (context) => [
-                      const PopupMenuItem(
-                        value: "delivery_chalan",
-                        child: Row(
-                          children: [
-                            Icon(Icons.local_shipping, size: 18),
-                            SizedBox(width: 8),
-                            Text("Delivery Challan"),
-                          ],
-                        ),
+                itemBuilder: (context) {
+                  final items = <PopupMenuEntry<String>>[
+                    const PopupMenuItem(
+                      value: "delivery_chalan",
+                      child: Row(
+                        children: [
+                          Icon(Icons.local_shipping, size: 18),
+                          SizedBox(width: 8),
+                          Text("Delivery Challan"),
+                        ],
                       ),
-                      const PopupMenuItem(
-                        value: "follow_up",
-                        child: Row(
-                          children: [
-                            Icon(Icons.calendar_today, size: 18),
-                            SizedBox(width: 8),
-                            Text("Follow Up"),
-                          ],
-                        ),
+                    ),
+                    const PopupMenuItem(
+                      value: "follow_up",
+                      child: Row(
+                        children: [
+                          Icon(Icons.calendar_today, size: 18),
+                          SizedBox(width: 8),
+                          Text("Follow Up"),
+                        ],
                       ),
-                      const PopupMenuItem(
-                        value: "Code",
-                        child: Row(
-                          children: [
-                            Icon(Icons.code, size: 18),
-                            SizedBox(width: 8),
-                            Text("Code"),
-                          ],
-                        ),
+                    ),
+                    const PopupMenuItem(
+                      value: "Code",
+                      child: Row(
+                        children: [
+                          Icon(Icons.code, size: 18),
+                          SizedBox(width: 8),
+                          Text("Code"),
+                        ],
                       ),
-                      const PopupMenuItem(
-                        value: "Name",
-                        child: Row(
-                          children: [
-                            Icon(Icons.person, size: 18),
-                            SizedBox(width: 8),
-                            Text("Name"),
-                          ],
-                        ),
+                    ),
+                    const PopupMenuItem(
+                      value: "Name",
+                      child: Row(
+                        children: [
+                          Icon(Icons.person, size: 18),
+                          SizedBox(width: 8),
+                          Text("Name"),
+                        ],
                       ),
-                      const PopupMenuItem(
-                        value: "payment_history",
-                        child: Row(
-                          children: [
-                            Icon(Icons.history, size: 18),
-                            SizedBox(width: 8),
-                            Text("Payment History"),
-                          ],
-                        ),
+                    ),
+                    const PopupMenuItem(
+                      value: "payment_history",
+                      child: Row(
+                        children: [
+                          Icon(Icons.history, size: 18),
+                          SizedBox(width: 8),
+                          Text("Payment History"),
+                        ],
                       ),
+                    ),
+                  ];
+
+                  // 👇 Only add delete option for admin/superadmin
+                  if (canDelete) {
+                    items.add(
                       const PopupMenuItem(
-                        value: "delete", // 👈 new delete option
+                        value: "delete",
                         child: Row(
                           children: [
                             Icon(Icons.delete, size: 18, color: Colors.red),
@@ -1366,7 +1379,11 @@ class InvoiceCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                    ],
+                    );
+                  }
+
+                  return items;
+                },
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
