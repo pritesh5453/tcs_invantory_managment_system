@@ -1539,8 +1539,8 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
               Expanded(child: _buildDiscountedRateField(row)),
               const SizedBox(width: 8),
               Expanded(child: _buildTotalAmountField(row)),
-              const SizedBox(width: 8),
-              Expanded(child: _buildGodownDropdown(row)),
+              // const SizedBox(width: 8),
+              // Expanded(child: _buildGodownDropdown(row)),
             ],
           ),
 
@@ -1934,38 +1934,38 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     );
   }
 
-  Widget _buildGodownDropdown(ProductRow row) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildLabel('GODOWN'),
-        const SizedBox(height: 4),
-        Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: row.godown,
-              items: const [
-                DropdownMenuItem(value: 'KKW', child: Text('KKW')),
-                DropdownMenuItem(value: 'TCS', child: Text('TCS')),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  row.godown = value!;
-                });
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  // Widget _buildGodownDropdown(ProductRow row) {
+  //   return Column(
+  //     crossAxisAlignment: CrossAxisAlignment.start,
+  //     children: [
+  //       _buildLabel('GODOWN'),
+  //       const SizedBox(height: 4),
+  //       Container(
+  //         height: 40,
+  //         padding: const EdgeInsets.symmetric(horizontal: 12),
+  //         decoration: BoxDecoration(
+  //           border: Border.all(color: Colors.grey.shade300),
+  //           borderRadius: BorderRadius.circular(8),
+  //         ),
+  //         child: DropdownButtonHideUnderline(
+  //           child: DropdownButton<String>(
+  //             isExpanded: true,
+  //             value: row.godown,
+  //             items: const [
+  //               DropdownMenuItem(value: 'KKW', child: Text('KKW')),
+  //               DropdownMenuItem(value: 'TCS', child: Text('TCS')),
+  //             ],
+  //             onChanged: (value) {
+  //               setState(() {
+  //                 row.godown = value!;
+  //               });
+  //             },
+  //           ),
+  //         ),
+  //       ),
+  //     ],
+  //   );
+  // }
 
   Widget _buildDeleteButton(int index) {
     return Align(

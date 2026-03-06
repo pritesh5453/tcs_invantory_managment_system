@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 
 class FollowUpScreen extends StatefulWidget {
   final int quotationId;
-  final VoidCallback onFollowUpSaved; // ✅ CALLBACK
+  final VoidCallback onFollowUpSaved;
 
   const FollowUpScreen({
     super.key,
@@ -23,7 +23,6 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
       headers: {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        // "Authorization": "Bearer YOUR_TOKEN",
       },
     ),
   );
@@ -31,6 +30,8 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
   final TextEditingController remarksCtrl = TextEditingController();
 
   DateTime selectedDate = DateTime.now();
+  DateTime? nextFollowUpDate;
+
   bool isSaving = false;
   bool isLoadingHistory = false;
 
@@ -48,7 +49,7 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
     super.dispose();
   }
 
-  /// ================= DATE PICKER =================
+  /// FOLLOW UP DATE
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -62,7 +63,21 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
     }
   }
 
-  /// ================= SAVE FOLLOW UP =================
+  /// NEXT FOLLOW UP DATE
+  Future<void> _pickNextFollowUpDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: nextFollowUpDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+    );
+
+    if (picked != null) {
+      setState(() => nextFollowUpDate = picked);
+    }
+  }
+
+  /// SAVE FOLLOW UP
   Future<void> _saveFollowUp() async {
     if (remarksCtrl.text.trim().isEmpty) {
       _showSnackbar("Please enter remarks");
@@ -76,6 +91,10 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
         "quotation_id": widget.quotationId,
         "remarks": remarksCtrl.text.trim(),
         "date": DateFormat("yyyy-MM-dd").format(selectedDate),
+        "next_followup_date":
+            nextFollowUpDate != null
+                ? DateFormat("yyyy-MM-dd").format(nextFollowUpDate!)
+                : null,
       };
 
       final response = await dio.post(
@@ -88,11 +107,10 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
         _showSnackbar("Follow-up saved successfully", isError: false);
 
         remarksCtrl.clear();
+        nextFollowUpDate = null;
 
-        // 🔥 CALLBACK FIRE
         widget.onFollowUpSaved();
 
-        // Refresh history
         await _fetchFollowUpHistory();
       } else {
         _showSnackbar(response.data['message'] ?? "Failed to save follow-up");
@@ -104,7 +122,7 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
     }
   }
 
-  /// ================= FETCH FOLLOW UP HISTORY =================
+  /// FETCH HISTORY
   Future<void> _fetchFollowUpHistory() async {
     setState(() => isLoadingHistory = true);
 
@@ -125,7 +143,6 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
     }
   }
 
-  /// ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -162,9 +179,10 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    /// DATE
+                    /// FOLLOW UP DATE
                     const Text("Follow Up Date"),
                     const SizedBox(height: 6),
+
                     InkWell(
                       onTap: _pickDate,
                       child: Container(
@@ -177,16 +195,48 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: Colors.grey.shade300),
                         ),
-                        child: Text(
-                          DateFormat("dd-MM-yyyy").format(selectedDate),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(DateFormat("dd-MM-yyyy").format(selectedDate)),
+                            const Icon(Icons.calendar_today, size: 18),
+                          ],
                         ),
                       ),
                     ),
 
+                    const SizedBox(height: 16),
+
+                    /// NEXT FOLLOW UP DATE
+                    const Text("Next Follow Up Date"),
                     const SizedBox(height: 6),
-                    const Text(
-                      "Note: Tracking date is automatically set to today.",
-                      style: TextStyle(fontSize: 11, color: Colors.orange),
+
+                    InkWell(
+                      onTap: _pickNextFollowUpDate,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              nextFollowUpDate == null
+                                  ? "Select next follow up date"
+                                  : DateFormat(
+                                    "dd-MM-yyyy",
+                                  ).format(nextFollowUpDate!),
+                            ),
+                            const Icon(Icons.calendar_today, size: 18),
+                          ],
+                        ),
+                      ),
                     ),
 
                     const SizedBox(height: 16),
@@ -194,6 +244,7 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
                     /// REMARKS
                     const Text("Details / Remarks"),
                     const SizedBox(height: 6),
+
                     TextField(
                       controller: remarksCtrl,
                       maxLines: 4,
@@ -220,7 +271,15 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
                     if (isLoadingHistory)
                       const Center(child: CircularProgressIndicator())
                     else if (followUps.isEmpty)
-                      const Text("No follow-ups found")
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Text(
+                            "No follow-ups found",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                      )
                     else
                       ListView.separated(
                         shrinkWrap: true,
@@ -229,11 +288,105 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
                         separatorBuilder: (_, __) => const Divider(),
                         itemBuilder: (context, index) {
                           final item = followUps[index];
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(item['remarks'] ?? ""),
-                            subtitle: Text(
-                              "Follow Up: ${DateFormat("dd MMM yyyy").format(DateTime.parse(item['follow_up_date']))}\nCreated: ${DateFormat("dd MMM yyyy, hh:mm a").format(DateTime.parse(item['created_at']))}",
+
+                          // Parse dates
+                          final followUpDate = DateTime.parse(
+                            item['follow_up_date'],
+                          );
+                          final createdAt = DateTime.parse(item['created_at']);
+
+                          // 🔥 FIX: Handle next follow up date (can be null)
+                          DateTime? nextDate;
+                          if (item['next_follow_up_date'] != null) {
+                            nextDate = DateTime.parse(
+                              item['next_follow_up_date'],
+                            );
+                          }
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Remarks
+                                Text(
+                                  item['remarks'] ?? "",
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+
+                                // Follow Up Date
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.calendar_today,
+                                      size: 14,
+                                      color: Colors.blue,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      "Follow Up: ${DateFormat('dd MMM yyyy').format(followUpDate)}",
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                // 🔥 Next Follow Up Date (if exists)
+                                if (nextDate != null) ...[
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.event,
+                                        size: 14,
+                                        color: Colors.orange,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        "Next FollowUp: ${DateFormat('dd MMM yyyy').format(nextDate)}",
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.orange,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+
+                                const SizedBox(height: 4),
+
+                                // Created At
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.access_time,
+                                      size: 14,
+                                      color: Colors.grey,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      "Created: ${DateFormat('dd MMM yyyy, hh:mm a').format(createdAt)}",
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           );
                         },

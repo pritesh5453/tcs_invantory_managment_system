@@ -26,12 +26,20 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
 
   final Dio dio = Dio();
   bool isLoading = true;
+  bool isLoadingMore = false;
+  bool hasMoreData = true;
+  int currentPage = 1;
+  final int limit = 10;
+
   List<Employee> employees = [];
 
   // Search functionality
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   Timer? _searchDebounce;
+
+  // Scroll controller for pagination
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -51,20 +59,45 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
     );
 
     fetchEmployees();
+
+    // Add scroll listener for pagination
+    _scrollController.addListener(_scrollListener);
+  }
+
+  void _scrollListener() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        !isLoadingMore &&
+        !isLoading &&
+        hasMoreData) {
+      _loadMoreData();
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_scrollListener);
+    _scrollController.dispose();
     _searchController.dispose();
     _searchDebounce?.cancel();
     super.dispose();
   }
 
-  Future<void> fetchEmployees({String? search}) async {
-    setState(() => isLoading = true);
+  Future<void> fetchEmployees({String? search, bool reset = true}) async {
+    if (reset) {
+      setState(() {
+        isLoading = true;
+        currentPage = 1;
+        hasMoreData = true;
+        employees = [];
+      });
+    }
 
     try {
-      final Map<String, dynamic> queryParams = {"page": 1, "limit": 10};
+      final Map<String, dynamic> queryParams = {
+        "page": currentPage,
+        "limit": limit,
+      };
 
       if (search != null && search.isNotEmpty) {
         queryParams["search"] = search;
@@ -77,16 +110,43 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
 
       if (response.statusCode == 200) {
         final List list = response.data['employees'];
-        employees = list.map((e) => Employee.fromJson(e)).toList();
+        final pagination = response.data['pagination'] ?? {};
+        final totalPages = pagination['totalPages'] ?? 1;
+
+        final newEmployees = list.map((e) => Employee.fromJson(e)).toList();
+
+        setState(() {
+          if (reset) {
+            employees = newEmployees;
+          } else {
+            employees.addAll(newEmployees);
+          }
+          hasMoreData = currentPage < totalPages;
+          isLoading = false;
+          isLoadingMore = false;
+        });
       }
     } catch (e) {
       debugPrint("Dio Error: $e");
-      employees = []; // Reset on error
+      setState(() {
+        isLoading = false;
+        isLoadingMore = false;
+      });
     }
+  }
+
+  Future<void> _loadMoreData() async {
+    if (!hasMoreData || isLoadingMore || isLoading) return;
 
     setState(() {
-      isLoading = false;
+      isLoadingMore = true;
+      currentPage++;
     });
+
+    await fetchEmployees(
+      search: _searchQuery.isNotEmpty ? _searchQuery : null,
+      reset: false,
+    );
   }
 
   // Debounced search function
@@ -99,8 +159,9 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
       if (_searchQuery != value) {
         setState(() {
           _searchQuery = value;
+          currentPage = 1;
         });
-        fetchEmployees(search: value);
+        fetchEmployees(search: value, reset: true);
       }
     });
   }
@@ -110,8 +171,9 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
     _searchController.clear();
     setState(() {
       _searchQuery = '';
+      currentPage = 1;
     });
-    fetchEmployees();
+    fetchEmployees(reset: true);
   }
 
   Future<void> showDeleteDialog(BuildContext context, int employeeId) async {
@@ -176,9 +238,13 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
         ).showSnackBar(SnackBar(content: Text(response.data["message"])));
 
         // ✅ list refresh after delete
-        setState(() => isLoading = true);
+        setState(() {
+          isLoading = true;
+          currentPage = 1;
+        });
         await fetchEmployees(
           search: _searchQuery.isNotEmpty ? _searchQuery : null,
+          reset: true,
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -282,11 +348,15 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
                                       ),
                                     );
                                     if (result == true) {
+                                      setState(() {
+                                        currentPage = 1;
+                                      });
                                       await fetchEmployees(
                                         search:
                                             _searchQuery.isNotEmpty
                                                 ? _searchQuery
                                                 : null,
+                                        reset: true,
                                       );
                                     }
                                   }
@@ -319,26 +389,46 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
                 ),
               ),
 
-              /// ---------------- LIST ----------------
+              /// ---------------- LIST WITH PAGINATION ----------------
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () async {
                     debugPrint("🔄 PULL TO REFRESH TRIGGERED");
-                    setState(() => isLoading = true);
+                    setState(() {
+                      isLoading = true;
+                      currentPage = 1;
+                    });
                     await fetchEmployees(
                       search: _searchQuery.isNotEmpty ? _searchQuery : null,
+                      reset: true,
                     );
                   },
                   child:
-                      isLoading
+                      isLoading && employees.isEmpty
                           ? const Center(child: CircularProgressIndicator())
                           : employees.isEmpty
                           ? _emptyState()
                           : ListView.builder(
+                            controller: _scrollController,
                             physics: const AlwaysScrollableScrollPhysics(),
                             padding: const EdgeInsets.all(16),
-                            itemCount: employees.length,
+                            itemCount: employees.length + (hasMoreData ? 1 : 0),
                             itemBuilder: (_, index) {
+                              if (index == employees.length) {
+                                // Show loading indicator at bottom
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                  child: Center(
+                                    child:
+                                        isLoadingMore
+                                            ? const CircularProgressIndicator()
+                                            : const SizedBox.shrink(),
+                                  ),
+                                );
+                              }
+
                               return EmployeeCard(
                                 employee: employees[index],
                                 onDelete:
@@ -389,23 +479,49 @@ class _EmployeeManagmentScreenState extends State<EmployeeManagmentScreen> {
 }
 
 /// =======================================================
-/// EMPLOYEE MODEL
+/// EMPLOYEE MODEL (UPDATED with all fields from API)
 /// =======================================================
 class Employee {
   final int id;
   final String name;
-  final String phone;
   final String email;
+  final String password;
+  final String phone;
+  final String commission;
+  final String birthdate;
   final String salary;
+  final String expense;
+  final String advance;
+  final String? aadharPhoto;
+  final String? pancardPhoto;
+  final String? profilePhoto;
   final bool isActive;
+  final String? createdAt;
+  final String? fcmToken;
+  final String? aadharUrl;
+  final String? pancardUrl;
+  final String? profileUrl;
 
   Employee({
     required this.id,
     required this.name,
-    required this.phone,
     required this.email,
+    required this.password,
+    required this.phone,
+    required this.commission,
+    required this.birthdate,
     required this.salary,
+    required this.expense,
+    required this.advance,
+    this.aadharPhoto,
+    this.pancardPhoto,
+    this.profilePhoto,
     required this.isActive,
+    this.createdAt,
+    this.fcmToken,
+    this.aadharUrl,
+    this.pancardUrl,
+    this.profileUrl,
   });
 
   factory Employee.fromJson(Map<String, dynamic> json) {
@@ -415,19 +531,56 @@ class Employee {
       id:
           parsedId is int
               ? parsedId
-              : int.tryParse(parsedId?.toString() ?? '') ??
-                  -1, // ✅ SAFE FALLBACK
+              : int.tryParse(parsedId?.toString() ?? '') ?? -1,
       name: json['name'] ?? '',
-      phone: json['phone'] ?? '',
       email: json['email'] ?? '',
+      password: json['password'] ?? '',
+      phone: json['phone'] ?? '',
+      commission: json['commission']?.toString() ?? '0',
+      birthdate: json['birthdate']?.toString() ?? '',
       salary: json['salary']?.toString() ?? '0',
+      expense: json['expense']?.toString() ?? '0',
+      advance: json['advance']?.toString() ?? '0',
+      aadharPhoto: json['aadhar_photo']?.toString(),
+      pancardPhoto: json['pancard_photo']?.toString(),
+      profilePhoto: json['profile_photo']?.toString(),
       isActive: json['status'] == 'active',
+      createdAt: json['createdAt']?.toString(),
+      fcmToken: json['fcmToken']?.toString(),
+      aadharUrl: json['aadhar_url']?.toString(),
+      pancardUrl: json['pancard_url']?.toString(),
+      profileUrl: json['profile_url']?.toString(),
     );
+  }
+
+  // Convert to Map for edit popup
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'password': password,
+      'phone': phone,
+      'commission': commission,
+      'birthdate': birthdate,
+      'salary': salary,
+      'expense': expense,
+      'advance': advance,
+      'aadhar_photo': aadharPhoto,
+      'pancard_photo': pancardPhoto,
+      'profile_photo': profilePhoto,
+      'status': isActive ? 'active' : 'blocked',
+      'createdAt': createdAt,
+      'fcmToken': fcmToken,
+      'aadhar_url': aadharUrl,
+      'pancard_url': pancardUrl,
+      'profile_url': profileUrl,
+    };
   }
 }
 
 /// =======================================================
-/// EMPLOYEE CARD
+/// EMPLOYEE CARD (UI SAME - no changes)
 /// =======================================================
 class EmployeeCard extends StatelessWidget {
   final Employee employee;
@@ -564,38 +717,35 @@ class EmployeeCard extends StatelessWidget {
                                 "🆔 EDIT CLICKED ID => ${employee.id}",
                               );
 
-                              final employeeModel = EmployeeModel(
-                                id: employee.id, // ✅ DYNAMIC ID (FIXED)
-                                firstName:
-                                    employee.name.split(' ').isNotEmpty
-                                        ? employee.name.split(' ').first
-                                        : '',
-                                lastName:
-                                    employee.name.split(' ').length > 1
-                                        ? employee.name
-                                            .split(' ')
-                                            .sublist(1)
-                                            .join(' ')
-                                        : '',
-                                mobile: employee.phone,
-                                email: employee.email,
-                                dob: '',
-                                password: '',
-                                expense: '0',
-                                salary: employee.salary,
-                                commission: '0',
-                                isActive: employee.isActive,
-                              );
-
+                              // 🔥 Send ALL employee data to edit popup
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder:
                                       (_) => EditEmployeePopup(
-                                        employee: employeeModel,
+                                        employeeData: employee.toMap(),
                                       ),
                                 ),
                               );
+
+                              // Refresh after edit
+                              final state =
+                                  context
+                                      .findAncestorStateOfType<
+                                        _EmployeeManagmentScreenState
+                                      >();
+                              if (state != null) {
+                                state.setState(() {
+                                  state.currentPage = 1;
+                                });
+                                await state.fetchEmployees(
+                                  search:
+                                      state._searchQuery.isNotEmpty
+                                          ? state._searchQuery
+                                          : null,
+                                  reset: true,
+                                );
+                              }
                             }
                             : () {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -687,8 +837,13 @@ Future<void> toggleEmployeeStatus(
       // 🔁 refresh list
       final state =
           context.findAncestorStateOfType<_EmployeeManagmentScreenState>();
-      state?.setState(() => state.isLoading = true);
-      await state?.fetchEmployees();
+      if (state != null) {
+        state.setState(() {
+          state.isLoading = true;
+          state.currentPage = 1;
+        });
+        await state.fetchEmployees(reset: true);
+      }
     } else {
       ScaffoldMessenger.of(
         context,
@@ -703,7 +858,7 @@ Future<void> toggleEmployeeStatus(
 }
 
 /// =======================================================
-/// HELPER
+/// HELPER (SAME)
 /// =======================================================
 Widget _infoColumn(
   String title1,

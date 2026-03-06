@@ -10,10 +10,12 @@ import 'package:tcs_invantory_managment_system/dashbard/Inventory%20Management/I
 import 'package:tcs_invantory_managment_system/dashbard/Payment%20History/payment_hostory_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Special_Access/employee_list.dart';
 import 'package:tcs_invantory_managment_system/dashbard/Supplier%20managment/supplier_managment.dart';
+import 'package:tcs_invantory_managment_system/dashbard/Wallet/wallet.dart';
 import 'package:tcs_invantory_managment_system/dashbard/architect_managment/architect_managment.dart';
 import 'package:tcs_invantory_managment_system/dashbard/brand_managment/brand_managment_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/category_managment/category_managment_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/customer_management_screen.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/notification.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/employee/dashboard_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/admin_dash.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/employee/empdash/emp_dash.dart';
@@ -60,6 +62,7 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
   int employeeId = 0; // ✅ ADD EMPLOYEE ID
   bool isLoading = true;
 
+  int unreadNotificationCount = 0;
   // Special top items (will appear at the top of drawer)
   final List<MenuItem> specialMenuItems = [
     MenuItem(
@@ -141,6 +144,7 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
       moduleName: "Delivery Challans",
     ),
     MenuItem(title: "Reports", icon: Icons.report, moduleName: ""),
+    MenuItem(title: "Customer Amount", icon: Icons.wallet, moduleName: ""),
     MenuItem(title: "Order Book", icon: Icons.book_online, moduleName: ""),
     MenuItem(
       title: "Payment History",
@@ -319,6 +323,7 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
               filteredMenuItems: getCombinedMenuItems(),
               specialMenuItems: getFilteredSpecialItems(),
               regularMenuItems: getFilteredRegularItems(),
+              unreadNotificationCount: unreadNotificationCount,
             ),
 
             /// ================= DARK OVERLAY =================
@@ -368,6 +373,7 @@ class MainScreenWidget extends StatelessWidget {
   final List<MenuItem> filteredMenuItems;
   final List<MenuItem> specialMenuItems;
   final List<MenuItem> regularMenuItems;
+  final int unreadNotificationCount;
 
   const MainScreenWidget({
     super.key,
@@ -380,6 +386,7 @@ class MainScreenWidget extends StatelessWidget {
     required this.filteredMenuItems,
     required this.specialMenuItems,
     required this.regularMenuItems,
+    required this.unreadNotificationCount,
   });
 
   // Check if user can access a screen
@@ -482,7 +489,57 @@ class MainScreenWidget extends StatelessWidget {
           icon: const Icon(Icons.menu, color: Colors.black),
           onPressed: onMenuPressed,
         ),
+
         title: Text(selectedPage, style: const TextStyle(color: Colors.black)),
+
+        actions: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                height: 44,
+                width: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.notifications_none,
+                    size: 22,
+                    color: Colors.black,
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const NotificationScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              if (unreadNotificationCount > 0)
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          const SizedBox(width: 10),
+        ],
       ),
       body: _pageContent(),
     );
@@ -544,8 +601,8 @@ class MainScreenWidget extends StatelessWidget {
         return DeliveryChalanScreen();
       case "Reports":
         return AdvanceAnalyticsScreen();
-      case "Wallet":
-        return AdvanceAnalyticsScreen();
+      case "Customer Amount":
+        return CustomerSearchScreen();
       case "Order Book":
         return OrderBookManagementScreen();
       case "Payment History":

@@ -253,12 +253,11 @@ class _QuotationSettlementScreenState extends State<QuotationSettlementScreen> {
                   const SizedBox(height: 8),
 
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _billingChip("Billing"),
-                      const SizedBox(width: 8),
-                      _billingChip("Non-Bill"),
-                      const SizedBox(width: 8),
-                      _billingChip("None"),
+                      _billinngChip("Billing", Colors.red),
+                      const SizedBox(width: 20),
+                      _billinngChip("Non-Billing", Colors.blue),
                     ],
                   ),
 
@@ -397,31 +396,21 @@ class _QuotationSettlementScreenState extends State<QuotationSettlementScreen> {
 
   // ─── Helper Widgets ──────────────────────────────────────────
 
-  Widget _billingChip(String type) {
+  Widget _billinngChip(String type, Color color) {
     final bool selected = billingType == type;
 
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() => billingType = type);
-        },
-        child: Container(
-          height: 42,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected ? const Color(0xFFEAF1FF) : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? Colors.blue : Colors.grey.shade300,
-            ),
-          ),
-          child: Text(
-            type,
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: selected ? Colors.blue : Colors.grey.shade600,
-            ),
-          ),
+    return GestureDetector(
+      onTap: () {
+        setState(() => billingType = type);
+      },
+      child: Container(
+        width: 150,
+        height: 50,
+        decoration: BoxDecoration(
+          shape: BoxShape.rectangle,
+          borderRadius: BorderRadius.circular(8),
+          color: selected ? color : color.withOpacity(0.3),
+          border: selected ? Border.all(color: color, width: 2) : null,
         ),
       ),
     );

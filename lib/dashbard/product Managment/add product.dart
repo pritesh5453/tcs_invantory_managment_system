@@ -89,8 +89,8 @@ class _AddProductSheetState extends State<AddProductSheet> {
     try {
       final res = await Future.wait([
         dio.get("/brands/GetAlllist"),
-        dio.get("/qualities/list"),
-        dio.get("/categories/list"),
+        dio.get("/qualities/GetAlllist"),
+        dio.get("/categories/GetAlllist"),
       ]);
 
       setState(() {

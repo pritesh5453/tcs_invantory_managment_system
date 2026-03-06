@@ -543,12 +543,11 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
         double.tryParse(_transportationController.text) ?? 0;
     double unloading = double.tryParse(_unloadingController.text) ?? 0;
 
-    double totalBeforeDiscount = subtotal + transportation + unloading;
-    if (additionalDiscount > 0) {
-      double discountAmount = totalBeforeDiscount * (additionalDiscount / 100);
-      return totalBeforeDiscount - discountAmount;
-    }
-    return totalBeforeDiscount;
+    // Discount only on subtotal (products)
+    double discountAmount = subtotal * (additionalDiscount / 100);
+    double discountedSubtotal = subtotal - discountAmount;
+
+    return discountedSubtotal + transportation + unloading;
   }
 
   // ---------- Refresh grand total (called after any change in additional rows) ----------
@@ -792,6 +791,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   }
 
   // ---------- Updated Product Card with conditional prefilled dispatch boxes ----------
+  // ---------- Updated Product Card with conditional prefilled dispatch boxes ----------
   Widget _buildProductItem(QuotationItem item) {
     final controller =
         _dispatchBoxesControllers[item.id] ??
@@ -799,6 +799,10 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           text: item.remainingBoxes > 0 ? item.remainingBoxes.toString() : '',
         );
     final remaining = max(0, item.remainingBoxes);
+
+    // 🔥 Calculate amount for this product
+    final dispatchBoxes = double.tryParse(controller.text) ?? 0;
+    final productAmount = dispatchBoxes * item.disRate * item.cov;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1026,6 +1030,42 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                 ),
               ),
             ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // 🔥 NEW: Product Amount Row
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFA9C42).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: const Color(0xFFFA9C42).withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Amount:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                Text(
+                  '₹${productAmount.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFFA9C42),
+                  ),
+                ),
+              ],
+            ),
           ),
 
           const SizedBox(height: 12),
@@ -2012,9 +2052,9 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     final transportation = double.tryParse(_transportationController.text) ?? 0;
     final unloading = double.tryParse(_unloadingController.text) ?? 0;
 
-    final totalBeforeDiscount = subtotal + transportation + unloading;
-    final discountAmount = totalBeforeDiscount * (additionalDiscount / 100);
-    final grandTotal = totalBeforeDiscount - discountAmount;
+    final discountAmount = subtotal * (additionalDiscount / 100);
+    final discountedSubtotal = subtotal - discountAmount;
+    final grandTotal = discountedSubtotal + transportation + unloading;
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,

@@ -426,73 +426,74 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Column(
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Expanded(
-                child: Container(
-                  height: isMobile ? 44 : 48,
-                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(isMobile ? 20 : 24),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.search, size: isMobile ? 20 : 24),
-                      SizedBox(width: isMobile ? 8 : 12),
-                      Text(
-                        "Search..",
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: isMobile ? 14 : 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              // Expanded(
+              //   child: Container(
+              //     height: isMobile ? 44 : 48,
+              //     padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16),
+              //     decoration: BoxDecoration(
+              //       color: Colors.white,
+              //       borderRadius: BorderRadius.circular(isMobile ? 20 : 24),
+              //     ),
+              //     // child: Row(
+              //     //   children: [
+              //     //     Icon(Icons.search, size: isMobile ? 20 : 24),
+              //     //     SizedBox(width: isMobile ? 8 : 12),
+              //     //     Text(
+              //     //       "Search..",
+              //     //       style: TextStyle(
+              //     //         color: Colors.grey,
+              //     //         fontSize: isMobile ? 14 : 16,
+              //     //       ),
+              //     //     ),
+              //     //   ],
+              //     // ),
+              //   ),
+              // ),
               SizedBox(width: isMobile ? 8 : 12),
               // 🔔 NOTIFICATION ICON WITH RED DOT
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    height: isMobile ? 44 : 48,
-                    width: isMobile ? 44 : 48,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(isMobile ? 20 : 24),
-                    ),
-                    child: IconButton(
-                      icon: Icon(
-                        Icons.notifications_none,
-                        size: isMobile ? 20 : 24,
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const NotificationScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  if (unreadNotificationCount > 0)
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      child: Container(
-                        width: isMobile ? 10 : 12,
-                        height: isMobile ? 10 : 12,
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.5),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+              // Stack(
+              //   clipBehavior: Clip.none,
+              //   children: [
+              //     Container(
+              //       height: isMobile ? 44 : 48,
+              //       width: isMobile ? 44 : 48,
+              //       decoration: BoxDecoration(
+              //         color: Colors.white,
+              //         borderRadius: BorderRadius.circular(isMobile ? 20 : 24),
+              //       ),
+              //       child: IconButton(
+              //         icon: Icon(
+              //           Icons.notifications_none,
+              //           size: isMobile ? 20 : 24,
+              //         ),
+              //         onPressed: () {
+              //           Navigator.push(
+              //             context,
+              //             MaterialPageRoute(
+              //               builder: (context) => const NotificationScreen(),
+              //             ),
+              //           );
+              //         },
+              //       ),
+              //     ),
+              //     if (unreadNotificationCount > 0)
+              //       Positioned(
+              //         top: 0,
+              //         right: 0,
+              //         child: Container(
+              //           width: isMobile ? 10 : 12,
+              //           height: isMobile ? 10 : 12,
+              //           decoration: BoxDecoration(
+              //             color: Colors.red,
+              //             shape: BoxShape.circle,
+              //             border: Border.all(color: Colors.white, width: 1.5),
+              //           ),
+              //         ),
+              //       ),
+              //   ],
+              // ),
             ],
           ),
         ],
@@ -1188,22 +1189,10 @@ class _DashboardPageState extends State<DashboardPage> {
                 reservedSize: isMobile ? 45 : 50,
                 interval: maxValue / 4,
                 getTitlesWidget: (value, meta) {
-                  if (value >= 1000000) {
-                    return Text(
-                      '₹${(value / 1000000).toStringAsFixed(1)}M',
-                      style: TextStyle(fontSize: isMobile ? 10 : 12),
-                    );
-                  } else if (value >= 1000) {
-                    return Text(
-                      '₹${(value / 1000).toStringAsFixed(0)}K',
-                      style: TextStyle(fontSize: isMobile ? 10 : 12),
-                    );
-                  } else {
-                    return Text(
-                      '₹${value.toInt()}',
-                      style: TextStyle(fontSize: isMobile ? 10 : 12),
-                    );
-                  }
+                  return Text(
+                    '₹${(value / 1000).toStringAsFixed(0)}K',
+                    style: TextStyle(fontSize: isMobile ? 10 : 12),
+                  );
                 },
               ),
             ),
@@ -1240,6 +1229,12 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildCashFlowChart(bool isMobile) {
+    final maxValue =
+        cashFlowData.isNotEmpty
+            ? cashFlowData
+                .map((e) => e.inAmount > e.outAmount ? e.inAmount : e.outAmount)
+                .reduce((a, b) => a > b ? a : b)
+            : 0;
     return Padding(
       padding: EdgeInsets.all(isMobile ? 8.0 : 10.0),
       child: LineChart(
@@ -1306,25 +1301,31 @@ class _DashboardPageState extends State<DashboardPage> {
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: isMobile ? 45 : 50,
-                interval: 200000,
+                reservedSize: isMobile ? 60 : 70,
+                interval: maxValue > 0 ? maxValue / 4 : 1000,
+
                 getTitlesWidget: (value, meta) {
+                  String text;
+
                   if (value >= 1000000) {
-                    return Text(
-                      '₹${(value / 1000000).toStringAsFixed(1)}M',
-                      style: TextStyle(fontSize: isMobile ? 10 : 12),
-                    );
+                    text = '₹${(value / 1000000).toStringAsFixed(1)}M';
                   } else if (value >= 1000) {
-                    return Text(
-                      '₹${(value / 1000).toStringAsFixed(0)}K',
-                      style: TextStyle(fontSize: isMobile ? 10 : 12),
-                    );
+                    text = '₹${(value / 1000).toStringAsFixed(0)}K';
                   } else {
-                    return Text(
-                      '₹${value.toInt()}',
-                      style: TextStyle(fontSize: isMobile ? 10 : 12),
-                    );
+                    text = '₹${value.toInt()}';
                   }
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Text(
+                      text,
+                      style: TextStyle(
+                        fontSize: isMobile ? 10 : 12,
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  );
                 },
               ),
             ),

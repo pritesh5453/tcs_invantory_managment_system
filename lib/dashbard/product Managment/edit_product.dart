@@ -116,7 +116,7 @@ class _EditProductSheetState extends State<EditProductSheet> {
   /// ================= FETCH BRANDS =================
   Future<void> _fetchBrands() async {
     try {
-      final response = await dio.get("/brands/list");
+      final response = await dio.get("/brands/GetAlllist");
       if (response.data['success'] == true) {
         setState(() {
           brands =
@@ -134,7 +134,7 @@ class _EditProductSheetState extends State<EditProductSheet> {
   /// ================= FETCH QUALITIES =================
   Future<void> _fetchQualities() async {
     try {
-      final response = await dio.get("/qualities/list");
+      final response = await dio.get("/qualities/GetAlllist");
       if (response.data['success'] == true) {
         setState(() {
           qualities =
@@ -152,7 +152,7 @@ class _EditProductSheetState extends State<EditProductSheet> {
   /// ================= FETCH CATEGORIES =================
   Future<void> _fetchCategories() async {
     try {
-      final response = await dio.get("/categories/list");
+      final response = await dio.get("/categories/GetAlllist");
       if (response.data['success'] == true) {
         setState(() {
           categories =

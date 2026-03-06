@@ -70,36 +70,40 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
       }
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      FocusScope.of(context).addListener(() {
-        if (FocusScope.of(context).hasFocus) {
-          Future.delayed(const Duration(milliseconds: 300), () {
-            _scrollController.animateTo(
-              _scrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-            );
-          });
-        }
-      });
-    });
+    // 🔥 REMOVED: Automatic scroll on keyboard open
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   FocusScope.of(context).addListener(() {
+    //     if (FocusScope.of(context).hasFocus) {
+    //       Future.delayed(const Duration(milliseconds: 300), () {
+    //         if (_scrollController.hasClients) {
+    //           _scrollController.animateTo(
+    //             _scrollController.position.maxScrollExtent,
+    //             duration: const Duration(milliseconds: 300),
+    //             curve: Curves.easeOut,
+    //           );
+    //         }
+    //       });
+    //     }
+    //   });
+    // });
   }
 
   Future<void> _initializeData() async {
     setState(() => _isLoading = true);
 
     await _fetchSuppliers();
-    await _fetchProducts();
+    await _fetchAllProducts();
 
     _productRows.clear();
-    _prefillData(); // rows from purchase items
-    _prefillProductsFromApi(); // fill details using map
+    _prefillData();
+    _prefillProductsFromApi();
 
     setState(() => _isLoading = false);
   }
 
   void _prefillData() {
-    // Date
+    print('\n📝 Prefilling purchase data...');
+
     final purchaseDate = widget.purchase['purchase_date'];
     if (purchaseDate != null) {
       try {
@@ -110,20 +114,19 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
       }
     }
 
-    // Bill number
     _billNoController.text = widget.purchase['bill_no'] ?? '';
 
-    // Supplier
     _selectedSupplierName = widget.purchase['client_name'];
     _selectedSupplierContact = widget.purchase['client_contact'];
     _supplierSearchController.text = widget.purchase['client_name'] ?? '';
 
-    // Product rows
     final items = widget.purchase['items'] as List? ?? [];
+    print('📦 Found ${items.length} items in purchase');
+
     for (var item in items) {
       final row = ProductRow();
-      row.productId = item['product_id']; // store product ID
-      row.selectedBatch = item['batch_no'];
+      row.productId = item['product_id'];
+      row.selectedBatch = item['batch_no']?.toString();
       row.rateController.text = (item['rate'] ?? 0).toString();
       row.covController.text = (item['cov'] ?? 0).toString();
       row.quantityController.text = (item['qty'] ?? 0).toString();
@@ -131,6 +134,10 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
       row.godown = item['godown'] ?? 'KKW';
       row.productSearchController.text = item['product_name'] ?? '';
       _productRows.add(row);
+
+      print(
+        '  ➕ Added row for product ID: ${row.productId} - ${item['product_name']}',
+      );
     }
 
     if (_productRows.isEmpty) {
@@ -139,32 +146,66 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
   }
 
   void _prefillProductsFromApi() {
-    for (var row in _productRows) {
-      if (row.productId == null) continue;
+    print('\n🔍 Prefilling products from API...');
+
+    for (var i = 0; i < _productRows.length; i++) {
+      final row = _productRows[i];
+
+      if (row.productId == null) {
+        print('⚠️ Row $i has no productId, skipping');
+        continue;
+      }
+
       final product = _productMap[row.productId!];
-      if (product == null) continue;
+      if (product == null) {
+        print('❌ Product ID ${row.productId} not found in _productMap');
+        continue;
+      }
+
+      print('✅ Found product: ID:${product['id']} - ${product['name']}');
+      print('   Size from API: "${product['size']}"');
+      print('   Quality from API: "${product['quality']}"');
 
       row.productName = product['name'] ?? '';
       row.size = product['size']?.toString() ?? '';
       row.quality = product['quality']?.toString() ?? '';
       row.productSearchController.text = row.productName;
-      row.rateController.text =
-          product['rate']?.toString() ?? row.rateController.text;
-      row.covController.text =
-          product['cov']?.toString() ?? row.covController.text;
-      row.batches = product['batches'] ?? [];
+
+      if (row.rateController.text.isEmpty || row.rateController.text == '0') {
+        row.rateController.text = product['rate']?.toString() ?? '0';
+      }
+      if (row.covController.text.isEmpty || row.covController.text == '0') {
+        row.covController.text = product['cov']?.toString() ?? '0';
+      }
+
+      row.batches = List.from(product['batches'] ?? []);
+      print('   Batches loaded: ${row.batches.length}');
 
       if (row.batches.isNotEmpty) {
-        final matchingBatch = row.batches.firstWhere(
-          (b) => b['batch_no'] == row.selectedBatch,
-          orElse: () => row.batches.first,
-        );
-        row.selectedBatch = matchingBatch['batch_no'];
-        row.stockController.text = matchingBatch['qty'].toString();
+        final savedBatchNo = row.selectedBatch;
+
+        if (savedBatchNo != null && savedBatchNo.isNotEmpty) {
+          final matchingBatch = row.batches.firstWhere(
+            (b) => b['batch_no'].toString() == savedBatchNo.toString(),
+            orElse: () => row.batches.first,
+          );
+          row.selectedBatch = matchingBatch['batch_no'].toString();
+          row.stockController.text = matchingBatch['qty'].toString();
+          print('   ✅ Batch set to saved: ${row.selectedBatch}');
+        } else {
+          row.selectedBatch = row.batches.first['batch_no'].toString();
+          row.stockController.text = row.batches.first['qty'].toString();
+          print('   ✅ Batch set to first: ${row.selectedBatch}');
+        }
       }
 
       row.updateTotal();
+
+      print(
+        '📊 Row $i updated: ${row.productName} | ${row.size} | ${row.quality}',
+      );
     }
+
     setState(() {});
   }
 
@@ -197,22 +238,66 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
     }
   }
 
-  Future<void> _fetchProducts() async {
+  Future<void> _fetchAllProducts() async {
     try {
       final response = await _dio.get(
-        'https://dashboard.theceramicstudio.in/api/product/list?limit=100',
+        'https://dashboard.theceramicstudio.in/api/product/list?limit=1000',
       );
+
       if (response.statusCode == 200 && response.data['success'] == true) {
+        final products = response.data['products'] ?? [];
+        print('📦 Fetched ${products.length} products from API');
+
         setState(() {
-          _products = List<Map<String, dynamic>>.from(
-            response.data['products'] ?? [],
-          );
+          _products = List<Map<String, dynamic>>.from(products);
           _filteredProducts = _products;
           _productMap = {for (var p in _products) p['id'] as int: p};
         });
+
+        final optimus = _productMap[1363];
+        if (optimus != null) {
+          print('✅ Optimus product found in map: ${optimus['name']}');
+          print('   Size: "${optimus['size']}"');
+          print('   Quality: "${optimus['quality']}"');
+        } else {
+          print('❌ Optimus product (ID:1363) NOT found in map');
+          await _fetchOptimusProduct();
+        }
       }
     } catch (e) {
       debugPrint('Product fetch error: $e');
+    }
+  }
+
+  Future<void> _fetchOptimusProduct() async {
+    try {
+      print('🔍 Trying to fetch Optimus product specifically...');
+
+      final response = await _dio.get(
+        'https://dashboard.theceramicstudio.in/api/product/list?search=optimus&limit=10',
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final products = response.data['products'] ?? [];
+
+        if (products.isNotEmpty) {
+          print('✅ Found ${products.length} Optimus products');
+
+          setState(() {
+            for (var product in products) {
+              bool exists = _products.any((p) => p['id'] == product['id']);
+              if (!exists) {
+                _products.add(product);
+                _productMap[product['id']] = product;
+                print('➕ Added Optimus product ID: ${product['id']}');
+              }
+            }
+            _filteredProducts = List.from(_products);
+          });
+        }
+      }
+    } catch (e) {
+      print('❌ Error fetching Optimus product: $e');
     }
   }
 
@@ -244,24 +329,61 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
     });
   }
 
-  // Helper: case‑insensitive product lookup
   List<String> _getSizesForProduct(String productName) {
+    if (productName.isEmpty) return [];
+
+    print('\n🔍 Getting sizes for: "$productName"');
+
     final matches =
         _products.where((p) {
-          return (p['name'] as String?)?.trim().toLowerCase() ==
-              productName.trim().toLowerCase();
+          final pName = (p['name'] as String?)?.trim().toLowerCase() ?? '';
+          final searchName = productName.trim().toLowerCase();
+          return pName == searchName;
         }).toList();
-    return matches.map((p) => p['size'].toString()).toSet().toList();
+
+    print('📊 Found ${matches.length} matches');
+
+    final sizes =
+        matches
+            .map((p) {
+              final size = p['size'].toString();
+              print('   - Size: "$size"');
+              return size;
+            })
+            .toSet()
+            .toList();
+
+    return sizes;
   }
 
   List<String> _getQualitiesForProduct(String productName, String size) {
+    if (productName.isEmpty || size.isEmpty) return [];
+
+    print('\n🔍 Getting qualities for: "$productName" | Size: "$size"');
+
     final matches =
         _products.where((p) {
-          return (p['name'] as String?)?.trim().toLowerCase() ==
-                  productName.trim().toLowerCase() &&
-              (p['size'] as String?)?.trim() == size.trim();
+          final pName = (p['name'] as String?)?.trim().toLowerCase() ?? '';
+          final pSize = (p['size'] as String?)?.trim() ?? '';
+          final searchName = productName.trim().toLowerCase();
+          final searchSize = size.trim();
+
+          return pName == searchName && pSize == searchSize;
         }).toList();
-    return matches.map((p) => p['quality'].toString()).toSet().toList();
+
+    print('📊 Found ${matches.length} matches');
+
+    final qualities =
+        matches
+            .map((p) {
+              final quality = p['quality'].toString();
+              print('   - Quality: "$quality"');
+              return quality;
+            })
+            .toSet()
+            .toList();
+
+    return qualities;
   }
 
   Map<String, dynamic>? _getProductDetails(
@@ -269,14 +391,46 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
     String size,
     String quality,
   ) {
-    return _products.firstWhere(
-      (p) =>
-          (p['name'] as String?)?.trim().toLowerCase() ==
-              productName.trim().toLowerCase() &&
-          (p['size'] as String?)?.trim() == size.trim() &&
-          (p['quality'] as String?)?.trim() == quality.trim(),
-      orElse: () => null,
+    if (productName.isEmpty || size.isEmpty || quality.isEmpty) return null;
+
+    print(
+      '\n🔍 Getting product details for: "$productName" | "$size" | "$quality"',
     );
+
+    return _products.firstWhere(
+      (p) {
+        final pName = (p['name'] as String?)?.trim().toLowerCase() ?? '';
+        final pSize = (p['size'] as String?)?.trim() ?? '';
+        final pQuality = (p['quality'] as String?)?.trim() ?? '';
+        final searchName = productName.trim().toLowerCase();
+        final searchSize = size.trim();
+        final searchQuality = quality.trim();
+
+        final match =
+            pName == searchName &&
+            pSize == searchSize &&
+            pQuality == searchQuality;
+
+        if (match) {
+          print('✅ Product found! ID: ${p['id']}');
+        }
+
+        return match;
+      },
+      orElse: () {
+        print('❌ Product not found');
+        return null;
+      },
+    );
+  }
+
+  // 🔥 NEW: Calculate grand total
+  double _calculateGrandTotal() {
+    double total = 0;
+    for (var row in _productRows) {
+      total += row.getTotalAmount();
+    }
+    return total;
   }
 
   Future<void> _submitPurchase() async {
@@ -346,6 +500,8 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
         subTotal += total;
       }
 
+      print('📤 Updating purchase with ${items.length} items');
+
       final response = await _dio.put(
         'https://dashboard.theceramicstudio.in/api/purchase/update/${widget.purchase['id']}',
         data: {
@@ -360,6 +516,8 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
         options: Options(headers: {'Content-Type': 'application/json'}),
       );
 
+      print('📥 Response: ${response.data}');
+
       if (response.statusCode == 200 && response.data['success'] == true) {
         Navigator.pop(context);
         _showSnackBar(
@@ -367,9 +525,10 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
           isError: false,
         );
       } else {
-        throw Exception('Update failed');
+        throw Exception(response.data['message'] ?? 'Update failed');
       }
     } catch (e) {
+      print('❌ Error: $e');
       _showSnackBar('Error: $e');
     } finally {
       setState(() => _isSubmitting = false);
@@ -402,12 +561,15 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
   void _addProductRow() {
     setState(() {
       _productRows.add(ProductRow());
+      // 🔥 KEPT: Manual scroll on add product row (optional)
       Future.delayed(const Duration(milliseconds: 100), () {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
       });
     });
   }
@@ -707,6 +869,41 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
 
                               const SizedBox(height: 32),
 
+                              // 🔥 NEW: Grand Total
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  border: Border.all(
+                                    color: const Color(0xffFFA54A),
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      "GRAND TOTAL",
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      "₹ ${_calculateGrandTotal().toStringAsFixed(2)}",
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xffFFA54A),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              const SizedBox(height: 32),
+
                               // Buttons
                               Row(
                                 children: [
@@ -837,7 +1034,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                               row.selectedBatch = null;
                               row.covController.clear();
                               row.rateController.clear();
-                              row.productId = null; // clear until new selection
+                              row.productId = null;
                             });
                           },
                           onTap:
@@ -899,7 +1096,7 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                           ),
                           onTap: () {
                             setState(() {
-                              row.productId = product['id']; // set product ID
+                              row.productId = product['id'];
                               row.productName = product['name'];
                               row.size = product['size'].toString();
                               row.quality = product['quality'].toString();
@@ -951,7 +1148,10 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,
-                          value: row.size.isNotEmpty ? row.size : null,
+                          value:
+                              row.size.isNotEmpty && sizes.contains(row.size)
+                                  ? row.size
+                                  : null,
                           hint: const Text('Select Size'),
                           items:
                               sizes
@@ -969,11 +1169,8 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                               row.size = value;
                               row.quality = '';
                               row.selectedBatch = null;
-
                               row.covController.clear();
                               row.rateController.clear();
-
-                              // product may change after size change
                               row.productId = null;
                             });
                           },
@@ -1002,7 +1199,11 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,
-                          value: row.quality.isNotEmpty ? row.quality : null,
+                          value:
+                              row.quality.isNotEmpty &&
+                                      qualities.contains(row.quality)
+                                  ? row.quality
+                                  : null,
                           hint: const Text('Select Quality'),
                           items:
                               qualities
@@ -1026,21 +1227,16 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                               );
 
                               if (productDetails != null) {
-                                /// ✅ IMPORTANT
                                 row.productId = productDetails['id'];
-
                                 row.rateController.text =
                                     productDetails['rate']?.toString() ?? '0';
-
                                 row.covController.text =
                                     productDetails['cov']?.toString() ?? '0';
-
                                 row.batches = productDetails['batches'] ?? [];
 
                                 if (row.batches.isNotEmpty) {
                                   row.selectedBatch =
                                       row.batches.first['batch_no'];
-
                                   row.stockController.text =
                                       row.batches.first['qty'].toString();
                                 }
@@ -1119,25 +1315,32 @@ class _EditInventorySheetState extends State<EditInventorySheet> {
                         child: DropdownButton<String>(
                           isExpanded: true,
                           value: row.selectedBatch,
-                          hint: const Text('Select Batch'),
+                          hint:
+                              row.batches.isEmpty
+                                  ? const Text('No batches available')
+                                  : const Text('Select Batch'),
                           items:
                               row.batches.map((batch) {
                                 return DropdownMenuItem<String>(
-                                  value: batch['batch_no'],
+                                  value: batch['batch_no'].toString(),
                                   child: Text('Batch ${batch['batch_no']}'),
                                 );
                               }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              row.selectedBatch = value;
-                              final batch = row.batches.firstWhere(
-                                (b) => b['batch_no'] == value,
-                                orElse: () => {'qty': 0},
-                              );
-                              row.stockController.text =
-                                  batch['qty'].toString();
-                            });
-                          },
+                          onChanged:
+                              row.batches.isEmpty
+                                  ? null
+                                  : (value) {
+                                    setState(() {
+                                      row.selectedBatch = value;
+                                      final batch = row.batches.firstWhere(
+                                        (b) =>
+                                            b['batch_no'].toString() == value,
+                                        orElse: () => {'qty': 0},
+                                      );
+                                      row.stockController.text =
+                                          batch['qty'].toString();
+                                    });
+                                  },
                         ),
                       ),
                     ),
@@ -1361,14 +1564,13 @@ class ProductRow {
       final cov = double.tryParse(covController.text) ?? 0;
       final discount = double.tryParse(discountController.text) ?? 0;
 
-      final baseAmount = rate * quantity;
-      final covAmount = baseAmount * (cov / 100);
-      final amountAfterCov = baseAmount + covAmount;
-      final discountAmount = amountAfterCov * (discount / 100);
-      final finalAmount = amountAfterCov - discountAmount;
+      final baseAmount = rate * cov * quantity;
+      final discountAmount = baseAmount * (discount / 100);
+      final finalAmount = baseAmount - discountAmount;
 
       amountController.text = finalAmount.toStringAsFixed(2);
     } catch (e) {
+      print('Error in updateTotal: $e');
       amountController.text = '0';
     }
   }

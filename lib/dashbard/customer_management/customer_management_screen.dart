@@ -10,61 +10,106 @@ import 'package:tcs_invantory_managment_system/dashbard/customer_management/hist
 import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 /// =====================
-/// MODEL (with all fields)
+/// MODEL (with all fields from API)
 /// =====================
 class Customer {
   final int id;
   final String name;
   final String lastName;
   final String phone;
+  final String? altphone;
   final String email;
-  final String? walletAmount;
+  final String? billingName;
   final String? assignedEmployee;
   final String? assignedEmployeeId;
   final String? assignedArchitect;
-  final String? siteType;
-  final String? nextFollowupDate;
+  final String? assignedArchitectId;
+  final String? status;
+  final String? notes;
   final String? projectName;
   final String? siteName;
-  final String? notes;
+  final String? siteType;
   final String? priority;
+  final String? createdAt;
+  final String? updatedAt;
+  final String? nextFollowupDate;
+  final String? walletAmount;
 
   Customer({
     required this.id,
     required this.name,
     required this.lastName,
     required this.phone,
+    this.altphone,
     required this.email,
-    this.walletAmount,
+    this.billingName,
     this.assignedEmployee,
     this.assignedEmployeeId,
     this.assignedArchitect,
-    this.siteType,
-    this.nextFollowupDate,
+    this.assignedArchitectId,
+    this.status,
+    this.notes,
     this.projectName,
     this.siteName,
-    this.notes,
+    this.siteType,
     this.priority,
+    this.createdAt,
+    this.updatedAt,
+    this.nextFollowupDate,
+    this.walletAmount,
   });
 
   factory Customer.fromJson(Map<String, dynamic> json) {
     return Customer(
-      id: json['id'],
+      id: json['id'] ?? 0,
       name: json['name'] ?? '',
       lastName: json['Last_Name'] ?? '',
       phone: json['phone'] ?? '',
+      altphone: json['altphone']?.toString(),
       email: json['email'] ?? '',
-      walletAmount: json['wallet_amount']?.toString(),
-      assignedEmployee: json['assignedEmployee'],
+      billingName: json['billingName']?.toString(),
+      assignedEmployee: json['assignedEmployee']?.toString(),
       assignedEmployeeId: json['assignedEmployeeId']?.toString(),
       assignedArchitect: json['assignedArchitect']?.toString(),
-      siteType: json['siteType'],
-      projectName: json['projectName'],
-      siteName: json['siteName'],
-      nextFollowupDate: json['nextFollowupDate'],
-      notes: json['notes'],
-      priority: json['priority'],
+      assignedArchitectId: json['assignedArchitectId']?.toString(),
+      status: json['status']?.toString(),
+      notes: json['notes']?.toString(),
+      projectName: json['projectName']?.toString(),
+      siteName: json['siteName']?.toString(),
+      siteType: json['siteType']?.toString(),
+      priority: json['priority']?.toString() ?? 'Low',
+      createdAt: json['createdAt']?.toString(),
+      updatedAt: json['updatedAt']?.toString(),
+      nextFollowupDate: json['nextFollowupDate']?.toString(),
+      walletAmount: json['wallet_amount']?.toString(),
     );
+  }
+
+  // Convert to map for edit popup
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'Last_Name': lastName,
+      'phone': phone,
+      'altphone': altphone,
+      'email': email,
+      'billingName': billingName,
+      'assignedEmployee': assignedEmployee,
+      'assignedEmployeeId': assignedEmployeeId,
+      'assignedArchitect': assignedArchitect,
+      'assignedArchitectId': assignedArchitectId,
+      'status': status,
+      'notes': notes,
+      'projectName': projectName,
+      'siteName': siteName,
+      'siteType': siteType,
+      'priority': priority,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+      'nextFollowupDate': nextFollowupDate,
+      'wallet_amount': walletAmount,
+    };
   }
 }
 
@@ -114,7 +159,7 @@ class CustomerApi {
       final pagination = response.data['pagination'] ?? {};
       final currentPage = pagination['page'] ?? 1;
       final totalPages = pagination['totalPages'] ?? 1;
-      final totalItems = pagination['totalItems'] ?? list.length;
+      final totalItems = pagination['total'] ?? list.length;
       final hasMore = currentPage < totalPages;
 
       return CustomerResponse(
@@ -159,7 +204,7 @@ class CustomerApi {
       final pagination = response.data['pagination'] ?? {};
       final currentPage = pagination['page'] ?? 1;
       final totalPages = pagination['totalPages'] ?? 1;
-      final totalItems = pagination['totalItems'] ?? list.length;
+      final totalItems = pagination['total'] ?? list.length;
       final hasMore = currentPage < totalPages;
 
       return CustomerResponse(
@@ -219,7 +264,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
   bool get isAdmin =>
       widget.userRole == "admin" || widget.userRole == "superadmin";
 
-  // --------------------- ADMIN VIEW (EXISTING - UNCHANGED) ---------------------
+  // --------------------- ADMIN VIEW ---------------------
   List<Customer> _adminCustomers = [];
   int _adminCurrentPage = 1;
   bool _adminIsLoading = true;
@@ -269,7 +314,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
     }
   }
 
-  // --------------------- ADMIN: PAGINATED ALL CUSTOMERS (EXISTING - UNCHANGED) ---------------------
+  // --------------------- ADMIN: PAGINATED ALL CUSTOMERS ---------------------
   Future<void> _loadAdminCustomers({
     bool isRefresh = false,
     bool isLoadMore = false,
@@ -553,7 +598,6 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
               ),
             ],
           ),
-          // 👇 EMPLOYEE TABS – ONLY FOR EMPLOYEE, BELOW SEARCH BAR
           if (isEmployee) ...[const SizedBox(height: 16), _buildTabSelector()],
         ],
       ),
@@ -615,7 +659,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
     );
   }
 
-  // --------------------- ADMIN VIEW (EXISTING - UNCHANGED) ---------------------
+  // --------------------- ADMIN VIEW ---------------------
   Widget _buildAdminView() {
     return _adminIsLoading && _adminCustomers.isEmpty
         ? const Center(child: CircularProgressIndicator())
@@ -684,7 +728,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
         );
   }
 
-  // --------------------- EMPLOYEE VIEW (SINGLE LIST WITH TABS) ---------------------
+  // --------------------- EMPLOYEE VIEW ---------------------
   Widget _buildEmployeeView() {
     return _isLoadingCurrentTab && _displayedCustomers.isEmpty
         ? const Center(child: CircularProgressIndicator())
@@ -773,8 +817,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
 }
 
 /// ================= CUSTOMER CARD =================
-/// 👇 Ye card bilkul pehle jaisa hai – kuch bhi delete nahi kiya
-/// Sirf delete button employee ke liye completely hide kiya hai
+/// UI bilkul same hai – sirf edit button mein saara data bhej rahe hain
 class CustomerCard extends StatelessWidget {
   final Customer customer;
   final VoidCallback onRefresh;
@@ -854,11 +897,9 @@ class CustomerCard extends StatelessWidget {
     final bool isAdmin = userRole == "admin" || userRole == "superadmin";
     final bool isEmployee = userRole == "employee";
 
-    // 👇 Edit permission – employee agar canEditCustomer true hai to kisi bhi customer ko edit kar sakta hai
     bool canEditThisCustomer =
         isAdmin ? canEditCustomer : (isEmployee && canEditCustomer);
 
-    // 👇 Delete permission – sirf admin ko dikhega, employee ke liye pure hide
     bool canDeleteThisCustomer = isAdmin && canDeleteCustomer;
 
     return Container(
@@ -882,7 +923,6 @@ class CustomerCard extends StatelessWidget {
               _walletWidget(customer.walletAmount),
 
               const SizedBox(width: 1),
-              // 🚫 DELETE – SIRF ADMIN KO DIKHEGA, EMPLOYEE KE LIYE COMPLETELY HIDDEN
               if (isAdmin && canDeleteThisCustomer)
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert, size: 20),
@@ -922,7 +962,6 @@ class CustomerCard extends StatelessWidget {
           const SizedBox(height: 10),
           _infoRow("Customer Name:", "${customer.name} ${customer.lastName}"),
           _infoRow("Mobile No.", customer.phone),
-          // 👇 Ye dono fields hamesha dikhenge – koi condition nahi hatai
           _infoRow("Employee:", customer.assignedEmployee ?? "-"),
           _infoRow("Employee ID:", customer.assignedEmployeeId ?? "-"),
           _infoRow("Site Type:", customer.siteType ?? "-"),
@@ -938,30 +977,13 @@ class CustomerCard extends StatelessWidget {
                     onTap:
                         canEditThisCustomer
                             ? () async {
-                              // ✅ PASS FULL CUSTOMER DATA – ab project, site, notes, priority bhi pass honge
+                              // 🔥 Send ALL customer data to edit popup
                               await showDialog(
                                 context: context,
                                 barrierDismissible: false,
                                 builder:
                                     (_) => EditCustomerPopup(
-                                      customerData: {
-                                        'id': customer.id,
-                                        'name': customer.name,
-                                        'Last_Name': customer.lastName,
-                                        'phone': customer.phone,
-                                        'email': customer.email,
-                                        'assignedEmployee':
-                                            customer.assignedEmployee,
-                                        'assignedEmployeeId':
-                                            customer.assignedEmployeeId,
-                                        'assignedArchitect':
-                                            customer.assignedArchitect,
-                                        'siteType': customer.siteType,
-                                        'projectName': customer.projectName,
-                                        'siteName': customer.siteName,
-                                        'notes': customer.notes,
-                                        'priority': customer.priority ?? 'Low',
-                                      },
+                                      customerData: customer.toMap(),
                                       customerId: customer.id,
                                     ),
                               );

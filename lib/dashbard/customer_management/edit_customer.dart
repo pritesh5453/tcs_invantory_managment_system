@@ -6,7 +6,11 @@ import 'package:dio/dio.dart';
 class EditCustomerPopup extends StatefulWidget {
   final Map<String, dynamic> customerData;
 
-  const EditCustomerPopup({super.key, required this.customerData, required int customerId});
+  const EditCustomerPopup({
+    super.key,
+    required this.customerData,
+    required int customerId,
+  });
 
   @override
   State<EditCustomerPopup> createState() => _EditCustomerPopupState();
@@ -16,15 +20,19 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
   final firstNameCtrl = TextEditingController();
   final lastNameCtrl = TextEditingController();
   final mobileCtrl = TextEditingController();
+  final altMobileCtrl = TextEditingController(); // 🔥 New
   final emailCtrl = TextEditingController();
   final projectCtrl = TextEditingController();
   final siteCtrl = TextEditingController();
   final notesCtrl = TextEditingController();
+  final billingNameController = TextEditingController();
 
   String priority = "Low";
   String? siteType;
   String? assignedEmployee;
   String? assignedArchitect;
+  String? billingName; // 🔥 New
+  String? status; // 🔥 New
 
   bool isLoading = false;
 
@@ -43,19 +51,32 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
     _populateFields();
     _fetchEmployees();
     _fetchArchitects();
+    billingNameController.text = billingName ?? '';
   }
 
   void _populateFields() {
     final data = widget.customerData;
+    billingName = data['billingName'];
+    billingNameController.text = billingName ?? '';
+
+    // 🔥 Populate all fields from customerData
     firstNameCtrl.text = data['name'] ?? '';
     lastNameCtrl.text = data['Last_Name'] ?? '';
     mobileCtrl.text = data['phone'] ?? '';
+    altMobileCtrl.text = data['altphone'] ?? ''; // 🔥 New
     emailCtrl.text = data['email'] ?? '';
+    projectCtrl.text = data['projectName'] ?? ''; // 🔥 Fixed
+    siteCtrl.text = data['siteName'] ?? ''; // 🔥 Fixed
+    notesCtrl.text = data['notes'] ?? ''; // 🔥 Fixed
+
     siteType = data['siteType'];
     assignedEmployee = data['assignedEmployee'];
     assignedArchitect = data['assignedArchitect'];
-    // project, site, notes – inhe API se lena padega agar model mein nahi hai
-    // Filhaal empty chhod rahe hain, ya aap inhe bhi model mein add kar sakte ho
+    priority = data['priority'] ?? 'Low';
+    billingName = data['billingName']; // 🔥 New
+    status = data['status']; // 🔥 New
+
+    print("✅ Populated customer data: ${data}");
   }
 
   Future<void> _fetchEmployees() async {
@@ -91,6 +112,7 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
     _openPicker(
       title: "Search employee",
       list: employees,
+      currentValue: assignedEmployee,
       onSelect: (name) => setState(() => assignedEmployee = name),
     );
   }
@@ -99,6 +121,7 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
     _openPicker(
       title: "Search architect",
       list: architects,
+      currentValue: assignedArchitect,
       onSelect: (name) => setState(() => assignedArchitect = name),
     );
   }
@@ -106,6 +129,7 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
   void _openPicker({
     required String title,
     required List<Map<String, dynamic>> list,
+    String? currentValue,
     required Function(String) onSelect,
   }) {
     showModalBottomSheet(
@@ -117,6 +141,8 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
       ),
       builder: (_) {
         List<Map<String, dynamic>> tempList = List.from(list);
+        final TextEditingController searchCtrl = TextEditingController();
+
         return StatefulBuilder(
           builder: (context, setModalState) {
             return AnimatedPadding(
@@ -140,6 +166,7 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
                       ),
                     ),
                     TextField(
+                      controller: searchCtrl,
                       decoration: InputDecoration(
                         hintText: title,
                         prefixIcon: const Icon(Icons.search),
@@ -163,8 +190,21 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
                         itemBuilder: (_, i) {
                           final item = tempList[i];
                           final name = item['name'] ?? 'Unknown';
+                          final isSelected = name == currentValue;
+
                           return ListTile(
                             title: Text(name),
+                            trailing:
+                                isSelected
+                                    ? const Icon(
+                                      Icons.check,
+                                      color: Colors.green,
+                                    )
+                                    : null,
+                            tileColor:
+                                isSelected
+                                    ? Colors.green.withOpacity(0.1)
+                                    : null,
                             onTap: () {
                               onSelect(name);
                               Navigator.pop(context);
@@ -188,13 +228,16 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
 
     try {
       final customerId = widget.customerData['id'];
-      await dio.put(
+      final response = await dio.put(
         "/api/users/update/$customerId",
         data: {
           "name": firstNameCtrl.text,
           "Last_Name": lastNameCtrl.text,
           "phone": mobileCtrl.text,
-          "email": emailCtrl.text,
+          "altphone":
+              altMobileCtrl.text.isEmpty ? null : altMobileCtrl.text, // 🔥 New
+          "email": emailCtrl.text.isEmpty ? null : emailCtrl.text,
+          "billingName": billingNameController.text,
           "assignedEmployee": assignedEmployee,
           "assignedArchitect": assignedArchitect,
           "priority": priority,
@@ -202,15 +245,28 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
           "siteName": siteCtrl.text.isEmpty ? null : siteCtrl.text,
           "siteType": siteType,
           "notes": notesCtrl.text.isEmpty ? null : notesCtrl.text,
+          "status": status, // 🔥 New
         },
       );
 
-      Navigator.pop(context, true);
+      print("✅ Update response: ${response.data}");
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        Navigator.pop(context, true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Customer updated successfully"),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        throw Exception(response.data['message'] ?? "Update failed");
+      }
     } catch (e) {
-      debugPrint("Update error: $e");
+      debugPrint("❌ Update error: $e");
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("Update failed")));
+      ).showSnackBar(SnackBar(content: Text("Update failed: $e")));
     } finally {
       setState(() => isLoading = false);
     }
@@ -256,8 +312,33 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
             const Text("Mobile Number"),
             TextField(controller: mobileCtrl, decoration: _dec("Mobile")),
             const SizedBox(height: 12),
+
+            // 🔥 New: Alternate Mobile
+            const Text("Alternate Mobile (Optional)"),
+            TextField(
+              controller: altMobileCtrl,
+              decoration: _dec("Alternate mobile"),
+            ),
+            const SizedBox(height: 12),
+
             const Text("Email Address"),
             TextField(controller: emailCtrl, decoration: _dec("Email")),
+            const SizedBox(height: 12),
+
+            // 🔥 New: Billing Name (if available)
+            if (billingName != null) ...[
+              const Text("Billing Name"),
+              const SizedBox(height: 4),
+              TextField(
+                controller: billingNameController,
+                decoration: _dec(
+                  "Enter billing name",
+                ).copyWith(prefixIcon: const Icon(Icons.business)),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // 🔥 New: Status (if available)
             const SizedBox(height: 16),
             const Text(
               "Project Details",

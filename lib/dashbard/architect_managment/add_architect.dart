@@ -53,14 +53,42 @@ class _AddArchitectScreenState extends State<AddArchitectScreen> {
         },
       );
 
-      Navigator.pop(context, true); // 👈 success → refresh list
+      if (mounted) Navigator.pop(context, true); // success → refresh list
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
-    }
+      String errorMessage = "An error occurred";
 
-    setState(() => loading = false);
+      if (e is DioException) {
+        if (e.response != null) {
+          // Try to extract the message from the response body
+          final data = e.response!.data;
+          if (data is Map) {
+            // Common fields used by APIs
+            errorMessage =
+                data['message'] ??
+                data['error'] ??
+                data['errors']?.toString() ??
+                data.toString();
+          } else if (data is String) {
+            errorMessage = data;
+          } else {
+            errorMessage = data.toString();
+          }
+        } else {
+          // Network error or no response
+          errorMessage =
+              e.message ?? "Network error. Please check your connection.";
+        }
+      } else {
+        errorMessage = e.toString();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(errorMessage)));
+        setState(() => loading = false);
+      }
+    }
   }
 
   @override

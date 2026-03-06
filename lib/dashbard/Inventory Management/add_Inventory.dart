@@ -70,21 +70,22 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
       }
     });
 
-    // Add listener to scroll when keyboard opens
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      FocusScope.of(context).addListener(() {
-        if (FocusScope.of(context).hasFocus) {
-          // Scroll to bottom when keyboard opens
-          Future.delayed(const Duration(milliseconds: 300), () {
-            _scrollController.animateTo(
-              _scrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-            );
-          });
-        }
-      });
-    });
+    // 🔥 REMOVED: Automatic scroll on keyboard open
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   FocusScope.of(context).addListener(() {
+    //     if (FocusScope.of(context).hasFocus) {
+    //       Future.delayed(const Duration(milliseconds: 300), () {
+    //         if (_scrollController.hasClients) {
+    //           _scrollController.animateTo(
+    //             _scrollController.position.maxScrollExtent,
+    //             duration: const Duration(milliseconds: 300),
+    //             curve: Curves.easeOut,
+    //           );
+    //         }
+    //       });
+    //     }
+    //   });
+    // });
   }
 
   Future<void> _initializeData() async {
@@ -113,6 +114,8 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
   }
 
   Future<void> _fetchProducts({required String search}) async {
+    print('\n🔎 Fetching products for search: "$search"');
+
     if (search.trim().isEmpty) {
       setState(() {
         _filteredProducts = [];
@@ -126,14 +129,40 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
         queryParameters: {'search': search},
       );
 
+      print('📥 Products API Response Status: ${response.statusCode}');
+
       if (response.statusCode == 200 && response.data['success'] == true) {
+        final List<dynamic> newProducts = response.data['products'];
+        print('✅ Found ${newProducts.length} products');
+
         setState(() {
-          _filteredProducts = response.data['products'];
-          _products = response.data['products']; // 🔥 IMPORTANT LINE
+          // Filtered products for dropdown - current search ke
+          _filteredProducts = newProducts;
+
+          // 🔥 CRITICAL FIX: Accumulate, don't replace
+          for (var newProduct in newProducts) {
+            bool exists = _products.any(
+              (existing) => existing['id'] == newProduct['id'],
+            );
+            if (!exists) {
+              _products.add(newProduct);
+              print(
+                '➕ ADDED to memory: ID:${newProduct['id']} - ${newProduct['name']}',
+              );
+            } else {
+              print('⏩ Already in memory: ID:${newProduct['id']}');
+            }
+          }
         });
+
+        // Debug - show all products in memory
+        print('📦 TOTAL products in memory: ${_products.length}');
+        for (var p in _products) {
+          print('   📌 ID:${p['id']} | ${p['name']}');
+        }
       }
     } catch (e) {
-      debugPrint('Product search error: $e');
+      debugPrint('❌ Product search error: $e');
     }
   }
 
@@ -196,13 +225,42 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
     String size,
     String quality,
   ) {
-    return _products.firstWhere(
-      (p) =>
-          p['name'] == productName &&
-          p['size'] == size &&
-          p['quality'] == quality,
-      orElse: () => null,
-    );
+    print('\n🔍 Searching for: "$productName" | "$size" | "$quality"');
+    print('📦 Products in memory at search time: ${_products.length}');
+
+    // List all products in memory
+    for (var p in _products) {
+      print('   Memory: ID:${p['id']} | "${p['name']}"');
+    }
+
+    // Try exact match first
+    try {
+      final product = _products.firstWhere(
+        (p) =>
+            p['name'] == productName &&
+            p['size'] == size &&
+            p['quality'] == quality,
+      );
+      print('✅ Exact match found! ID: ${product['id']}');
+      return product;
+    } catch (e) {
+      print('⚠️ No exact match, trying case-insensitive...');
+    }
+
+    // Try case-insensitive match
+    try {
+      final product = _products.firstWhere(
+        (p) =>
+            p['name'].toString().toLowerCase() == productName.toLowerCase() &&
+            p['size'].toString().toLowerCase() == size.toLowerCase() &&
+            p['quality'].toString().toLowerCase() == quality.toLowerCase(),
+      );
+      print('✅ Case-insensitive match found! ID: ${product['id']}');
+      return product;
+    } catch (e) {
+      print('❌ Product NOT found in memory!');
+      return null;
+    }
   }
 
   Future<void> _submitPurchase() async {
@@ -222,6 +280,37 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Please fill all product details'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      if (row.batches.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No batches available for ${row.productName}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      if (row.selectedBatch == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Please select batch for ${row.productName}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      if (row.quantityController.text.isEmpty ||
+          double.tryParse(row.quantityController.text) == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter valid quantity for all products'),
             backgroundColor: Colors.red,
           ),
         );
@@ -252,18 +341,79 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
       final List<Map<String, dynamic>> items = [];
       double subTotal = 0;
 
+      print('========== SUBMIT PURCHASE ==========');
+      print('Total rows: ${_productRows.length}');
+
       for (var row in _productRows) {
         final productDetails = _getProductDetails(
           row.productName,
           row.size,
           row.quality,
         );
-        if (productDetails == null) continue;
+
+        if (productDetails == null) {
+          print('❌ Product details not found for: ${row.productName}');
+          continue;
+        }
 
         final rate = double.tryParse(row.rateController.text) ?? 0;
         final quantity = double.tryParse(row.quantityController.text) ?? 0;
         final discount = double.tryParse(row.discountController.text) ?? 0;
         final total = row.getTotalAmount();
+
+        print('✅ Adding product: ${productDetails['id']} - ${row.productName}');
+        print('   Batch: ${row.selectedBatch}, Qty: $quantity');
+
+        // 🔥 FIX 1: Send ALL batches, not just selected one
+        final List<Map<String, dynamic>> allBatches = [];
+        for (var batch in row.batches) {
+          allBatches.add({
+            "batch_no": batch['batch_no'].toString(),
+            "qty": int.tryParse(batch['qty'].toString()) ?? 0,
+            "location": batch['location']?.toString() ?? row.godown,
+          });
+        }
+
+        // 🔥 FIX 2: Find selected batch details
+        final selectedBatchData = row.batches.firstWhere(
+          (b) => b['batch_no'] == row.selectedBatch,
+          orElse:
+              () => {
+                'batch_no': row.selectedBatch ?? '',
+                'qty': 0,
+                'location': row.godown,
+              },
+        );
+
+        // 🔥 FIX 3: Create filteredProducts array (same as web)
+        final filteredProduct = {
+          "id": productDetails['id'],
+          "name": productDetails['name'],
+          "size": productDetails['size'],
+          "brand": productDetails['brand']?.toString() ?? "",
+          "category": productDetails['category']?.toString() ?? "",
+          "quality": productDetails['quality'],
+          "rate": productDetails['rate']?.toString() ?? "0",
+          "status": productDetails['status'] ?? "",
+          "link": productDetails['link'] ?? "",
+          "godown": productDetails['godown']?.toString() ?? "",
+          "description": productDetails['description']?.toString() ?? "",
+          "cov": productDetails['cov']?.toString() ?? "0",
+          "image": productDetails['image']?.toString() ?? "",
+          "created_at": productDetails['created_at']?.toString() ?? "",
+          "availQty": productDetails['availQty'] ?? 0,
+          "batches":
+              allBatches
+                  .map(
+                    (b) => {
+                      "batch_no": b['batch_no'],
+                      "qty": b['qty'],
+                      "location": b['location'],
+                    },
+                  )
+                  .toList(),
+          "image_url": productDetails['image_url']?.toString() ?? "",
+        };
 
         items.add({
           "productId": productDetails['id'],
@@ -272,34 +422,49 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
           "quality": row.quality,
           "rate": rate,
           "cov": row.covController.text,
-          "batches": productDetails['batches'] ?? [],
+          "batches": allBatches, // 🔥 Send ALL batches
           "batchNo": row.selectedBatch,
-          "availQty": productDetails['availQty'] ?? 0,
+          "availQty": int.tryParse(selectedBatchData['qty'].toString()) ?? 0,
           "qty": row.quantityController.text,
           "total": total,
           "discount":
               row.discountController.text.isEmpty
-                  ? "0"
-                  : row.discountController.text,
+                  ? ""
+                  : row
+                      .discountController
+                      .text, // 🔥 Empty string if no discount
           "godown": row.godown,
-          "stockDiff": int.parse(row.quantityController.text),
+          "filteredProducts": [filteredProduct], // 🔥 ADD THIS - web jaisa
+          "stockDiff": quantity,
         });
 
         subTotal += total;
       }
 
+      if (items.isEmpty) {
+        throw Exception('No valid products to add');
+      }
+
+      final requestData = {
+        "purchaseDate": formattedDate,
+        "clientName": _selectedSupplierName,
+        "clientContact": _selectedSupplierContact,
+        "billNo": _billNoController.text,
+        "purchaseId": null,
+        "items": items,
+        "subTotal": subTotal,
+      };
+
+      print('📤 Sending request with ${items.length} items');
+      print('Data: ${requestData.toString()}');
+
       final response = await _dio.post(
         'https://dashboard.theceramicstudio.in/api/purchase/add',
-        data: {
-          "purchaseDate": formattedDate,
-          "clientName": _selectedSupplierName,
-          "clientContact": _selectedSupplierContact,
-          "billNo": _billNoController.text,
-          "items": items,
-          "subTotal": subTotal,
-        },
+        data: requestData,
         options: Options(headers: {'Content-Type': 'application/json'}),
       );
+
+      print('📥 Response: ${response.data}');
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         Navigator.pop(context);
@@ -312,9 +477,10 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
           ),
         );
       } else {
-        throw Exception('Failed to add purchase');
+        throw Exception(response.data['message'] ?? 'Failed to add purchase');
       }
     } catch (e) {
+      print('❌ Error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
@@ -343,13 +509,15 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
   void _addProductRow() {
     setState(() {
       _productRows.add(ProductRow());
-      // Scroll to bottom after adding new row
+      // 🔥 KEPT: Manual scroll on add product row
       Future.delayed(const Duration(milliseconds: 100), () {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
       });
     });
   }
@@ -410,7 +578,6 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
           Expanded(
             child: GestureDetector(
               onTap: () {
-                // Close all dropdowns when tapping outside
                 setState(() {
                   _showSupplierDropdown = false;
                   for (var row in _productRows) {
@@ -655,7 +822,42 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
 
                               const SizedBox(height: 32),
 
-                              // Buttons (Always visible at bottom)
+                              // Grand Total
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  border: Border.all(
+                                    color: const Color(0xffFFA54A),
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      "GRAND TOTAL",
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      "₹ ${_calculateGrandTotal().toStringAsFixed(2)}",
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xffFFA54A),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              const SizedBox(height: 32),
+
+                              // Buttons
                               Row(
                                 children: [
                                   Expanded(
@@ -789,6 +991,7 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                             row.rateController.clear();
                             row.stockController.clear();
                             row.amountController.clear();
+                            row.batches = [];
 
                             // Debounce API call
                             if (_productSearchDebounce?.isActive ?? false) {
@@ -868,15 +1071,29 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                               row.quality = product['quality'].toString();
                               row.productSearchController.text =
                                   product['name'];
-                              row.rateController.text = product['rate'] ?? '0';
-                              row.covController.text = product['cov'] ?? '0';
-                              row.batches = product['batches'] ?? [];
-                              if (row.batches.isNotEmpty) {
+                              row.rateController.text =
+                                  product['rate']?.toString() ?? '0';
+                              row.covController.text =
+                                  product['cov']?.toString() ?? '0';
+
+                              // 🔥 FIX: Properly handle batches
+                              if (product['batches'] != null &&
+                                  product['batches'].isNotEmpty) {
+                                row.batches = List.from(product['batches']);
                                 row.selectedBatch =
                                     row.batches.first['batch_no'];
                                 row.stockController.text =
                                     row.batches.first['qty'].toString();
+                                print(
+                                  '✅ Batches loaded: ${row.batches.length} for ${product['name']}',
+                                );
+                              } else {
+                                row.batches = [];
+                                row.selectedBatch = null;
+                                row.stockController.text = '0';
+                                print('⚠️ No batches for ${product['name']}');
                               }
+
                               row.showProductDropdown = false;
                               row.updateTotal();
                               FocusScope.of(context).unfocus();
@@ -912,12 +1129,8 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,
-
-                          // ✅ SAFE VALUE: sirf tab set hoga jab items me exist kare
                           value: sizes.contains(row.size) ? row.size : null,
-
                           hint: const Text('Select Size'),
-
                           items:
                               sizes.map<DropdownMenuItem<String>>((size) {
                                 return DropdownMenuItem<String>(
@@ -925,22 +1138,18 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                                   child: Text(size),
                                 );
                               }).toList(),
-
                           onChanged: (value) {
                             if (value == null) return;
 
                             setState(() {
                               row.size = value;
-
-                              // 🔁 size change hote hi dependent fields reset
                               row.quality = '';
                               row.selectedBatch = null;
-
                               row.covController.clear();
                               row.rateController.clear();
                               row.stockController.clear();
                               row.amountController.clear();
-
+                              row.batches = [];
                               row.updateTotal();
                             });
                           },
@@ -969,15 +1178,11 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,
-
-                          // ✅ SAFE VALUE: sirf tab set hogi jab items me exist kare
                           value:
                               qualities.contains(row.quality)
                                   ? row.quality
                                   : null,
-
                           hint: const Text('Select Quality'),
-
                           items:
                               qualities.map<DropdownMenuItem<String>>((
                                 quality,
@@ -987,7 +1192,6 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                                   child: Text(quality),
                                 );
                               }).toList(),
-
                           onChanged: (value) {
                             if (value == null) return;
 
@@ -1006,16 +1210,24 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                                 row.covController.text =
                                     productDetails['cov']?.toString() ?? '0';
 
-                                row.batches = productDetails['batches'] ?? [];
-
-                                if (row.batches.isNotEmpty) {
+                                // 🔥 FIX: Load batches properly
+                                if (productDetails['batches'] != null &&
+                                    productDetails['batches'].isNotEmpty) {
+                                  row.batches = List.from(
+                                    productDetails['batches'],
+                                  );
                                   row.selectedBatch =
                                       row.batches.first['batch_no'];
                                   row.stockController.text =
                                       row.batches.first['qty'].toString();
+                                  print(
+                                    '✅ Batches loaded: ${row.batches.length}',
+                                  );
                                 } else {
+                                  row.batches = [];
                                   row.selectedBatch = null;
                                   row.stockController.text = '0';
+                                  print('⚠️ No batches available');
                                 }
                               }
 
@@ -1086,7 +1298,10 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                         child: DropdownButton<String>(
                           isExpanded: true,
                           value: row.selectedBatch,
-                          hint: const Text('Select Batch'),
+                          hint:
+                              row.batches.isEmpty
+                                  ? const Text('No batches available')
+                                  : const Text('Select Batch'),
                           items:
                               row.batches.map((batch) {
                                 return DropdownMenuItem<String>(
@@ -1094,17 +1309,21 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
                                   child: Text('Batch ${batch['batch_no']}'),
                                 );
                               }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              row.selectedBatch = value;
-                              final selectedBatch = row.batches.firstWhere(
-                                (b) => b['batch_no'] == value,
-                                orElse: () => {'qty': 0},
-                              );
-                              row.stockController.text =
-                                  selectedBatch['qty'].toString();
-                            });
-                          },
+                          onChanged:
+                              row.batches.isEmpty
+                                  ? null
+                                  : (value) {
+                                    setState(() {
+                                      row.selectedBatch = value;
+                                      final selectedBatch = row.batches
+                                          .firstWhere(
+                                            (b) => b['batch_no'] == value,
+                                            orElse: () => {'qty': 0},
+                                          );
+                                      row.stockController.text =
+                                          selectedBatch['qty'].toString();
+                                    });
+                                  },
                         ),
                       ),
                     ),
@@ -1292,6 +1511,14 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
     );
   }
 
+  double _calculateGrandTotal() {
+    double total = 0;
+    for (var row in _productRows) {
+      total += row.getTotalAmount();
+    }
+    return total;
+  }
+
   @override
   void dispose() {
     _dateController.dispose();
@@ -1330,19 +1557,20 @@ class ProductRow {
       final cov = double.tryParse(covController.text) ?? 0;
       final discount = double.tryParse(discountController.text) ?? 0;
 
-      // Calculate base amount
-      final baseAmount = rate * quantity;
+      // ✅ CORRECT FORMULA: rate * cov * quantity
+      final baseAmount = rate * cov * quantity;
 
-      // Add COV (assuming COV is a percentage)
-      final covAmount = baseAmount * (cov / 100);
-      final amountAfterCov = baseAmount;
-
-      // Apply discount (assuming discount is a percentage)
-      final discountAmount = amountAfterCov * (discount / 100);
-      final finalAmount = amountAfterCov - discountAmount;
+      // Apply discount (percentage)
+      final discountAmount = baseAmount * (discount / 100);
+      final finalAmount = baseAmount - discountAmount;
 
       amountController.text = finalAmount.toStringAsFixed(2);
+
+      print(
+        '💰 Total: ₹$rate × $cov × $quantity qty - $discount% = ₹$finalAmount',
+      );
     } catch (e) {
+      print('Error in updateTotal: $e');
       amountController.text = '0';
     }
   }
