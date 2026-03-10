@@ -1,695 +1,916 @@
 import 'dart:async';
-
-import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
+import 'package:excel/excel.dart' as excel; // 👈 prefixed to avoid conflict
+import 'package:flutter/material.dart';
+import 'dart:typed_data'; // ✅ For Uint8List
+import 'package:file_saver/file_saver.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:tcs_invantory_managment_system/dashbard/orderbook/add_order_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/orderbook/edit_order.dart';
+import 'package:tcs_invantory_managment_system/dashbard/orderbook/order_model.dart'
+    as order_model;
+import 'package:tcs_invantory_managment_system/dashbard/orderbook/order_services.dart';
+import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/Product_Management.dart'
+    hide Product;
 
-/// ================= SEARCH BAR WIDGET =================
-class OrderBookSearchBarWidget extends StatefulWidget {
-  final ValueChanged<String> onSearchChanged;
-  final String initialValue;
+// Create type aliases for clarity
+typedef OrderBrand = order_model.Brand;
+typedef OrderType = order_model.Order;
+typedef ProductType = order_model.Product;
 
-  const OrderBookSearchBarWidget({
-    super.key,
-    required this.onSearchChanged,
-    this.initialValue = '',
-  });
+class OrderManagementScreen extends StatefulWidget {
+  const OrderManagementScreen({super.key});
 
   @override
-  State<OrderBookSearchBarWidget> createState() =>
-      _OrderBookSearchBarWidgetState();
+  State<OrderManagementScreen> createState() => _OrderManagementScreenState();
 }
 
-class _OrderBookSearchBarWidgetState extends State<OrderBookSearchBarWidget> {
-  late TextEditingController _searchController;
-  late FocusNode _searchFocusNode;
-  Timer? _searchTimer;
+class _OrderManagementScreenState extends State<OrderManagementScreen> {
+  // ---------- Data ----------
+  List<OrderType> _orders = [];
+  List<OrderBrand> _brands = [];
+  OrderBrand? _selectedBrand;
+  int _currentPage = 1;
+  int _totalPages = 1;
+  int _totalItems = 0;
+  final int _limit = 10;
 
-  @override
-  void initState() {
-    super.initState();
-    _searchController = TextEditingController(text: widget.initialValue);
-    _searchFocusNode = FocusNode();
-  }
+  // ---------- UI State ----------
+  bool _isLoading = false;
+  bool _isLoadingMore = false;
+  bool _isLoadingBrands = false;
+  String _searchQuery = '';
+  DateTime? _selectedDate;
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounceTimer;
 
-  @override
-  void didUpdateWidget(OrderBookSearchBarWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Sync controller with parent state
-    if (widget.initialValue != _searchController.text) {
-      _searchController.text = widget.initialValue;
+  // ---------- Fetch methods ----------
+  Future<void> _loadOrders({bool refresh = false}) async {
+    if (refresh) {
+      setState(() {
+        _currentPage = 1;
+        _orders = [];
+      });
+    }
+    setState(() => _isLoading = refresh ? true : _isLoading);
+
+    try {
+      final response = await OrderApiService.fetchOrders(
+        page: _currentPage,
+        limit: _limit,
+        search: _searchQuery.isNotEmpty ? _searchQuery : null,
+        date:
+            _selectedDate != null
+                ? DateFormat('yyyy-MM-dd').format(_selectedDate!)
+                : null,
+        brandName: _selectedBrand?.name,
+      );
+      setState(() {
+        if (refresh) {
+          _orders = response.orders;
+        } else {
+          _orders.addAll(response.orders);
+        }
+        _totalPages = response.totalPages;
+        _totalItems = response.total;
+        _isLoading = false;
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load orders: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
-  @override
-  void dispose() {
-    _searchTimer?.cancel();
-    _searchController.dispose();
-    _searchFocusNode.dispose();
-    super.dispose();
+  Future<void> _loadBrands() async {
+    setState(() {
+      _isLoadingBrands = true;
+    });
+
+    try {
+      debugPrint('🔄 Fetching brands from API...');
+      final brands = await OrderApiService.fetchBrands();
+
+      debugPrint('✅ Brands fetched: ${brands.length}');
+
+      for (var brand in brands) {
+        debugPrint('   - Brand: ${brand.name} (ID: ${brand.id})');
+      }
+
+      setState(() {
+        _brands = brands.cast<OrderBrand>();
+        if (_selectedBrand != null && !_brands.contains(_selectedBrand)) {
+          _selectedBrand = null;
+        }
+        _isLoadingBrands = false;
+      });
+
+      debugPrint('✅ Brands loaded in state: ${_brands.length}');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${_brands.length} brands loaded successfully'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Brands error: $e');
+      setState(() {
+        _isLoadingBrands = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load brands: $e'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
+  }
+
+  // ---------- Refresh All (Brands + Orders) ----------
+  Future<void> _refreshAll() async {
+    await _loadBrands();
+    await _loadOrders(refresh: true);
+  }
+
+  // ---------- Debug API (using Dio) ----------
+  Future<void> _debugCheckApi() async {
+    try {
+      final dio = Dio();
+      final response = await dio.get(
+        'https://dashboard.theceramicstudio.in/api/brands/GetAlllist',
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        final brands = data['brands'] as List?;
+        showDialog(
+          context: context,
+          builder:
+              (_) => AlertDialog(
+                title: const Text('API Debug'),
+                content: Text(
+                  'Status: ${response.statusCode}\n'
+                  'Success: ${data['success']}\n'
+                  'Brands count: ${brands?.length ?? 0}\n\n'
+                  'First brand: ${brands?.isNotEmpty == true ? brands![0]['name'] : 'N/A'}',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('API Error: ${response.statusCode}')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+  }
+
+  // ---------- Pagination ----------
+  void _loadNextPage() {
+    if (_currentPage < _totalPages && !_isLoadingMore && !_isLoading) {
+      setState(() {
+        _currentPage++;
+        _isLoadingMore = true;
+      });
+      _loadOrders();
+    }
+  }
+
+  void _loadPreviousPage() {
+    if (_currentPage > 1 && !_isLoadingMore && !_isLoading) {
+      setState(() {
+        _currentPage--;
+        _isLoadingMore = true;
+      });
+      _loadOrders(refresh: true);
+    }
+  }
+
+  // ---------- Search debounce ----------
+  void _onSearchChanged(String query) {
+    setState(() => _searchQuery = query);
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _loadOrders(refresh: true);
+    });
   }
 
   void _clearSearch() {
     _searchController.clear();
-    widget.onSearchChanged('');
-    _searchFocusNode.requestFocus();
+    setState(() => _searchQuery = '');
+    _loadOrders(refresh: true);
   }
 
-  void _onSearchChanged(String value) {
-    _searchTimer?.cancel();
+  // ---------- Date picker ----------
+  Future<void> _pickDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (date != null) {
+      setState(() => _selectedDate = date);
+      _loadOrders(refresh: true);
+    }
+  }
 
-    // Debounce search (500ms delay)
-    _searchTimer = Timer(const Duration(milliseconds: 500), () {
-      widget.onSearchChanged(value);
-    });
+  void _clearDate() {
+    setState(() => _selectedDate = null);
+    _loadOrders(refresh: true);
+  }
+
+  // ---------- Delete order ----------
+  Future<void> _deleteOrder(OrderType order) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text('Delete Order'),
+            content: Text(
+              'Are you sure you want to delete order ${order.orderId}?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+    );
+    if (confirm == true) {
+      final success = await OrderApiService.deleteOrder(order.id.toString());
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Order deleted'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadOrders(refresh: true);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Delete failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // ---------- View products dialog ----------
+  void _showProductsDialog(List<ProductType> products) {
+    showDialog(
+      context: context,
+      builder:
+          (_) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              constraints: const BoxConstraints(maxHeight: 1000),
+              width: 400,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        "Products",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.download,
+                              color: Colors.green,
+                            ),
+                            onPressed: () => _exportToExcel(products),
+                            tooltip: 'Export to Excel',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: products.length,
+                      itemBuilder: (ctx, i) {
+                        final p = products[i];
+                        return Container(
+                          margin: const EdgeInsets.symmetric(vertical: 6),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                p.productName,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  _productTag("Size", p.size, Colors.blue),
+                                  _productTag(
+                                    "Qty",
+                                    p.quantity.toString(),
+                                    Colors.green,
+                                  ),
+                                  _productTag(
+                                    "Quality",
+                                    p.quality,
+                                    Colors.purple,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+    );
+  }
+
+  // ✅ Export to Excel
+  Future<void> _exportToExcel(List<ProductType> products) async {
+    try {
+      var excelFile = excel.Excel.createExcel();
+      String sheetName = excelFile.getDefaultSheet()!;
+      excelFile.rename(sheetName, "Order Details");
+      sheetName = "Order Details";
+
+      excel.Sheet sheetObject = excelFile[sheetName];
+
+      // Header Row
+      sheetObject.appendRow([
+        excel.TextCellValue('Product Name'),
+        excel.TextCellValue('Size'),
+        excel.TextCellValue('Quantity'),
+        excel.TextCellValue('Quality'),
+      ]);
+
+      // Product Rows
+      for (var p in products) {
+        sheetObject.appendRow([
+          excel.TextCellValue(p.productName),
+          excel.TextCellValue(p.size),
+          excel.TextCellValue(p.quantity.toString()),
+          excel.TextCellValue(p.quality),
+        ]);
+      }
+
+      var fileBytes = excelFile.save();
+      if (fileBytes == null) return;
+
+      Uint8List uint8list = Uint8List.fromList(fileBytes);
+
+      // Save file in device storage
+      final directory = await getApplicationDocumentsDirectory();
+      final filePath = "${directory.path}/products_export.xlsx";
+
+      final file = File(filePath);
+      await file.writeAsBytes(uint8list);
+
+      // Share file option
+      await Share.shareXFiles([XFile(filePath)]);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Excel exported successfully"),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Export failed: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _productTag(String title, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: RichText(
+        text: TextSpan(
+          // 👈 this is Flutter's TextSpan, no conflict now
+          style: const TextStyle(fontSize: 12),
+          children: [
+            TextSpan(
+              text: "$title: ",
+              style: TextStyle(color: color, fontWeight: FontWeight.w600),
+            ),
+            TextSpan(text: value, style: const TextStyle(color: Colors.black)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    debugPrint('🚀 OrderManagementScreen initialized');
+    _loadBrands();
+    _loadOrders(refresh: true);
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            _buildFilters(),
+            Expanded(child: _buildOrderList()),
+            _buildPagination(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
     return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFFA54A),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Order Management',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Manage multi-product brand orders',
+                style: TextStyle(fontSize: 14, color: Colors.white70),
+              ),
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.refresh,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    onPressed: _refreshAll,
+                    tooltip: 'Refresh All',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilters() {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _buildBrandDropdown()),
+              const SizedBox(width: 8),
+              Expanded(child: _buildDateFilter()),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _buildSearchField()),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const CreateOrderScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('New'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFFA54A),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(70, 40),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBrandDropdown() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.grey.shade400),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<OrderBrand>(
+          value: _selectedBrand,
+          hint:
+              _isLoadingBrands
+                  ? const Row(
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 8),
+                      Text('Loading brands...'),
+                    ],
+                  )
+                  : const Text('All Brands'),
+          isExpanded: true,
+          icon: const Icon(Icons.arrow_drop_down),
+          items: [
+            const DropdownMenuItem<OrderBrand>(
+              value: null,
+              child: Text('All Brands'),
+            ),
+            ..._brands.map(
+              (brand) => DropdownMenuItem<OrderBrand>(
+                value: brand,
+                child: Text(brand.name),
+              ),
+            ),
+          ],
+          onChanged: (brand) {
+            setState(() {
+              _selectedBrand = brand;
+            });
+            _loadOrders(refresh: true);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateFilter() {
+    return GestureDetector(
+      onTap: _pickDate,
+      child: Container(
+        height: 50,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade400),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today, size: 16, color: Colors.grey.shade600),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _selectedDate == null
+                    ? 'dd-mm-yyyy'
+                    : DateFormat('dd-MM-yyyy').format(_selectedDate!),
+                style: TextStyle(
+                  color:
+                      _selectedDate == null
+                          ? Colors.grey.shade600
+                          : Colors.black,
+                ),
+              ),
+            ),
+            if (_selectedDate != null)
+              IconButton(
+                icon: const Icon(Icons.clear, size: 16),
+                onPressed: _clearDate,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchField() {
+    return Container(
+      height: 50,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade400),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
-          const Icon(Icons.search, color: Colors.grey),
+          const SizedBox(width: 8),
+          const Icon(Icons.search, size: 20, color: Colors.grey),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
               controller: _searchController,
-              focusNode: _searchFocusNode,
-              onChanged: _onSearchChanged,
               decoration: const InputDecoration(
-                hintText: "Search by product name, size, quality...",
+                hintText: 'Search ID or Brand...',
                 border: InputBorder.none,
-                hintStyle: TextStyle(color: Colors.grey),
-                contentPadding: EdgeInsets.zero,
-                isDense: true,
               ),
-              style: const TextStyle(fontSize: 14),
+              onChanged: _onSearchChanged,
             ),
           ),
-          if (_searchController.text.isNotEmpty)
+          if (_searchQuery.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+              icon: const Icon(Icons.clear, size: 18),
               onPressed: _clearSearch,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
             ),
         ],
       ),
     );
   }
-}
 
-class OrderBookManagementScreen extends StatefulWidget {
-  const OrderBookManagementScreen({super.key});
-
-  @override
-  State<OrderBookManagementScreen> createState() =>
-      _OrderBookManagementScreenState();
-}
-
-class _OrderBookManagementScreenState extends State<OrderBookManagementScreen> {
-  bool isLoading = true;
-  bool loadingMore = false;
-  List orders = []; // Store orders
-  String searchQuery = '';
-  final TextEditingController _searchController = TextEditingController();
-
-  // ✅ PAGINATION VARIABLES
-  int _currentPage = 1;
-  int _totalPages = 1;
-  int _totalItems = 0;
-  bool _hasMoreData = true;
-  final ScrollController _scrollController = ScrollController();
-  final Dio _dio = Dio();
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchOrders();
-    _scrollController.addListener(_scrollListener);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  /// ================= FETCH ORDER LIST WITH PAGINATION =================
-  Future<void> _fetchOrders({bool isLoadMore = false}) async {
-    if (!isLoadMore) {
-      setState(() {
-        isLoading = true;
-        _currentPage = 1;
-        orders = [];
-        _hasMoreData = true;
-      });
-    } else {
-      setState(() {
-        loadingMore = true;
-      });
+  Widget _buildOrderList() {
+    if (_isLoading && _orders.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
     }
-
-    try {
-      final Map<String, dynamic> queryParams = {
-        'page': _currentPage,
-        'limit': 10,
-        if (searchQuery.isNotEmpty) 'search': searchQuery,
-      };
-
-      debugPrint('Fetching orders with params: $queryParams');
-
-      final response = await _dio.get(
-        "https://dashboard.theceramicstudio.in/api/orderBook/list",
-        queryParameters: queryParams,
-      );
-
-      if (response.statusCode == 200 && response.data["success"] == true) {
-        final data = response.data;
-
-        setState(() {
-          if (isLoadMore) {
-            orders.addAll(data["orders"] ?? []);
-          } else {
-            orders = data["orders"] ?? [];
-          }
-
-          _currentPage = data["page"] ?? _currentPage;
-          _totalPages = data["totalPages"] ?? _totalPages;
-          _totalItems = data["total"] ?? _totalItems;
-          _hasMoreData = (_currentPage) < (_totalPages);
-
-          isLoading = false;
-          loadingMore = false;
-        });
-
-        debugPrint('Pagination Info:');
-        debugPrint('Current Page: $_currentPage');
-        debugPrint('Total Pages: $_totalPages');
-        debugPrint('Total Items: $_totalItems');
-        debugPrint('Has More Data: $_hasMoreData');
-        debugPrint('Orders Count: ${orders.length}');
-      } else {
-        throw Exception('Failed to load orders');
-      }
-    } catch (e) {
-      debugPrint("ORDER LIST ERROR: $e");
-      setState(() {
-        isLoading = false;
-        loadingMore = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Failed to load orders"),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  /// ================= SCROLL LISTENER FOR PAGINATION =================
-  void _scrollListener() {
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final currentScroll = _scrollController.position.pixels;
-
-    debugPrint('Scroll Position: $currentScroll / $maxScroll');
-    debugPrint('Loading More: $loadingMore, Has More: $_hasMoreData');
-
-    // Agar 50 pixels pehle ho bottom se aur data load karne ke liye available hai
-    if (currentScroll >= (maxScroll - 50) &&
-        !loadingMore &&
-        _hasMoreData &&
-        orders.isNotEmpty) {
-      debugPrint('Loading more data...');
-      _loadMoreData();
-    }
-  }
-
-  /// ================= LOAD MORE DATA =================
-  Future<void> _loadMoreData() async {
-    if (!_hasMoreData || loadingMore) {
-      debugPrint(
-        'Cannot load more: HasMore=$_hasMoreData, LoadingMore=$loadingMore',
-      );
-      return;
-    }
-
-    debugPrint('Starting to load more data. Current page: $_currentPage');
-    setState(() {
-      loadingMore = true;
-    });
-
-    _currentPage++;
-    await _fetchOrders(isLoadMore: true);
-  }
-
-  /// ================= API-BASED SEARCH =================
-  void _searchOrders(String query) {
-    // Cancel any previous search timer
-    setState(() {
-      searchQuery = query;
-    });
-    _fetchOrders();
-  }
-
-  void _clearSearch() {
-    setState(() {
-      searchQuery = '';
-      _searchController.clear();
-    });
-    _fetchOrders();
-  }
-
-  /// ================= DELETE ORDER =================
-  Future<void> _deleteOrder(int id) async {
-    try {
-      await _dio.delete(
-        "https://dashboard.theceramicstudio.in/api/orderBook/delete/$id",
-      );
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Order deleted successfully"),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      _fetchOrders(); // refresh list
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Delete failed"),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  /// ================= DELETE CONFIRM =================
-  void _confirmDelete(int id) {
-    showDialog(
-      context: context,
-      builder:
-          (_) => AlertDialog(
-            title: const Text("Delete Order"),
-            content: const Text("Are you sure you want to delete this order?"),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Cancel"),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _deleteOrder(id);
-                },
-                child: const Text(
-                  "Delete",
-                  style: TextStyle(color: Colors.red),
-                ),
-              ),
-            ],
-          ),
-    );
-  }
-
-  /// ================= REFRESH FUNCTION =================
-  Future<void> _refreshOrders() async {
-    setState(() {
-      isLoading = true;
-      searchQuery = '';
-      _searchController.clear();
-    });
-    await _fetchOrders();
-  }
-
-  /// ================= UI =================
-  @override
-  Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
-          (route) => false,
-        );
-
-        return false;
-      },
-      child: Scaffold(
-        backgroundColor: const Color(0xffF6F6F6),
-        body: SafeArea(
-          child: Column(
-            children: [
-              /// ================= TOP BAR WITH SEARCH =================
-              Container(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFFA54A),
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(26),
-                    bottomRight: Radius.circular(26),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OrderBookSearchBarWidget(
-                        onSearchChanged: _searchOrders,
-                        initialValue: searchQuery,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AddOrderScreen(),
-                          ),
-                        ).then((_) {
-                          _refreshOrders();
-                        });
-                      },
-                      child: Container(
-                        height: 42,
-                        width: 42,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.add, color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              /// ================= ORDER LIST =================
-              Expanded(
-                child:
-                    isLoading && orders.isEmpty
-                        ? const Center(child: CircularProgressIndicator())
-                        : RefreshIndicator(
-                          onRefresh: _refreshOrders,
-                          child: CustomScrollView(
-                            controller: _scrollController,
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            slivers: [
-                              /// ORDER COUNT HEADER
-                              if (orders.isNotEmpty)
-                                SliverToBoxAdapter(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Text(
-                                      "Orders (${orders.length} of $_totalItems)",
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black87,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-
-                              /// ORDERS LIST
-                              SliverList(
-                                delegate: SliverChildBuilderDelegate((
-                                  context,
-                                  index,
-                                ) {
-                                  final order = orders[index];
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 8,
-                                    ),
-                                    child: OrderCard(
-                                      order: order,
-                                      onEdit: () async {
-                                        final refresh = await Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder:
-                                                (_) => EditOrderScreen(
-                                                  order: order,
-                                                ),
-                                          ),
-                                        );
-
-                                        if (refresh == true) {
-                                          _fetchOrders();
-                                        }
-                                      },
-                                      onDelete:
-                                          () => _confirmDelete(order["id"]),
-                                    ),
-                                  );
-                                }, childCount: orders.length),
-                              ),
-
-                              /// EMPTY STATE
-                              if (orders.isEmpty && !isLoading)
-                                SliverFillRemaining(child: _buildEmptyState()),
-
-                              /// LOAD MORE INDICATOR
-                              if (loadingMore)
-                                SliverToBoxAdapter(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Center(
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                  ),
-                                ),
-
-                              /// NO MORE ORDERS MESSAGE
-                              if (!_hasMoreData && orders.isNotEmpty)
-                                SliverToBoxAdapter(
-                                  child: const Padding(
-                                    padding: EdgeInsets.all(16),
-                                    child: Center(
-                                      child: Text(
-                                        "No more orders",
-                                        style: TextStyle(color: Colors.grey),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-
-                              /// EXTRA SPACE AT BOTTOM FOR BETTER SCROLLING
-                              SliverToBoxAdapter(child: Container(height: 50)),
-                            ],
-                          ),
-                        ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// ================= EMPTY STATE =================
-  Widget _buildEmptyState() {
-    if (searchQuery.isNotEmpty) {
+    if (_orders.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
+            Icon(Icons.inbox, size: 60, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             Text(
-              "No results found for '$searchQuery'",
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "Try searching with different keywords",
-              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _clearSearch,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFFA54A),
-              ),
-              child: const Text("Clear Search"),
+              'No orders found',
+              style: TextStyle(color: Colors.grey.shade600),
             ),
           ],
         ),
       );
     }
 
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.inventory_outlined, size: 60, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text(
-            "No Orders Found",
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            "Add your first order to get started",
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AddOrderScreen()),
-              ).then((_) {
-                _refreshOrders();
-              });
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFA54A),
+    final scrollController = ScrollController();
+
+    return Scrollbar(
+      controller: scrollController,
+      thumbVisibility: true,
+      child: ListView.builder(
+        controller: scrollController,
+        itemCount: _orders.length,
+        itemBuilder: (context, index) {
+          final order = _orders[index];
+          return Card(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: const Text("Add Order"),
-          ),
-        ],
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        order.orderId,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.shopping_cart,
+                              color: Colors.orange,
+                            ),
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Cart for ${order.orderId} - Coming Soon',
+                                  ),
+                                ),
+                              );
+                            },
+                            constraints: const BoxConstraints(),
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert),
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) => EditOrderScreen(order: order),
+                                  ),
+                                ).then((_) => _loadOrders(refresh: true));
+                              } else if (value == 'delete') {
+                                _deleteOrder(order);
+                              }
+                            },
+                            itemBuilder:
+                                (_) => [
+                                  const PopupMenuItem(
+                                    value: 'edit',
+                                    child: Text('Edit'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('Delete'),
+                                  ),
+                                ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.calendar_today,
+                        size: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        DateFormat('dd/MM/yyyy').format(order.orderDate),
+                        style: TextStyle(color: Colors.grey.shade700),
+                      ),
+                      const SizedBox(width: 16),
+                      Icon(
+                        Icons.business,
+                        size: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        order.brandName,
+                        style: TextStyle(color: Colors.grey.shade700),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => _showProductsDialog(order.products),
+                      icon: const Icon(Icons.view_list, size: 18),
+                      label: Text('View ${order.products.length} Products'),
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.orange.shade50,
+                        foregroundColor: Colors.orange.shade800,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
-}
 
-/// ===================================================================
-/// ORDER CARD
-/// ===================================================================
-
-class OrderCard extends StatelessWidget {
-  final Map order;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  const OrderCard({
-    super.key,
-    required this.order,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  /// ================= FORMAT DATE =================
-  String _formatDate(String dateString) {
-    try {
-      final date = DateTime.parse(dateString);
-      return "${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}";
-    } catch (e) {
-      return dateString.split("T").first;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildPagination() {
+    if (_orders.isEmpty) return const SizedBox.shrink();
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border(top: BorderSide(color: Colors.grey.shade300)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          /// ORDER ID
           Text(
-            "Order #${order["id"]}",
-            style: const TextStyle(
-              fontSize: 12,
-              color: Colors.grey,
-              fontWeight: FontWeight.w600,
-            ),
+            'Showing ${_orders.length} of $_totalItems records',
+            style: TextStyle(color: Colors.grey.shade700),
           ),
-          const SizedBox(height: 4),
-
-          _row("Product Name", order["name"]),
-          const SizedBox(height: 6),
           Row(
             children: [
-              Expanded(child: Text("Size : ${order["size"]}")),
-              Text("Quality : ${order["quality"]}"),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: Text("Date : ${_formatDate(order["date"].toString())}"),
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: _currentPage > 1 ? _loadPreviousPage : null,
+                color: _currentPage > 1 ? Colors.orange : Colors.grey,
               ),
-              Text("Quantity : ${order["quantity"]}"),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text("Brand : ${order["brand"]}"),
-          const SizedBox(height: 14),
-
-          /// BUTTONS
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onEdit,
-                  icon: const Icon(Icons.edit, color: Colors.blue, size: 18),
-                  label: const Text(
-                    "Edit",
-                    style: TextStyle(color: Colors.blue),
-                  ),
-                ),
+              Text(
+                '$_currentPage',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                  label: const Text(
-                    "Delete",
-                    style: TextStyle(color: Colors.red),
-                  ),
-                ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: _currentPage < _totalPages ? _loadNextPage : null,
+                color: _currentPage < _totalPages ? Colors.orange : Colors.grey,
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _row(String label, String value) {
-    return RichText(
-      text: TextSpan(
-        text: "$label : ",
-        style: const TextStyle(
-          fontSize: 14,
-          color: Colors.black,
-          fontWeight: FontWeight.w600,
-        ),
-        children: [
-          TextSpan(
-            text: value,
-            style: const TextStyle(fontWeight: FontWeight.w400),
           ),
         ],
       ),

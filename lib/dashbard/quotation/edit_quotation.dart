@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
+import 'package:mobile_scanner/mobile_scanner.dart'; // 👈 QR scanner import
 
 class EditQuotationScreen extends StatefulWidget {
   final String quotationId;
@@ -98,7 +99,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
   void _populateFormData() {
     final quotationData = widget.quotationData;
-
+    debugPrint("Quotation Data Keys: ${quotationData.keys}");
+    debugPrint("GST Value: ${quotationData['GstNumber']}");
     debugPrint('Received quotation data: $quotationData');
 
     /// ================= CLIENT DETAILS =================
@@ -107,7 +109,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         quotationData['contactNo']?.toString() ?? '';
     _altNumberController.text = quotationData['altContactNo']?.toString() ?? '';
     _emailController.text = quotationData['email']?.toString() ?? '';
-    _clientGstController.text = quotationData['gstNo']?.toString() ?? '';
+    _clientGstController.text = quotationData['GstNumber']?.toString() ?? '';
     _siteAddressController.text = quotationData['address']?.toString() ?? '';
 
     /// ================= ADDITIONAL CHARGES =================
@@ -263,6 +265,21 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     }
   }
 
+  /// Fetch a single product by its ID (for QR scan)
+  Future<Map<String, dynamic>?> _fetchProductById(int productId) async {
+    try {
+      final response = await _dio.get(
+        'https://dashboard.theceramicstudio.in/api/product/list/$productId',
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return response.data['product'];
+      }
+    } catch (e) {
+      debugPrint('Error fetching product by ID: $e');
+    }
+    return null;
+  }
+
   List<String> _getSizesForProduct(String productName) {
     if (productName.isEmpty) return [];
     final normalizedName = productName.trim().toLowerCase();
@@ -334,8 +351,125 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     });
   }
 
+  /// Add a new product row and pre-fill it with product details (for QR scan)
+  void _addProductRowWithData(Map<String, dynamic> product) {
+    // Add to _allProducts for dropdowns if not already present
+    bool exists = _allProducts.any((p) => p['id'] == product['id']);
+    if (!exists) {
+      _allProducts.add(product);
+      // Also add to _filteredProducts for search dropdown consistency
+      _filteredProducts.add(product);
+    }
+
+    final row = ProductRow(onChanged: () => setState(() {}));
+    row.productId = product['id'];
+    row.productName = product['name'] ?? '';
+    row.size = product['size']?.toString() ?? '';
+    row.quality = product['quality']?.toString() ?? '';
+    row.rateController.text = product['rate']?.toString() ?? '0';
+    row.covController.text = product['cov']?.toString() ?? '0';
+    row.productSearchController.text = product['name'] ?? '';
+
+    if (product['godown'] != null &&
+        product['godown'] is List &&
+        product['godown'].isNotEmpty) {
+      row.godown = product['godown'][0];
+    }
+
+    row.updateTWGT();
+    row.updateTotal();
+
+    setState(() {
+      _productRows.add(row);
+    });
+
+    // Scroll to new row
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
   void _removeProductRow(int index) {
     setState(() => _productRows.removeAt(index));
+  }
+
+  // ---------- QR CODE SCANNING ----------
+  void _scanQrCode() {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Scan Product QR'),
+            content: SizedBox(
+              width: MediaQuery.of(context).size.width * 0.9,
+              height: 300,
+              child: MobileScanner(
+                onDetect: (BarcodeCapture capture) async {
+                  final barcodes = capture.barcodes;
+                  if (barcodes.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('No QR code found')),
+                    );
+                    return;
+                  }
+
+                  final code = barcodes.first.rawValue;
+                  if (code == null || code.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Invalid QR code')),
+                    );
+                    return;
+                  }
+
+                  final messenger = ScaffoldMessenger.of(context);
+                  Navigator.pop(context); // close scanner
+
+                  final productId = int.tryParse(code);
+                  if (productId == null) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Invalid product ID in QR code'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('Fetching product...')),
+                  );
+
+                  final product = await _fetchProductById(productId);
+                  if (product == null) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('Product not found')),
+                    );
+                    return;
+                  }
+
+                  _addProductRowWithData(product);
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Product "${product['name']}" added'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+    );
   }
 
   double _calculateTotalAmount() {
@@ -372,14 +506,15 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
       _showSnackBar('Please enter site address');
       return false;
     }
-    if (_selectedArchitectId == null) {
-      _showSnackBar('Please select an architect');
-      return false;
-    }
-    if (_selectedEmployeeId == null) {
-      _showSnackBar('Please select attended by');
-      return false;
-    }
+    // Architect and Attended By are now optional
+    // if (_selectedArchitectId == null) {
+    //   _showSnackBar('Please select an architect');
+    //   return false;
+    // }
+    // if (_selectedEmployeeId == null) {
+    //   _showSnackBar('Please select attended by');
+    //   return false;
+    // }
     for (int i = 0; i < _productRows.length; i++) {
       final row = _productRows[i];
       if (row.productName.isEmpty) {
@@ -434,6 +569,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         final rate = double.tryParse(row.rateController.text) ?? 0;
         final discount = double.tryParse(row.discountController.text) ?? 0;
         final discountedRate = rate * (1 - discount / 100);
+        final discountPerUnit = rate * discount / 100; // DisAmount
 
         rowsData.add({
           "productId": row.productId ?? productDetails?['id'],
@@ -457,7 +593,8 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
           "Weight": double.tryParse(row.weightController.text) ?? 0,
           "cov": double.tryParse(row.covController.text) ?? 0,
           "discount": discount,
-          "disRate": discountedRate, // 👈 new field
+          "disRate": discountedRate,
+          "DisAmount": discountPerUnit,
         });
       }
 
@@ -466,18 +603,25 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         "contactNo": _contactNumberController.text.trim(),
         "altContactNo": _altNumberController.text.trim(),
         "email": _emailController.text.trim(),
-        "gstNo": _clientGstController.text.trim(),
+        "GstNumber": _clientGstController.text.trim(),
         "address": _siteAddressController.text.trim(),
         "architect": _selectedArchitectId ?? "",
         "attendedBy": _selectedEmployeeId ?? "",
-        "Attended": "",
         "transportation": _transportationController.text,
         "unloading": _unloadingController.text,
+        // Extra fields from sample
+        "clientid": null,
+        "Attended": "",
       };
+
+      final headerSection = _headerController.text.trim();
+      final bottomSection = _bottomController.text.trim();
 
       final requestBody = {
         "additionalDiscount":
             double.tryParse(_additionalDiscountController.text) ?? 0,
+        "headerSection": headerSection,
+        "bottomSection": bottomSection,
         "clientDetails": clientDetails,
         "rows": rowsData,
         "grandTotal": double.parse(_calculateGrandTotal().toStringAsFixed(2)),
@@ -589,6 +733,12 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          // QR Scan Button
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+            onPressed: _scanQrCode,
+            tooltip: 'Scan product QR',
+          ),
           IconButton(
             icon: const Icon(Icons.close, color: Colors.white),
             onPressed: () => Navigator.pop(context),
@@ -1855,9 +2005,8 @@ class ProductRow {
   final TextEditingController quantityController = TextEditingController();
   final TextEditingController discountController = TextEditingController();
   final TextEditingController discountedRateController =
-      TextEditingController(); // new
-  final TextEditingController totalAmountController =
-      TextEditingController(); // renamed
+      TextEditingController();
+  final TextEditingController totalAmountController = TextEditingController();
 
   void updateTWGT() {
     try {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:tcs_invantory_managment_system/dashbard/architect_managment/add_architect.dart';
 
 class AddQuotationSheet extends StatefulWidget {
@@ -74,7 +75,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
   void initState() {
     super.initState();
     _initializeData();
-
     _productRows.add(
       ProductRow(
         onChanged: () {
@@ -151,7 +151,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     setState(() => _isLoadingEmployees = true);
     try {
       final response = await _dio.get(
-        'https://dashboard.theceramicstudio.in/api/employees/list',
+        'https://dashboard.theceramicstudio.in/api/employees/Getlist',
         queryParameters: {'search': search},
       );
       if (response.statusCode == 200 && response.data['success'] == true) {
@@ -183,6 +183,21 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     } catch (e) {
       debugPrint('Product search error: $e');
     }
+  }
+
+  /// Fetch a single product by its ID
+  Future<Map<String, dynamic>?> _fetchProductById(int productId) async {
+    try {
+      final response = await _dio.get(
+        'https://dashboard.theceramicstudio.in/api/product/list/$productId',
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return response.data['product'];
+      }
+    } catch (e) {
+      debugPrint('Error fetching product by ID: $e');
+    }
+    return null;
   }
 
   Map<String, dynamic>? _findProductDetails(
@@ -239,8 +254,124 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     });
   }
 
+  /// Add a new product row and pre-fill it with product details
+  void _addProductRowWithData(Map<String, dynamic> product) {
+    // Add product to _products list if not already there (for size/quality dropdown)
+    bool exists = _products.any((p) => p['id'] == product['id']);
+    if (!exists) {
+      _products.add(product);
+      // Also update filtered products for search consistency
+      _filteredProducts.add(product);
+    }
+
+    final row = ProductRow(onChanged: () => setState(() {}));
+    row.productId = product['id'];
+    row.productName = product['name'] ?? '';
+    row.size = product['size']?.toString() ?? '';
+    row.quality = product['quality']?.toString() ?? '';
+    row.rateController.text = product['rate']?.toString() ?? '0';
+    row.covController.text = product['cov']?.toString() ?? '0';
+    row.productSearchController.text =
+        product['name'] ?? ''; // ✅ Set search field
+    row.selectedProductDetails = product;
+
+    // Pre-fill godown if needed
+    if (product['godown'] != null &&
+        product['godown'] is List &&
+        product['godown'].isNotEmpty) {
+      row.godown = product['godown'][0];
+    }
+
+    // Trigger calculations
+    row.updateTWGT();
+    row.updateTotal();
+
+    setState(() {
+      _productRows.add(row);
+    });
+  }
+
   void _removeProductRow(int index) {
     setState(() => _productRows.removeAt(index));
+  }
+
+  // ---------- QR CODE SCANNING ----------
+  void _scanQrCode() {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Scan Product QR'),
+            content: SizedBox(
+              width: MediaQuery.of(context).size.width * 0.9,
+              height: 300,
+              child: MobileScanner(
+                onDetect: (BarcodeCapture capture) async {
+                  // ✅ Safely get barcodes list
+                  final barcodes = capture.barcodes;
+                  if (barcodes.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('No QR code found')),
+                    );
+                    return;
+                  }
+
+                  final code = barcodes.first.rawValue;
+                  if (code == null || code.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Invalid QR code')),
+                    );
+                    return;
+                  }
+
+                  // ✅ Capture messenger before closing dialog
+                  final messenger = ScaffoldMessenger.of(context);
+                  Navigator.pop(context); // close scanner dialog
+
+                  // Parse product ID
+                  final productId = int.tryParse(code);
+                  if (productId == null) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Invalid product ID in QR code'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  // Show loading
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('Fetching product...')),
+                  );
+
+                  // Fetch product by ID
+                  final product = await _fetchProductById(productId);
+                  if (product == null) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('Product not found')),
+                    );
+                    return;
+                  }
+
+                  // Add new row
+                  _addProductRowWithData(product);
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Product "${product['name']}" added'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+    );
   }
 
   double _calculateTotalAmount() {
@@ -275,10 +406,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     }
     if (_siteAddressController.text.trim().isEmpty) {
       _showSnackBar('Please enter site address');
-      return false;
-    }
-    if (_selectedArchitectId == null) {
-      _showSnackBar('Please select an architect');
       return false;
     }
     if (_selectedEmployeeId == null) {
@@ -331,9 +458,16 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
         if (productDetails == null) {
           throw Exception('Product details not found for ${row.productName}');
         }
+
         final rate = double.tryParse(row.rateController.text) ?? 0;
         final discount = double.tryParse(row.discountController.text) ?? 0;
         final discountedRate = rate * (1 - discount / 100);
+        final perUnitDiscount = rate * discount / 100; // DisAmount
+        final quantity = double.tryParse(row.quantityController.text) ?? 0;
+        final cov = double.tryParse(row.covController.text) ?? 0;
+        final weight = double.tryParse(row.weightController.text) ?? 0;
+        final twgt = weight * quantity; // TWgt
+        final total = discountedRate * quantity * cov; // row total
 
         rowsData.add({
           "productId": productDetails['id'] ?? row.productId,
@@ -342,15 +476,19 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
           "quality": row.quality,
           "rate": rate,
           "discount": discount,
+          "DisAmount": perUnitDiscount,
           "disRate": discountedRate,
-          "box": int.tryParse(row.quantityController.text) ?? 0,
-          "cov": double.tryParse(row.covController.text) ?? 0,
-          "Weight": row.weightController.text,
-          "TWgt": row.twgtController.text,
+          "box": quantity.toInt(),
+          "cov": cov,
+          "Weight": weight,
+          "TWgt": twgt,
           "Coverage": row.covController.text,
-          "total": row.getTotalAmount().toStringAsFixed(2),
+          "total": total,
           "area": row.areaController.text.trim(),
-          "godown": row.godown,
+          "showList": false,
+          "search": row.productName,
+          "activeIndex": -1,
+          "filteredProducts": [],
         });
       }
 
@@ -360,7 +498,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
         "contactNo": _contactNumberController.text.trim(),
         "altContactNo": _altNumberController.text.trim(),
         "email": _emailController.text.trim(),
-        "gstNo": _clientGstController.text.trim(),
+        "GstNumber": _clientGstController.text.trim(),
         "address": _siteAddressController.text.trim(),
         "architect": _selectedArchitectId ?? "",
         "attendedBy": _selectedEmployeeId ?? "",
@@ -369,10 +507,44 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
         "unloading": _unloadingController.text,
       };
 
+      const headerSection =
+          "This is with reference to our discussion with you regarding your requirement; here we quote our best price for your prestigious project as below:";
+      const bottomSection =
+          "<p>Above rates are including GST @ 18%, Excluding unloading charge and this are Nashik warehouse rates.</p>"
+          "<table width=\"100%\" style=\"box-sizing: border-box; caption-side: bottom; border-collapse: collapse; width: 1387.46px; font-size: 18px;\">"
+          "<tbody style=\"box-sizing: border-box; border-color: inherit; border-style: solid; border-width: 0px;\">"
+          "<tr style=\"box-sizing: border-box; border-color: inherit; border-style: solid; border-width: 0px;\">"
+          "<td width=\"20%\" style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\"><strong style=\"box-sizing: border-box; font-weight: bolder;\">Payment Term</strong></td>"
+          "<td width=\"5%\" style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\"><strong style=\"box-sizing: border-box; font-weight: bolder;\">:</strong></td>"
+          "<td width=\"70%\" style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\"><em style=\"box-sizing: border-box;\">100% Advance.</em></td></tr>"
+          "<tr style=\"box-sizing: border-box; border-color: inherit; border-style: solid; border-width: 0px;\">"
+          "<td style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\"><strong style=\"box-sizing: border-box; font-weight: bolder;\">Delivery Period</strong></td>"
+          "<td style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\"><strong style=\"box-sizing: border-box; font-weight: bolder;\">:</strong></td>"
+          "<td style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\">7 TO 8 Days from the date of order / dispatch schedule.</td></tr>"
+          "<tr style=\"box-sizing: border-box; border-color: inherit; border-style: solid; border-width: 0px;\">"
+          "<td style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\"><strong style=\"box-sizing: border-box; font-weight: bolder;\">Billing</strong></td>"
+          "<td style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\"><strong style=\"box-sizing: border-box; font-weight: bolder;\">:</strong></td>"
+          "<td style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\">GST Billing @ 18%</td></tr>"
+          "<tr style=\"box-sizing: border-box; border-color: inherit; border-style: solid; border-width: 0px;\">"
+          "<td style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\"><strong style=\"box-sizing: border-box; font-weight: bolder;\">Validity of price</strong></td>"
+          "<td style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\"><strong style=\"box-sizing: border-box; font-weight: bolder;\">:</strong></td>"
+          "<td style=\"box-sizing: border-box; border: 1px solid rgb(236, 236, 236); padding: 5px 3px;\">30 Days from Date of Quotation</td></tr></tbody></table>"
+          "<p><strong style=\"box-sizing: border-box; font-weight: bolder;\">BANK DETAILS :</strong><strong style=\"box-sizing: border-box; font-weight: bolder;\">Yes Bank :<span>&nbsp;</span></strong>THE CERAMIC STUDIO</p>"
+          "<p><strong style=\"box-sizing: border-box; font-weight: bolder;\">A/c no. :<span>&nbsp;</span></strong>002163700002424</p>"
+          "<p><strong style=\"box-sizing: border-box; font-weight: bolder;\">Branch :</strong><span>&nbsp;</span>Canada Corner</p>"
+          "<p><strong style=\"box-sizing: border-box; font-weight: bolder;\">IFSC :<span>&nbsp;</span></strong>YESB0000021</p>"
+          "<p>We again express our gratitude for your esteemed organization and looking forward for a long and healthy business relationship. Assuring you of our best service all the times.Thanking You .</p>"
+          "<p><br></p>"
+          "<p><strong style=\"box-sizing: border-box; font-weight: bolder;\">THE CERAMIC STUDIO-NASHIK.</strong></p>"
+          "<p><strong style=\"box-sizing: border-box; font-weight: bolder;\">SALES (8847784888)</strong></p>"
+          "<p><strong style=\"box-sizing: border-box; font-weight: bolder;\">ACCOUNT (8847785888)</strong></p>\n\n";
+
       final requestBody = {
         "additionalDiscount":
             double.tryParse(_additionalDiscountController.text) ?? 0,
         "clientDetails": clientDetails,
+        "headerSection": headerSection,
+        "bottomSection": bottomSection,
         "rows": rowsData,
         "grandTotal": double.parse(_calculateGrandTotal().toStringAsFixed(2)),
       };
@@ -410,54 +582,9 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
         );
       }
     } on DioException catch (e) {
-      debugPrint('DioException: $e');
-      String errorMessage = 'Failed to save quotation';
-      if (e.response != null) {
-        final responseData = e.response?.data;
-        if (responseData != null) {
-          if (responseData is Map) {
-            if (responseData['message'] != null) {
-              errorMessage = responseData['message'];
-            } else if (responseData['error'] != null) {
-              errorMessage = responseData['error'];
-            } else if (responseData['errors'] != null) {
-              final errors = responseData['errors'];
-              if (errors is Map) {
-                final errorStrings = errors.entries
-                    .map((entry) {
-                      final field = entry.key;
-                      final messages = entry.value;
-                      if (messages is List) {
-                        return '$field: ${messages.join(', ')}';
-                      }
-                      return '$field: $messages';
-                    })
-                    .join('\n');
-                errorMessage = 'Validation errors:\n$errorStrings';
-              } else if (errors is List) {
-                errorMessage = errors.join('\n');
-              }
-            }
-          }
-          errorMessage += '\n(Status: ${e.response?.statusCode})';
-        } else {
-          errorMessage = 'Server error (${e.response?.statusCode})';
-        }
-      } else if (e.type == DioExceptionType.connectionTimeout) {
-        errorMessage = 'Connection timeout. Please check your internet.';
-      } else if (e.type == DioExceptionType.receiveTimeout) {
-        errorMessage = 'Receive timeout. Server is not responding.';
-      } else if (e.type == DioExceptionType.sendTimeout) {
-        errorMessage = 'Send timeout. Please try again.';
-      } else if (e.type == DioExceptionType.cancel) {
-        errorMessage = 'Request cancelled.';
-      } else if (e.type == DioExceptionType.connectionError) {
-        errorMessage = 'No internet connection. Please check your network.';
-      }
-      _showErrorSnackBar(errorMessage);
+      _showErrorSnackBar('Dio error: ${e.message}');
     } catch (e) {
-      debugPrint('Unexpected error: $e');
-      _showErrorSnackBar('Unexpected error: ${e.toString()}');
+      _showErrorSnackBar('Unexpected error: $e');
     } finally {
       setState(() => _isSubmitting = false);
     }
@@ -503,7 +630,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
           ),
           child: Column(
             children: [
-              // Header
+              // Header with QR button
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: const BoxDecoration(
@@ -524,9 +651,22 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
+                    Row(
+                      children: [
+                        // QR Scan Button
+                        IconButton(
+                          icon: const Icon(
+                            Icons.qr_code_scanner,
+                            color: Colors.white,
+                          ),
+                          onPressed: _scanQrCode,
+                          tooltip: 'Scan product QR',
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -746,7 +886,7 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                   ),
                                   const SizedBox(height: 12),
 
-                                  // Contact Number and Alt Number (Phone keyboard)
+                                  // Contact Number and Alt Number
                                   Row(
                                     children: [
                                       Expanded(
@@ -832,46 +972,35 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                                 child: DropdownButton<String>(
                                                   isExpanded: true,
                                                   value: _selectedArchitectId,
-                                                  hint:
-                                                      _isLoadingArchitects
-                                                          ? const Text(
-                                                            'Loading...',
-                                                          )
-                                                          : const Text(
-                                                            'Choose Architect...',
-                                                          ),
-                                                  items:
-                                                      _architects.map((
-                                                        architect,
-                                                      ) {
-                                                        final fullName =
-                                                            '${architect['firstname']} ${architect['lastname']}';
-                                                        return DropdownMenuItem<
-                                                          String
-                                                        >(
-                                                          value:
-                                                              architect['id']
-                                                                  .toString(),
-                                                          child: Text(fullName),
-                                                        );
-                                                      }).toList(),
+                                                  hint: const Text(
+                                                    'Choose Architect (Optional)',
+                                                  ),
+                                                  items: [
+                                                    const DropdownMenuItem<
+                                                      String
+                                                    >(
+                                                      value: null,
+                                                      child: Text('None'),
+                                                    ),
+                                                    ..._architects.map((
+                                                      architect,
+                                                    ) {
+                                                      final fullName =
+                                                          '${architect['firstname']} ${architect['lastname']}';
+                                                      return DropdownMenuItem<
+                                                        String
+                                                      >(
+                                                        value:
+                                                            architect['id']
+                                                                .toString(),
+                                                        child: Text(fullName),
+                                                      );
+                                                    }).toList(),
+                                                  ],
                                                   onChanged: (value) {
                                                     setState(() {
                                                       _selectedArchitectId =
                                                           value;
-                                                      final selectedArchitect =
-                                                          _architects.firstWhere(
-                                                            (a) =>
-                                                                a['id']
-                                                                    .toString() ==
-                                                                value,
-                                                            orElse: () => null,
-                                                          );
-                                                      if (selectedArchitect !=
-                                                          null) {
-                                                        _selectedArchitectName =
-                                                            '${selectedArchitect['firstname']} ${selectedArchitect['lastname']}';
-                                                      }
                                                     });
                                                   },
                                                 ),
@@ -1533,14 +1662,12 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
           const SizedBox(height: 12),
 
-          // Row 4: Discounted Rate | Total Amount | Godown
+          // Row 4: Discounted Rate | Total Amount
           Row(
             children: [
               Expanded(child: _buildDiscountedRateField(row)),
               const SizedBox(width: 8),
               Expanded(child: _buildTotalAmountField(row)),
-              // const SizedBox(width: 8),
-              // Expanded(child: _buildGodownDropdown(row)),
             ],
           ),
 
@@ -1933,39 +2060,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
       ],
     );
   }
-
-  // Widget _buildGodownDropdown(ProductRow row) {
-  //   return Column(
-  //     crossAxisAlignment: CrossAxisAlignment.start,
-  //     children: [
-  //       _buildLabel('GODOWN'),
-  //       const SizedBox(height: 4),
-  //       Container(
-  //         height: 40,
-  //         padding: const EdgeInsets.symmetric(horizontal: 12),
-  //         decoration: BoxDecoration(
-  //           border: Border.all(color: Colors.grey.shade300),
-  //           borderRadius: BorderRadius.circular(8),
-  //         ),
-  //         child: DropdownButtonHideUnderline(
-  //           child: DropdownButton<String>(
-  //             isExpanded: true,
-  //             value: row.godown,
-  //             items: const [
-  //               DropdownMenuItem(value: 'KKW', child: Text('KKW')),
-  //               DropdownMenuItem(value: 'TCS', child: Text('TCS')),
-  //             ],
-  //             onChanged: (value) {
-  //               setState(() {
-  //                 row.godown = value!;
-  //               });
-  //             },
-  //           ),
-  //         ),
-  //       ),
-  //     ],
-  //   );
-  // }
 
   Widget _buildDeleteButton(int index) {
     return Align(

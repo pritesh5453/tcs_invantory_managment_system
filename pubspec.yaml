@@ -55,6 +55,10 @@ dependencies:
   flutter_quill: ^11.5.0
   network_info_plus: ^7.0.0
   connectivity_plus: ^5.0.2
+  excel: ^4.0.6
+  share_plus: ^12.0.1
+  file_saver: ^0.3.1
+  mobile_scanner: ^5.0.0
 
 dev_dependencies:
   flutter_test:

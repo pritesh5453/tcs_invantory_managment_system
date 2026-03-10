@@ -373,9 +373,35 @@ class _QuotationSettlementScreenState extends State<QuotationSettlementScreen> {
                           ),
                           const SizedBox(height: 8),
                           _buildHistoryRow("Type", p['payment_type'] ?? '-'),
-                          _buildHistoryRow(
-                            "Billing Type",
-                            p['billingType'] ?? '-',
+                          // Billing Type with colored dot only (no text)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(
+                                  width: 80,
+                                  child: Text(
+                                    "Billing Type:",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  margin: const EdgeInsets.only(left: 8),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: _getBillingDotColor(
+                                      p['billingType']?.toString() ?? '',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                           _buildHistoryRow("Remark", p['remark'] ?? '-'),
                           _buildHistoryRow(
@@ -487,5 +513,12 @@ class _QuotationSettlementScreenState extends State<QuotationSettlementScreen> {
         ],
       ),
     );
+  }
+
+  Color _getBillingDotColor(String billingType) {
+    if (billingType.toLowerCase() == 'non-billing') {
+      return Colors.blue;
+    }
+    return Colors.red;
   }
 }

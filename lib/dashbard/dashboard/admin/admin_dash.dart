@@ -17,8 +17,11 @@ class DashboardPage extends StatefulWidget {
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
-class _DashboardPageState extends State<DashboardPage> {
-  // Dio instance
+class _DashboardPageState extends State<DashboardPage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   final Dio _dio = Dio(
     BaseOptions(
       baseUrl: 'https://dashboard.theceramicstudio.in/api',
@@ -30,223 +33,144 @@ class _DashboardPageState extends State<DashboardPage> {
 
   List<SalesVsPurchaseData> salesVsPurchaseData = [];
   List<CashFlowData> cashFlowData = [];
-
-  // Dashboard stats data
   Map<String, dynamic> dashboardStats = {};
   List<dynamic> userWiseOrders = [];
-  bool isLoading = true;
-  String errorMessage = '';
+  int pendingRequestCount = 0;
+  int unreadNotificationCount = 0;
 
-  // Date selection state - automatically set current month dates
-  DateTime? fromDate;
-  DateTime? toDate;
-
-  // Flag to track if user manually changed dates
+  late DateTime fromDate;
+  late DateTime toDate;
   bool _showMonthText = true;
 
-  // Pending request count for notification dot
-  int pendingRequestCount = 0;
-
-  // Unread notification count
-  int unreadNotificationCount = 0;
+  String _cachedFromDateDisplay = '';
+  String _cachedToDateDisplay = '';
 
   @override
   void initState() {
     super.initState();
-
-    // Set default dates to current month (1st to today)
     final now = DateTime.now();
-    fromDate = DateTime(now.year, now.month, 1); // Month start (1st)
-    toDate = now; // Today's date
-
+    fromDate = DateTime(now.year, now.month, 1);
+    toDate = now;
+    _updateCachedDates();
     _fetchAllData();
   }
 
-  // Fetch Dashboard Stats API
-  Future<void> _fetchDashboardStats() async {
-    try {
-      final response = await _dio.get('/dashboard/stats');
-
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        setState(() {
-          dashboardStats = response.data['data'];
-        });
-      } else {
-        throw Exception('Failed to load dashboard stats');
-      }
-    } on DioException catch (e) {
-      throw Exception('Dashboard stats error: ${e.message}');
-    }
+  void _updateCachedDates() {
+    _cachedFromDateDisplay = _formatDateForDisplay(fromDate);
+    _cachedToDateDisplay = _formatDateForDisplay(toDate);
   }
 
-  // Fetch chart data
-  Future<void> _fetchChartData() async {
-    try {
-      final response = await _dio.get('/dashboard/charts');
+  String _formatDateForDisplay(DateTime date) =>
+      '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 
-      if (response.statusCode == 200) {
-        final chartResponse = ChartDataResponse.fromJson(response.data);
+  String _formatDateForApi(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
-        if (chartResponse.success) {
-          setState(() {
-            salesVsPurchaseData = chartResponse.data.salesVsPurchase;
-            cashFlowData = chartResponse.data.cashFlow;
-          });
-        }
-      }
-    } catch (e) {
-      print('Chart API Error: $e');
-    }
-  }
-
-  // Fetch pending request count from /payment/pending
-  Future<void> _fetchPendingRequestCount() async {
-    try {
-      final response = await _dio.get('/payment/pending');
-
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        setState(() {
-          final requestsList = response.data['requests'] as List? ?? [];
-          pendingRequestCount = requestsList.length;
-        });
-      } else {
-        pendingRequestCount = 0;
-      }
-    } on DioException catch (e) {
-      print('Pending request count error: $e');
-      pendingRequestCount = 0;
-    }
-  }
-
-  // Fetch unread notification count from /users/GetNotification
-  Future<void> _fetchUnreadNotificationCount() async {
-    try {
-      final response = await _dio.get(
-        '/users/GetNotification',
-        queryParameters: {
-          'role': 'Admin',
-          'page': 1,
-          'limit': 100,
-        }, // fetch enough to count unread
-      );
-
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final notifications = response.data['data'] as List? ?? [];
-        // Count unread – adjust field name if needed (e.g., 'read', 'is_read')
-        final unreadCount =
-            notifications.where((n) => n['is_read'] == false).length;
-        setState(() {
-          unreadNotificationCount = unreadCount;
-        });
-      } else {
-        unreadNotificationCount = 0;
-      }
-    } on DioException catch (e) {
-      print('Unread notification count error: $e');
-      unreadNotificationCount = 0;
-    }
-  }
-
-  // Fetch all data
   Future<void> _fetchAllData() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = '';
-    });
-
     try {
       await Future.wait([
         _fetchDashboardStats(),
         _fetchUserWiseOrders(),
         _fetchChartData(),
         _fetchPendingRequestCount(),
-        _fetchUnreadNotificationCount(), // NEW
+        _fetchUnreadNotificationCount(),
       ]);
     } catch (e) {
-      setState(() {
-        errorMessage = e.toString();
-      });
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
-    }
-  }
-
-  // Fetch User Wise Orders API
-  Future<void> _fetchUserWiseOrders() async {
-    try {
-      final startDate = fromDate!;
-      final endDate = toDate!;
-
-      final response = await _dio.get(
-        '/dashboard/user-wise-orders',
-        queryParameters: {
-          'start': _formatDateForApi(startDate),
-          'end': _formatDateForApi(endDate),
-        },
-      );
-
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        setState(() {
-          userWiseOrders = response.data['data'];
-        });
-      } else {
-        throw Exception('Failed to load user orders');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
       }
-    } on DioException catch (e) {
-      throw Exception('User orders error: ${e.message}');
     }
   }
 
-  // Helper function to format date for display
-  String _formatDateForDisplay(DateTime? date) {
-    if (date == null) return 'Select Date';
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  Future<void> _fetchDashboardStats() async {
+    final response = await _dio.get('/dashboard/stats');
+    if (response.statusCode == 200 && response.data['success'] == true) {
+      setState(() => dashboardStats = response.data['data']);
+    }
   }
 
-  // Helper function to format date for API
-  String _formatDateForApi(DateTime? date) {
-    if (date == null) return '';
-    return '${date.year.toString()}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  Future<void> _fetchChartData() async {
+    final response = await _dio.get('/dashboard/charts');
+    if (response.statusCode == 200) {
+      final chartResponse = ChartDataResponse.fromJson(response.data);
+      if (chartResponse.success) {
+        setState(() {
+          salesVsPurchaseData = chartResponse.data.salesVsPurchase;
+          cashFlowData = chartResponse.data.cashFlow;
+        });
+      }
+    }
   }
 
-  // Function to show date picker
+  Future<void> _fetchPendingRequestCount() async {
+    try {
+      final response = await _dio.get('/payment/pending');
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        setState(
+          () =>
+              pendingRequestCount =
+                  (response.data['requests'] as List?)?.length ?? 0,
+        );
+      }
+    } catch (e) {
+      pendingRequestCount = 0;
+    }
+  }
+
+  Future<void> _fetchUnreadNotificationCount() async {
+    try {
+      final response = await _dio.get(
+        '/users/GetNotification',
+        queryParameters: {'role': 'Admin', 'page': 1, 'limit': 100},
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final notifications = response.data['data'] as List? ?? [];
+        setState(
+          () =>
+              unreadNotificationCount =
+                  notifications.where((n) => n['is_read'] == false).length,
+        );
+      }
+    } catch (e) {
+      unreadNotificationCount = 0;
+    }
+  }
+
+  Future<void> _fetchUserWiseOrders() async {
+    final response = await _dio.get(
+      '/dashboard/user-wise-orders',
+      queryParameters: {
+        'start': _formatDateForApi(fromDate),
+        'end': _formatDateForApi(toDate),
+      },
+    );
+    if (response.statusCode == 200 && response.data['success'] == true) {
+      setState(() => userWiseOrders = response.data['data']);
+    }
+  }
+
   Future<void> _selectDate(BuildContext context, bool isFromDate) async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate:
-          isFromDate
-              ? (fromDate ?? DateTime.now())
-              : (toDate ?? DateTime.now()),
+      initialDate: isFromDate ? fromDate : toDate,
       firstDate: DateTime(2020),
-      lastDate: DateTime.now(), // Can't select future dates
+      lastDate: DateTime.now(),
     );
-
     if (picked != null) {
       setState(() {
-        if (isFromDate) {
+        if (isFromDate)
           fromDate = picked;
-        } else {
+        else
           toDate = picked;
-        }
+        _updateCachedDates();
       });
     }
   }
 
-  // Submit task function
   Future<void> _submitTask() async {
-    if (fromDate == null || toDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select both From Date and To Date'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    if (fromDate!.isAfter(toDate!)) {
+    if (fromDate.isAfter(toDate)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('From Date cannot be after To Date'),
@@ -255,21 +179,7 @@ class _DashboardPageState extends State<DashboardPage> {
       );
       return;
     }
-
-    if (toDate!.isAfter(DateTime.now())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cannot select future dates'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _showMonthText = false;
-    });
-
+    setState(() => _showMonthText = false);
     try {
       final response = await _dio.get(
         '/dashboard/user-wise-orders',
@@ -278,20 +188,14 @@ class _DashboardPageState extends State<DashboardPage> {
           'end': _formatDateForApi(toDate),
         },
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
-        setState(() {
-          userWiseOrders = response.data['data'];
-        });
-
+        setState(() => userWiseOrders = response.data['data']);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Data loaded successfully!'),
             backgroundColor: Colors.green,
           ),
         );
-      } else {
-        throw Exception('Failed to load user orders');
       }
     } on DioException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -303,117 +207,113 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  Future<void> _refresh() async {
+    await _fetchAllData();
+  }
+
+  String _getCurrentMonthName() {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return months[DateTime.now().month - 1];
+  }
+
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final bool isMobile = screenWidth < 600;
-    final bool isTablet = screenWidth >= 600 && screenWidth < 900;
-
-    if (isLoading) {
-      return Scaffold(
-        backgroundColor: const Color(0xffF6F6F6),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(color: Color(0xffFFA34D)),
-              const SizedBox(height: 20),
-              Text(
-                'Loading Dashboard Data...',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: isMobile ? 14 : 16,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (errorMessage.isNotEmpty) {
-      return Scaffold(
-        backgroundColor: const Color(0xffF6F6F6),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error, color: Colors.red, size: 50),
-              const SizedBox(height: 20),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Text(
-                  errorMessage,
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontSize: isMobile ? 14 : 16,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _fetchAllData,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xffFFA34D),
-                  foregroundColor: Colors.white,
-                ),
-                child: Text(
-                  'Retry',
-                  style: TextStyle(fontSize: isMobile ? 14 : 16),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    super.build(context);
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
 
     return Scaffold(
       backgroundColor: const Color(0xffF6F6F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _topHeader(isMobile),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.all(isMobile ? 12 : 16),
-                child: Column(
-                  children: [
-                    _dashboardOverviewCard(isMobile),
-                    SizedBox(height: isMobile ? 12 : 16),
-                    _assignedTaskCard(context, isMobile),
-                    SizedBox(height: isMobile ? 12 : 16),
-                    _statsGrid(isMobile, isTablet),
-                    SizedBox(height: isMobile ? 12 : 16),
-                    _bottomCharts(context, isMobile, isTablet),
-                  ],
+      body: RefreshIndicator(
+        onRefresh: _refresh,
+        color: const Color(0xffFFA34D),
+        child: SafeArea(
+          child: Column(
+            children: [
+              _TopHeader(isMobile: isMobile),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.all(isMobile ? 12 : 16),
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    children: [
+                      _DashboardOverviewCard(
+                        isMobile: isMobile,
+                        userId: widget.userId,
+                        role: widget.role,
+                        pendingRequestCount: pendingRequestCount,
+                      ),
+                      SizedBox(height: isMobile ? 12 : 16),
+                      _UserWiseOrdersTable(
+                        isMobile: isMobile,
+                        fromDateDisplay: _cachedFromDateDisplay,
+                        toDateDisplay: _cachedToDateDisplay,
+                        showMonthText: _showMonthText,
+                        userWiseOrders: userWiseOrders,
+                        onFromDateTap: () => _selectDate(context, true),
+                        onToDateTap: () => _selectDate(context, false),
+                        onSubmit: _submitTask,
+                        currentMonthName: _getCurrentMonthName(),
+                      ),
+                      SizedBox(height: isMobile ? 12 : 16),
+                      _StatsGrid(
+                        isMobile: isMobile,
+                        dashboardStats: dashboardStats,
+                      ),
+                      SizedBox(height: isMobile ? 12 : 16),
+                      _BottomCharts(
+                        isMobile: isMobile,
+                        salesVsPurchaseData: salesVsPurchaseData,
+                        cashFlowData: cashFlowData,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          final now = DateTime.now();
-          setState(() {
-            fromDate = DateTime(now.year, now.month, 1);
-            toDate = now;
-            _showMonthText = true;
-          });
-          _fetchAllData();
-        },
-        backgroundColor: const Color(0xffFFA34D),
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.refresh),
-        tooltip: 'Reset to Current Month',
-      ),
+      // floatingActionButton: FloatingActionButton(
+      //   onPressed: () {
+      //     final now = DateTime.now();
+      //     setState(() {
+      //       fromDate = DateTime(now.year, now.month, 1);
+      //       toDate = now;
+      //       _updateCachedDates();
+      //       _showMonthText = true;
+      //     });
+      //     _refresh();
+      //   },
+      //   backgroundColor: const Color(0xffFFA34D),
+      //   foregroundColor: Colors.white,
+      //   child: const Icon(Icons.refresh),
+      //   tooltip: 'Reset to Current Month',
+      // ),
     );
   }
+}
 
-  // 🔶 TOP HEADER with notification dot
-  Widget _topHeader(bool isMobile) {
+// ==================== SUB-WIDGETS ====================
+
+class _TopHeader extends StatelessWidget {
+  final bool isMobile;
+  const _TopHeader({required this.isMobile});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.all(isMobile ? 12 : 16),
       decoration: BoxDecoration(
@@ -423,86 +323,31 @@ class _DashboardPageState extends State<DashboardPage> {
           bottomRight: Radius.circular(isMobile ? 20 : 28),
         ),
       ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              // Expanded(
-              //   child: Container(
-              //     height: isMobile ? 44 : 48,
-              //     padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16),
-              //     decoration: BoxDecoration(
-              //       color: Colors.white,
-              //       borderRadius: BorderRadius.circular(isMobile ? 20 : 24),
-              //     ),
-              //     // child: Row(
-              //     //   children: [
-              //     //     Icon(Icons.search, size: isMobile ? 20 : 24),
-              //     //     SizedBox(width: isMobile ? 8 : 12),
-              //     //     Text(
-              //     //       "Search..",
-              //     //       style: TextStyle(
-              //     //         color: Colors.grey,
-              //     //         fontSize: isMobile ? 14 : 16,
-              //     //       ),
-              //     //     ),
-              //     //   ],
-              //     // ),
-              //   ),
-              // ),
-              SizedBox(width: isMobile ? 8 : 12),
-              // 🔔 NOTIFICATION ICON WITH RED DOT
-              // Stack(
-              //   clipBehavior: Clip.none,
-              //   children: [
-              //     Container(
-              //       height: isMobile ? 44 : 48,
-              //       width: isMobile ? 44 : 48,
-              //       decoration: BoxDecoration(
-              //         color: Colors.white,
-              //         borderRadius: BorderRadius.circular(isMobile ? 20 : 24),
-              //       ),
-              //       child: IconButton(
-              //         icon: Icon(
-              //           Icons.notifications_none,
-              //           size: isMobile ? 20 : 24,
-              //         ),
-              //         onPressed: () {
-              //           Navigator.push(
-              //             context,
-              //             MaterialPageRoute(
-              //               builder: (context) => const NotificationScreen(),
-              //             ),
-              //           );
-              //         },
-              //       ),
-              //     ),
-              //     if (unreadNotificationCount > 0)
-              //       Positioned(
-              //         top: 0,
-              //         right: 0,
-              //         child: Container(
-              //           width: isMobile ? 10 : 12,
-              //           height: isMobile ? 10 : 12,
-              //           decoration: BoxDecoration(
-              //             color: Colors.red,
-              //             shape: BoxShape.circle,
-              //             border: Border.all(color: Colors.white, width: 1.5),
-              //           ),
-              //         ),
-              //       ),
-              //   ],
-              // ),
-            ],
-          ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: const [
+          // Search and notification widgets are intentionally left empty (as in original)
         ],
       ),
     );
   }
+}
 
-  // 🔶 DASHBOARD OVERVIEW CARD
-  Widget _dashboardOverviewCard(bool isMobile) {
+class _DashboardOverviewCard extends StatelessWidget {
+  final bool isMobile;
+  final int userId;
+  final String role;
+  final int pendingRequestCount;
+
+  const _DashboardOverviewCard({
+    required this.isMobile,
+    required this.userId,
+    required this.role,
+    required this.pendingRequestCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.all(isMobile ? 12 : 16),
       decoration: BoxDecoration(
@@ -527,20 +372,19 @@ class _DashboardPageState extends State<DashboardPage> {
             spacing: isMobile ? 6 : 8,
             runSpacing: isMobile ? 6 : 8,
             children: [
-              // 🔔 REQUESTS CHIP WITH NOTIFICATION DOT
+              // Requests chip with badge
               Stack(
                 clipBehavior: Clip.none,
                 children: [
                   InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const PaymentRequestsPage(),
+                    onTap:
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const PaymentRequestsPage(),
+                          ),
                         ),
-                      );
-                    },
-                    child: _overviewChip(
+                    child: _OverviewChip(
                       label: "Requests",
                       color: const Color(0xffFFA34D),
                       icon: Icons.notifications,
@@ -564,19 +408,14 @@ class _DashboardPageState extends State<DashboardPage> {
                 ],
               ),
               InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder:
-                          (context) => TodoPage(
-                            userId: widget.userId,
-                            role: widget.role,
-                          ),
+                onTap:
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TodoPage(userId: userId, role: role),
+                      ),
                     ),
-                  );
-                },
-                child: _overviewChip(
+                child: _OverviewChip(
                   label: isMobile ? "To-Do" : "To-Do\nGeneral",
                   color: const Color(0xff2D9CDB),
                   icon: Icons.checklist,
@@ -584,16 +423,12 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
               ),
               InkWell(
-                borderRadius: BorderRadius.circular(isMobile ? 16 : 20),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const AssignTaskPage(),
+                onTap:
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AssignTaskPage()),
                     ),
-                  );
-                },
-                child: _overviewChip(
+                child: _OverviewChip(
                   label: "Work Panel",
                   color: const Color(0xff27AE60),
                   icon: Icons.work,
@@ -606,13 +441,23 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
     );
   }
+}
 
-  Widget _overviewChip({
-    required String label,
-    required Color color,
-    required IconData icon,
-    required bool isMobile,
-  }) {
+class _OverviewChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  final IconData icon;
+  final bool isMobile;
+
+  const _OverviewChip({
+    required this.label,
+    required this.color,
+    required this.icon,
+    required this.isMobile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: isMobile ? 10 : 12,
@@ -649,16 +494,39 @@ class _DashboardPageState extends State<DashboardPage> {
               fontSize: isMobile ? 11 : 12,
               fontWeight: FontWeight.w600,
               color: Colors.white,
-              height: isMobile ? 1.0 : 1.1,
             ),
           ),
         ],
       ),
     );
   }
+}
 
-  // 🔶 ASSIGNED TASK CARD - using dynamic API data
-  Widget _assignedTaskCard(BuildContext context, bool isMobile) {
+class _UserWiseOrdersTable extends StatelessWidget {
+  final bool isMobile;
+  final String fromDateDisplay;
+  final String toDateDisplay;
+  final bool showMonthText;
+  final List<dynamic> userWiseOrders;
+  final VoidCallback onFromDateTap;
+  final VoidCallback onToDateTap;
+  final VoidCallback onSubmit;
+  final String currentMonthName;
+
+  const _UserWiseOrdersTable({
+    required this.isMobile,
+    required this.fromDateDisplay,
+    required this.toDateDisplay,
+    required this.showMonthText,
+    required this.userWiseOrders,
+    required this.onFromDateTap,
+    required this.onToDateTap,
+    required this.onSubmit,
+    required this.currentMonthName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.all(isMobile ? 12 : 16),
       decoration: BoxDecoration(
@@ -687,10 +555,18 @@ class _DashboardPageState extends State<DashboardPage> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              _dateChip(_formatDateForDisplay(fromDate), isMobile, true),
-              _dateChip(_formatDateForDisplay(toDate), isMobile, false),
+              _DateChip(
+                text: fromDateDisplay,
+                isMobile: isMobile,
+                onTap: onFromDateTap,
+              ),
+              _DateChip(
+                text: toDateDisplay,
+                isMobile: isMobile,
+                onTap: onToDateTap,
+              ),
               GestureDetector(
-                onTap: _submitTask,
+                onTap: onSubmit,
                 child: Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: isMobile ? 16 : 20,
@@ -713,6 +589,7 @@ class _DashboardPageState extends State<DashboardPage> {
             ],
           ),
           const SizedBox(height: 16),
+          // Header row
           Container(
             padding: EdgeInsets.symmetric(
               horizontal: isMobile ? 12 : 16,
@@ -722,137 +599,101 @@ class _DashboardPageState extends State<DashboardPage> {
               color: const Color(0xffFFF6EC),
               borderRadius: BorderRadius.circular(isMobile ? 10 : 12),
             ),
-            child: Row(
+            child: const Row(
               children: [
                 Expanded(
                   child: Text(
                     "Name",
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: isMobile ? 13 : 14,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
                 Expanded(
                   child: Text(
                     "Total Attended",
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: isMobile ? 13 : 14,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
                 Expanded(
                   child: Text(
                     "Quotation Count",
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: isMobile ? 13 : 14,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-
-          // Dynamic rows from API with Scrollbar
+          // Data rows
           if (userWiseOrders.isNotEmpty)
-            Container(
+            SizedBox(
               height: isMobile ? 180 : 200,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(isMobile ? 8 : 10),
-              ),
               child: Scrollbar(
                 thumbVisibility: true,
                 trackVisibility: true,
                 thickness: 6.0,
                 radius: const Radius.circular(10),
                 child: ListView.builder(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isMobile ? 12 : 16,
-                    vertical: 4,
-                  ),
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16),
                   itemCount: userWiseOrders.length,
+                  itemExtent: 45, // fixed height for performance
                   itemBuilder: (context, index) {
                     final employee = userWiseOrders[index];
-                    return Container(
-                      padding: EdgeInsets.symmetric(
-                        vertical: isMobile ? 12 : 14,
-                      ),
-                      decoration: BoxDecoration(
-                        border:
-                            index < userWiseOrders.length - 1
-                                ? const Border(
-                                  bottom: BorderSide(
-                                    color: Color(0xFFF0F0F0),
-                                    width: 1.0,
-                                  ),
-                                )
-                                : null,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              employee['employeeName'] ?? 'N/A',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: isMobile ? 14 : 15,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            employee['employeeName'] ?? 'N/A',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: isMobile ? 14 : 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            (employee['customerCount'] ?? 0).toString(),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: isMobile ? 14 : 15,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.blue,
                             ),
                           ),
-                          Expanded(
-                            child: Text(
-                              (employee['customerCount'] ?? 0).toString(),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: isMobile ? 14 : 15,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.blue,
-                              ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            (employee['quotationCount'] ?? 0).toString(),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: isMobile ? 14 : 15,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.green,
                             ),
                           ),
-                          Expanded(
-                            child: Text(
-                              (employee['quotationCount'] ?? 0).toString(),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: isMobile ? 14 : 15,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.green,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     );
                   },
                 ),
               ),
             )
           else
-            Container(
+            SizedBox(
               height: isMobile ? 180 : 200,
-              padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16),
-              alignment: Alignment.center,
-              child: Text(
-                'No data available',
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontSize: isMobile ? 15 : 16,
+              child: const Center(
+                child: Text(
+                  'No data available',
+                  style: TextStyle(color: Colors.grey),
                 ),
               ),
             ),
-
-          // Current month indicator - only show when not manually submitted
-          if (_showMonthText)
+          if (showMonthText)
             Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Row(
@@ -863,9 +704,9 @@ class _DashboardPageState extends State<DashboardPage> {
                     size: isMobile ? 16 : 18,
                     color: Colors.blue,
                   ),
-                  SizedBox(width: isMobile ? 8 : 12),
+                  const SizedBox(width: 8),
                   Text(
-                    "Showing data for ${_getCurrentMonthName()} ${DateTime.now().year}",
+                    "Showing data for $currentMonthName ${DateTime.now().year}",
                     style: TextStyle(
                       fontSize: isMobile ? 13 : 14,
                       color: Colors.blue,
@@ -879,29 +720,23 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
     );
   }
+}
 
-  // Helper function to get current month name
-  String _getCurrentMonthName() {
-    const monthNames = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    return monthNames[DateTime.now().month - 1];
-  }
+class _DateChip extends StatelessWidget {
+  final String text;
+  final bool isMobile;
+  final VoidCallback onTap;
 
-  Widget _dateChip(String text, bool isMobile, [bool isFromDate = false]) {
+  const _DateChip({
+    required this.text,
+    required this.isMobile,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _selectDate(context, isFromDate),
+      onTap: onTap,
       child: Container(
         padding: EdgeInsets.symmetric(
           horizontal: isMobile ? 14 : 16,
@@ -922,18 +757,17 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
     );
   }
+}
 
-  // 🔶 STATS GRID - using dynamic API data
-  Widget _statsGrid(bool isMobile, bool isTablet) {
-    int crossAxisCount;
-    if (isMobile) {
-      crossAxisCount = 2;
-    } else if (isTablet) {
-      crossAxisCount = 3;
-    } else {
-      crossAxisCount = 3;
-    }
+class _StatsGrid extends StatelessWidget {
+  final bool isMobile;
+  final Map<String, dynamic> dashboardStats;
 
+  const _StatsGrid({required this.isMobile, required this.dashboardStats});
+
+  @override
+  Widget build(BuildContext context) {
+    final crossAxisCount = isMobile ? 2 : 3;
     return GridView.count(
       shrinkWrap: true,
       crossAxisCount: crossAxisCount,
@@ -975,450 +809,8 @@ class _DashboardPageState extends State<DashboardPage> {
       ],
     );
   }
-
-  // 🔶 BOTTOM CHARTS
-  Widget _bottomCharts(BuildContext context, bool isMobile, bool isTablet) {
-    if (isMobile) {
-      return Column(
-        children: [
-          _chartCard(
-            context,
-            title: "Purchase Record",
-            isPurchase: true,
-            isMobile: isMobile,
-          ),
-          SizedBox(height: isMobile ? 16 : 20),
-          _chartCard(
-            context,
-            title: "Cash Flow Trend",
-            isPurchase: false,
-            isMobile: isMobile,
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      children: [
-        Expanded(
-          child: _chartCard(
-            context,
-            title: "Purchase Record",
-            isPurchase: true,
-            isMobile: isMobile,
-          ),
-        ),
-        SizedBox(width: isMobile ? 12 : 16),
-        Expanded(
-          child: _chartCard(
-            context,
-            title: "Cash Flow Trend",
-            isPurchase: false,
-            isMobile: isMobile,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _chartCard(
-    BuildContext context, {
-    required String title,
-    required bool isPurchase,
-    required bool isMobile,
-  }) {
-    final chartData = isPurchase ? salesVsPurchaseData : cashFlowData;
-    final hasData = chartData.isNotEmpty;
-
-    return Container(
-      padding: EdgeInsets.all(isMobile ? 14 : 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(isMobile ? 18 : 22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(isMobile ? 8 : 10),
-                decoration: BoxDecoration(
-                  color:
-                      isPurchase ? Colors.blue.shade50 : Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(isMobile ? 10 : 12),
-                ),
-                child: Icon(
-                  isPurchase ? Icons.bar_chart : Icons.currency_rupee,
-                  color: isPurchase ? Colors.blue : Colors.green,
-                  size: isMobile ? 20 : 22,
-                ),
-              ),
-              SizedBox(width: isMobile ? 10 : 12),
-              Expanded(
-                child: Text(
-                  title.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: isMobile ? 15 : 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (isPurchase)
-                _filterChip(
-                  "LAST ${salesVsPurchaseData.length} MONTHS",
-                  isMobile: isMobile,
-                )
-              else
-                Row(
-                  children: [
-                    _legendDot(Colors.green, "IN", isMobile),
-                    SizedBox(width: isMobile ? 8 : 12),
-                    _legendDot(Colors.red, "OUT", isMobile),
-                  ],
-                ),
-            ],
-          ),
-          SizedBox(height: isMobile ? 16 : 20),
-          Container(
-            height: isMobile ? 200 : 220,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(isMobile ? 12 : 14),
-            ),
-            child:
-                hasData
-                    ? isPurchase
-                        ? _buildPurchaseChart(isMobile)
-                        : _buildCashFlowChart(isMobile)
-                    : Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            isPurchase
-                                ? Icons.shopping_cart
-                                : Icons.trending_up,
-                            color: Colors.grey,
-                            size: isMobile ? 40 : 50,
-                          ),
-                          SizedBox(height: isMobile ? 12 : 16),
-                          Text(
-                            "No Chart Data",
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: isMobile ? 15 : 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPurchaseChart(bool isMobile) {
-    final maxValue =
-        salesVsPurchaseData.isNotEmpty
-            ? salesVsPurchaseData
-                .map((e) => e.purchase)
-                .reduce((a, b) => a > b ? a : b)
-            : 0;
-
-    return Padding(
-      padding: EdgeInsets.all(isMobile ? 8.0 : 10.0),
-      child: BarChart(
-        BarChartData(
-          alignment: BarChartAlignment.spaceAround,
-          maxY: maxValue * 1.2,
-          barTouchData: BarTouchData(
-            enabled: true,
-            touchTooltipData: BarTouchTooltipData(
-              tooltipBgColor: Colors.white,
-              getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                return BarTooltipItem(
-                  '${salesVsPurchaseData[groupIndex].month}\n₹${rod.toY.toInt()}',
-                  TextStyle(
-                    color: Colors.blue,
-                    fontWeight: FontWeight.bold,
-                    fontSize: isMobile ? 12 : 14,
-                  ),
-                );
-              },
-            ),
-          ),
-          titlesData: FlTitlesData(
-            show: true,
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: 1,
-                getTitlesWidget: (value, meta) {
-                  int index = value.toInt();
-
-                  if (index >= 0 && index < salesVsPurchaseData.length) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        salesVsPurchaseData[index].month,
-                        style: TextStyle(
-                          fontSize: isMobile ? 12 : 13,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    );
-                  }
-                  return const Text('');
-                },
-              ),
-            ),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: isMobile ? 45 : 50,
-                interval: maxValue / 4,
-                getTitlesWidget: (value, meta) {
-                  return Text(
-                    '₹${(value / 1000).toStringAsFixed(0)}K',
-                    style: TextStyle(fontSize: isMobile ? 10 : 12),
-                  );
-                },
-              ),
-            ),
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          ),
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            horizontalInterval: maxValue > 0 ? maxValue / 4 : 1000,
-            getDrawingHorizontalLine:
-                (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
-          ),
-          borderData: FlBorderData(show: false),
-          barGroups:
-              salesVsPurchaseData.asMap().entries.map((entry) {
-                final index = entry.key;
-                final data = entry.value;
-                return BarChartGroupData(
-                  x: index,
-                  barRods: [
-                    BarChartRodData(
-                      toY: data.purchase,
-                      width: isMobile ? 16 : 20,
-                      color: Colors.blue,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ],
-                );
-              }).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCashFlowChart(bool isMobile) {
-    final maxValue =
-        cashFlowData.isNotEmpty
-            ? cashFlowData
-                .map((e) => e.inAmount > e.outAmount ? e.inAmount : e.outAmount)
-                .reduce((a, b) => a > b ? a : b)
-            : 0;
-    return Padding(
-      padding: EdgeInsets.all(isMobile ? 8.0 : 10.0),
-      child: LineChart(
-        LineChartData(
-          lineTouchData: LineTouchData(
-            enabled: true,
-            touchTooltipData: LineTouchTooltipData(
-              tooltipBgColor: Colors.white,
-              getTooltipItems: (touchedSpots) {
-                return touchedSpots
-                    .map((spot) {
-                      final index = spot.x.toInt();
-                      if (index >= 0 && index < cashFlowData.length) {
-                        final data = cashFlowData[index];
-                        return LineTooltipItem(
-                          '${data.day}\nIN: ₹${data.inAmount.toInt()}\nOUT: ₹${data.outAmount.toInt()}',
-                          TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.bold,
-                            fontSize: isMobile ? 12 : 14,
-                          ),
-                        );
-                      }
-                      return null;
-                    })
-                    .where((item) => item != null)
-                    .toList();
-              },
-            ),
-          ),
-          gridData: FlGridData(
-            show: true,
-            drawHorizontalLine: true,
-            drawVerticalLine: false,
-            horizontalInterval: 200000,
-            getDrawingHorizontalLine:
-                (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
-          ),
-          titlesData: FlTitlesData(
-            show: true,
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: 1,
-                getTitlesWidget: (value, meta) {
-                  int index = value.toInt();
-
-                  if (index >= 0 && index < cashFlowData.length) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        cashFlowData[index].day,
-                        style: TextStyle(
-                          fontSize: isMobile ? 12 : 13,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    );
-                  }
-                  return const Text('');
-                },
-              ),
-            ),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: isMobile ? 60 : 70,
-                interval: maxValue > 0 ? maxValue / 4 : 1000,
-
-                getTitlesWidget: (value, meta) {
-                  String text;
-
-                  if (value >= 1000000) {
-                    text = '₹${(value / 1000000).toStringAsFixed(1)}M';
-                  } else if (value >= 1000) {
-                    text = '₹${(value / 1000).toStringAsFixed(0)}K';
-                  } else {
-                    text = '₹${value.toInt()}';
-                  }
-
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: Text(
-                      text,
-                      style: TextStyle(
-                        fontSize: isMobile ? 10 : 12,
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          ),
-          borderData: FlBorderData(
-            show: true,
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          minX: 0,
-          maxX: cashFlowData.length > 0 ? cashFlowData.length - 1 : 0,
-          minY: 0,
-          lineBarsData: [
-            LineChartBarData(
-              spots:
-                  cashFlowData.asMap().entries.map((entry) {
-                    return FlSpot(entry.key.toDouble(), entry.value.inAmount);
-                  }).toList(),
-              isCurved: true,
-              color: Colors.green,
-              barWidth: isMobile ? 2.5 : 3,
-              isStrokeCapRound: true,
-              dotData: FlDotData(show: true),
-              belowBarData: BarAreaData(show: false),
-            ),
-            LineChartBarData(
-              spots:
-                  cashFlowData.asMap().entries.map((entry) {
-                    return FlSpot(entry.key.toDouble(), entry.value.outAmount);
-                  }).toList(),
-              isCurved: true,
-              color: Colors.red,
-              barWidth: isMobile ? 2.5 : 3,
-              isStrokeCapRound: true,
-              dotData: FlDotData(show: true),
-              belowBarData: BarAreaData(show: false),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _filterChip(String text, {required bool isMobile}) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isMobile ? 12 : 14,
-        vertical: isMobile ? 6 : 8,
-      ),
-      decoration: BoxDecoration(
-        color: const Color(0xffF5F7FA),
-        borderRadius: BorderRadius.circular(isMobile ? 18 : 20),
-      ),
-      child: Row(
-        children: [
-          Text(
-            text,
-            style: TextStyle(
-              fontSize: isMobile ? 11 : 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey,
-            ),
-          ),
-          SizedBox(width: isMobile ? 4 : 6),
-          const Icon(Icons.keyboard_arrow_down, size: 16),
-        ],
-      ),
-    );
-  }
-
-  Widget _legendDot(Color color, String label, bool isMobile) {
-    return Row(
-      children: [
-        Container(
-          width: isMobile ? 10 : 12,
-          height: isMobile ? 10 : 12,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        SizedBox(width: isMobile ? 4 : 6),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: isMobile ? 12 : 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
 }
 
-// 🔹 STAT CARD
 class _StatCard extends StatelessWidget {
   final String title;
   final String value;
@@ -1463,6 +855,506 @@ class _StatCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _BottomCharts extends StatelessWidget {
+  final bool isMobile;
+  final List<SalesVsPurchaseData> salesVsPurchaseData;
+  final List<CashFlowData> cashFlowData;
+
+  const _BottomCharts({
+    required this.isMobile,
+    required this.salesVsPurchaseData,
+    required this.cashFlowData,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isMobile) {
+      return Column(
+        children: [
+          _ChartCard(
+            title: "Purchase Record",
+            isPurchase: true,
+            isMobile: isMobile,
+            salesVsPurchaseData: salesVsPurchaseData,
+            cashFlowData: cashFlowData,
+          ),
+          SizedBox(height: isMobile ? 16 : 20),
+          _ChartCard(
+            title: "Cash Flow Trend",
+            isPurchase: false,
+            isMobile: isMobile,
+            salesVsPurchaseData: salesVsPurchaseData,
+            cashFlowData: cashFlowData,
+          ),
+        ],
+      );
+    } else {
+      return Row(
+        children: [
+          Expanded(
+            child: _ChartCard(
+              title: "Purchase Record",
+              isPurchase: true,
+              isMobile: isMobile,
+              salesVsPurchaseData: salesVsPurchaseData,
+              cashFlowData: cashFlowData,
+            ),
+          ),
+          SizedBox(width: isMobile ? 12 : 16),
+          Expanded(
+            child: _ChartCard(
+              title: "Cash Flow Trend",
+              isPurchase: false,
+              isMobile: isMobile,
+              salesVsPurchaseData: salesVsPurchaseData,
+              cashFlowData: cashFlowData,
+            ),
+          ),
+        ],
+      );
+    }
+  }
+}
+
+class _ChartCard extends StatelessWidget {
+  final String title;
+  final bool isPurchase;
+  final bool isMobile;
+  final List<SalesVsPurchaseData> salesVsPurchaseData;
+  final List<CashFlowData> cashFlowData;
+
+  const _ChartCard({
+    required this.title,
+    required this.isPurchase,
+    required this.isMobile,
+    required this.salesVsPurchaseData,
+    required this.cashFlowData,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasData =
+        isPurchase ? salesVsPurchaseData.isNotEmpty : cashFlowData.isNotEmpty;
+
+    return Container(
+      padding: EdgeInsets.all(isMobile ? 14 : 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(isMobile ? 18 : 22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(isMobile ? 8 : 10),
+                decoration: BoxDecoration(
+                  color:
+                      isPurchase ? Colors.blue.shade50 : Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(isMobile ? 10 : 12),
+                ),
+                child: Icon(
+                  isPurchase ? Icons.bar_chart : Icons.currency_rupee,
+                  color: isPurchase ? Colors.blue : Colors.green,
+                  size: isMobile ? 20 : 22,
+                ),
+              ),
+              SizedBox(width: isMobile ? 10 : 12),
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: isMobile ? 15 : 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (isPurchase)
+                _FilterChip(
+                  "LAST ${salesVsPurchaseData.length} MONTHS",
+                  isMobile: isMobile,
+                )
+              else
+                Row(
+                  children: [
+                    _LegendDot(Colors.green, "IN", isMobile),
+                    SizedBox(width: isMobile ? 8 : 12),
+                    _LegendDot(Colors.red, "OUT", isMobile),
+                  ],
+                ),
+            ],
+          ),
+          SizedBox(height: isMobile ? 16 : 20),
+          SizedBox(
+            height: isMobile ? 200 : 220,
+            child:
+                hasData
+                    ? (isPurchase
+                        ? _PurchaseChart(
+                          data: salesVsPurchaseData,
+                          isMobile: isMobile,
+                        )
+                        : _CashFlowChart(
+                          data: cashFlowData,
+                          isMobile: isMobile,
+                        ))
+                    : Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            isPurchase
+                                ? Icons.shopping_cart
+                                : Icons.trending_up,
+                            color: Colors.grey,
+                            size: isMobile ? 40 : 50,
+                          ),
+                          SizedBox(height: isMobile ? 12 : 16),
+                          Text(
+                            "No Chart Data",
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: isMobile ? 15 : 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PurchaseChart extends StatelessWidget {
+  final List<SalesVsPurchaseData> data;
+  final bool isMobile;
+
+  const _PurchaseChart({required this.data, required this.isMobile});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue =
+        data.isNotEmpty
+            ? data.map((e) => e.purchase).reduce((a, b) => a > b ? a : b)
+            : 0;
+    return Padding(
+      padding: EdgeInsets.all(isMobile ? 8 : 10),
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: maxValue * 1.2,
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              tooltipBgColor: Colors.white,
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                return BarTooltipItem(
+                  '${data[groupIndex].month}\n₹${rod.toY.toInt()}',
+                  TextStyle(
+                    color: Colors.blue,
+                    fontWeight: FontWeight.bold,
+                    fontSize: isMobile ? 12 : 14,
+                  ),
+                );
+              },
+            ),
+          ),
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 1,
+                getTitlesWidget: (value, meta) {
+                  final index = value.toInt();
+                  if (index >= 0 && index < data.length) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        data[index].month,
+                        style: TextStyle(
+                          fontSize: isMobile ? 12 : 13,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    );
+                  }
+                  return const Text('');
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: isMobile ? 45 : 50,
+                interval: maxValue / 4,
+                getTitlesWidget:
+                    (value, meta) => Text(
+                      '₹${(value / 1000).toStringAsFixed(0)}K',
+                      style: TextStyle(fontSize: isMobile ? 10 : 12),
+                    ),
+              ),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: maxValue > 0 ? maxValue / 4 : 1000,
+            getDrawingHorizontalLine:
+                (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+          ),
+          borderData: FlBorderData(show: false),
+          barGroups:
+              data.asMap().entries.map((entry) {
+                return BarChartGroupData(
+                  x: entry.key,
+                  barRods: [
+                    BarChartRodData(
+                      toY: entry.value.purchase,
+                      width: isMobile ? 16 : 20,
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ],
+                );
+              }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+class _CashFlowChart extends StatelessWidget {
+  final List<CashFlowData> data;
+  final bool isMobile;
+
+  const _CashFlowChart({required this.data, required this.isMobile});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue =
+        data.isNotEmpty
+            ? data
+                .map((e) => e.inAmount > e.outAmount ? e.inAmount : e.outAmount)
+                .reduce((a, b) => a > b ? a : b)
+            : 0;
+    return Padding(
+      padding: EdgeInsets.all(isMobile ? 8 : 10),
+      child: LineChart(
+        LineChartData(
+          lineTouchData: LineTouchData(
+            enabled: true,
+            touchTooltipData: LineTouchTooltipData(
+              tooltipBgColor: Colors.white,
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots
+                    .map((spot) {
+                      final index = spot.x.toInt();
+                      if (index >= 0 && index < data.length) {
+                        final item = data[index];
+                        return LineTooltipItem(
+                          '${item.day}\nIN: ₹${item.inAmount.toInt()}\nOUT: ₹${item.outAmount.toInt()}',
+                          TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                            fontSize: isMobile ? 12 : 14,
+                          ),
+                        );
+                      }
+                      return null;
+                    })
+                    .whereType<LineTooltipItem>()
+                    .toList();
+              },
+            ),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawHorizontalLine: true,
+            drawVerticalLine: false,
+            horizontalInterval: 200000,
+            getDrawingHorizontalLine:
+                (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+          ),
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 1,
+                getTitlesWidget: (value, meta) {
+                  final index = value.toInt();
+                  if (index >= 0 && index < data.length) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        data[index].day,
+                        style: TextStyle(
+                          fontSize: isMobile ? 12 : 13,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    );
+                  }
+                  return const Text('');
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: isMobile ? 60 : 70,
+                interval: maxValue > 0 ? maxValue / 4 : 1000,
+                getTitlesWidget: (value, meta) {
+                  String text;
+                  if (value >= 1000000)
+                    text = '₹${(value / 1000000).toStringAsFixed(1)}M';
+                  else if (value >= 1000)
+                    text = '₹${(value / 1000).toStringAsFixed(0)}K';
+                  else
+                    text = '₹${value.toInt()}';
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Text(
+                      text,
+                      style: TextStyle(
+                        fontSize: isMobile ? 10 : 12,
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+          ),
+          borderData: FlBorderData(
+            show: true,
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          minX: 0,
+          maxX: data.length - 1,
+          minY: 0,
+          lineBarsData: [
+            LineChartBarData(
+              spots:
+                  data
+                      .asMap()
+                      .entries
+                      .map((e) => FlSpot(e.key.toDouble(), e.value.inAmount))
+                      .toList(),
+              isCurved: true,
+              color: Colors.green,
+              barWidth: isMobile ? 2.5 : 3,
+              isStrokeCapRound: true,
+              dotData: const FlDotData(show: true),
+              belowBarData: BarAreaData(show: false),
+            ),
+            LineChartBarData(
+              spots:
+                  data
+                      .asMap()
+                      .entries
+                      .map((e) => FlSpot(e.key.toDouble(), e.value.outAmount))
+                      .toList(),
+              isCurved: true,
+              color: Colors.red,
+              barWidth: isMobile ? 2.5 : 3,
+              isStrokeCapRound: true,
+              dotData: const FlDotData(show: true),
+              belowBarData: BarAreaData(show: false),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String text;
+  final bool isMobile;
+  const _FilterChip(this.text, {required this.isMobile});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 12 : 14,
+        vertical: isMobile ? 6 : 8,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xffF5F7FA),
+        borderRadius: BorderRadius.circular(isMobile ? 18 : 20),
+      ),
+      child: Row(
+        children: [
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: isMobile ? 11 : 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Icon(Icons.keyboard_arrow_down, size: 16),
+        ],
+      ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  final bool isMobile;
+  const _LegendDot(this.color, this.label, this.isMobile);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: isMobile ? 10 : 12,
+          height: isMobile ? 10 : 12,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        SizedBox(width: isMobile ? 4 : 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: isMobile ? 12 : 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }

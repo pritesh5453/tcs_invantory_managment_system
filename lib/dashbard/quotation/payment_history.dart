@@ -139,7 +139,53 @@ class _PaymentHistoryDialogState extends State<PaymentHistoryDialog> {
                             ),
                             const SizedBox(height: 8),
                             _buildRow("Type", p['payment_type'] ?? '-'),
-                            _buildRow("Billing Type", p['billingType'] ?? '-'),
+                            // Custom row for Billing Type with colored dot
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(
+                                    width: 80,
+                                    child: Text(
+                                      "Billing Type:",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 10,
+                                          height: 10,
+                                          margin: const EdgeInsets.only(
+                                            right: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: _getBillingDotColor(
+                                              p['billingType']?.toString() ??
+                                                  '',
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            p['billingType'] ?? '-',
+                                            style: const TextStyle(
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                             _buildRow("Remark", p['remark'] ?? '-'),
                             _buildRow(
                               "Date",
@@ -180,5 +226,14 @@ class _PaymentHistoryDialogState extends State<PaymentHistoryDialog> {
         ],
       ),
     );
+  }
+
+  Color _getBillingDotColor(String billingType) {
+    // Case-insensitive check for "Non-Billing"
+    if (billingType.toLowerCase() == 'non-billing') {
+      return Colors.blue;
+    }
+    // Default to red for "Billing" or any other value
+    return Colors.red;
   }
 }

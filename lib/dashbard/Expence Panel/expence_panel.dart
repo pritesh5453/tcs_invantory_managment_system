@@ -127,11 +127,17 @@ class _ExpenseStockManagementScreenState
 
     try {
       // Convert type based on selected entry type
-      String apiType = 'debit';
-      if (_selectedEntryType == 'Stock/Add (Credit)') {
+      String apiType;
+      if (_selectedEntryType == 'Expense (Debit)') {
+        apiType = 'debit';
+      } else if (_selectedEntryType == 'Stock/Add (Credit)') {
         apiType = 'credit';
       } else if (_selectedEntryType == 'Salary') {
         apiType = 'salary';
+      } else if (_selectedEntryType == 'Home') {
+        apiType = 'Home'; // ← NEW MAPPING
+      } else {
+        apiType = 'debit'; // fallback
       }
 
       final response = await _dio.post(
@@ -393,6 +399,8 @@ class _ExpenseStockManagementScreenState
         double.tryParse(_summaryData['total_added']?.toString() ?? '0') ?? 0;
     final totalExpenses =
         double.tryParse(_summaryData['total_expenses']?.toString() ?? '0') ?? 0;
+    final homeexpenses =
+        double.tryParse(_summaryData['home_expenses']?.toString() ?? '0') ?? 0;
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -428,6 +436,19 @@ class _ExpenseStockManagementScreenState
             child: _buildBalanceCard(
               title: 'TOTAL EXPENSES',
               amount: totalExpenses,
+              color: Colors.red,
+              icon: Icons.remove_circle_outline,
+              formatCurrency: formatCurrency,
+            ),
+          ),
+
+          const SizedBox(width: 12),
+          // Total Expenses
+          Container(
+            width: 170,
+            child: _buildBalanceCard(
+              title: 'HOME EXPENSES',
+              amount: homeexpenses,
               color: Colors.red,
               icon: Icons.remove_circle_outline,
               formatCurrency: formatCurrency,
@@ -532,8 +553,9 @@ class _ExpenseStockManagementScreenState
                 ),
                 child: Row(
                   children: [
+                    // Date column
                     SizedBox(
-                      width: 80,
+                      width: 70,
                       child: Text(
                         'DATE',
                         style: TextStyle(
@@ -543,7 +565,9 @@ class _ExpenseStockManagementScreenState
                         ),
                       ),
                     ),
+                    // Name column (flexible)
                     Expanded(
+                      flex: 2,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8.0),
                         child: Text(
@@ -556,6 +580,22 @@ class _ExpenseStockManagementScreenState
                         ),
                       ),
                     ),
+                    // Remark column (flexible)
+                    Expanded(
+                      flex: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: Text(
+                          'REMARK',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Amount column
                     SizedBox(
                       width: 100,
                       child: Text(
@@ -611,8 +651,9 @@ class _ExpenseStockManagementScreenState
                     ),
                     child: Row(
                       children: [
+                        // Date
                         SizedBox(
-                          width: 80,
+                          width: 70,
                           child: Text(
                             _formatApiDate(
                               transaction['date']?.toString() ?? '',
@@ -620,7 +661,9 @@ class _ExpenseStockManagementScreenState
                             style: const TextStyle(fontSize: 12),
                           ),
                         ),
+                        // Name
                         Expanded(
+                          flex: 2,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8.0,
@@ -633,6 +676,22 @@ class _ExpenseStockManagementScreenState
                             ),
                           ),
                         ),
+                        // Remark
+                        Expanded(
+                          flex: 2,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8.0,
+                            ),
+                            child: Text(
+                              transaction['remark']?.toString() ?? '',
+                              style: const TextStyle(fontSize: 12),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                        // Amount
                         SizedBox(
                           width: 100,
                           child: Text(

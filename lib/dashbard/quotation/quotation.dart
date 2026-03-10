@@ -499,6 +499,25 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
     }
   }
 
+  // ================= UPDATE PRIORITY =================
+  Future<void> _updatePriority(int quotationId, int newPriority) async {
+    try {
+      final response = await dio.put(
+        "/Quotation/priority/$quotationId",
+        data: {"priority": newPriority},
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        _showSnackbar("Priority updated", isError: false);
+        await _refreshQuotations(); // refresh the list
+      } else {
+        _showSnackbar("Failed to update priority", isError: true);
+      }
+    } catch (e) {
+      debugPrint("Update priority error: $e");
+      _showSnackbar("Error updating priority", isError: true);
+    }
+  }
+
   // ================= UI BUILD =================
   @override
   Widget build(BuildContext context) {
@@ -670,7 +689,8 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
               .map(
                 (entry) => InvoiceCard(
                   quotation: entry.value,
-                  userRole: _userRole, // 👈 pass user role
+                  userRole: _userRole,
+                  priority: entry.value['priority'], // 👈 pass priority
                   onEdit: () => _openEditQuotation(entry.value['id']),
                   onPay:
                       () => Navigator.push(
@@ -721,6 +741,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                   onPaymentHistory:
                       () => _showPaymentHistory(entry.value['id']),
                   onDelete: _deleteQuotation,
+                  onUpdatePriority: _updatePriority, // 👈 new callback
                 ),
               )
               .toList(),
@@ -782,7 +803,8 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
               .map(
                 (entry) => InvoiceCard(
                   quotation: entry.value,
-                  userRole: _userRole, // 👈 pass user role
+                  userRole: _userRole,
+                  priority: entry.value['priority'], // 👈 pass priority
                   onEdit: () => _openEditQuotation(entry.value['id']),
                   onPay:
                       () => Navigator.push(
@@ -833,6 +855,7 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
                   onPaymentHistory:
                       () => _showPaymentHistory(entry.value['id']),
                   onDelete: _deleteQuotation,
+                  onUpdatePriority: _updatePriority, // 👈 new callback
                 ),
               )
               .toList(),
@@ -1098,7 +1121,8 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
 // ================= INVOICE CARD WIDGET =================
 class InvoiceCard extends StatelessWidget {
   final Map<String, dynamic> quotation;
-  final String? userRole; // 👈 new parameter
+  final String? userRole;
+  final int? priority; // 👈 new
   final VoidCallback onEdit;
   final VoidCallback onPay;
   final VoidCallback onDispatch;
@@ -1106,11 +1130,13 @@ class InvoiceCard extends StatelessWidget {
   final Function(String) onDownloadPdf;
   final VoidCallback? onPaymentHistory;
   final Function(int quotationId) onDelete;
+  final Function(int quotationId, int newPriority)? onUpdatePriority; // 👈 new
 
   const InvoiceCard({
     super.key,
     required this.quotation,
-    required this.userRole, // 👈 required
+    required this.userRole,
+    this.priority, // 👈 new
     required this.onEdit,
     required this.onPay,
     required this.onDispatch,
@@ -1118,6 +1144,7 @@ class InvoiceCard extends StatelessWidget {
     required this.onDownloadPdf,
     this.onPaymentHistory,
     required this.onDelete,
+    this.onUpdatePriority, // 👈 new
   });
 
   String _formatDate(String dateString) {
@@ -1167,9 +1194,45 @@ class InvoiceCard extends StatelessWidget {
     );
   }
 
+  Widget _buildPriorityBadge() {
+    Color color;
+    String label;
+    switch (priority) {
+      case 1:
+        color = Colors.green;
+        label = 'Low';
+        break;
+      case 2:
+        color = Colors.orange;
+        label = 'Medium';
+        break;
+      case 3:
+        color = Colors.red;
+        label = 'Urgent';
+        break;
+      default:
+        return const SizedBox.shrink();
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.5)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Determine if user is admin or superadmin
     final bool canDelete = userRole == 'admin' || userRole == 'superadmin';
 
     return Container(
@@ -1192,7 +1255,15 @@ class InvoiceCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStatus(),
+              Row(
+                children: [
+                  _buildStatus(),
+                  if (priority != null) ...[
+                    const SizedBox(width: 8),
+                    _buildPriorityBadge(), // 👈 show priority
+                  ],
+                ],
+              ),
               Text(
                 "Q#${quotation['id']}",
                 style: TextStyle(
@@ -1310,6 +1381,12 @@ class InvoiceCard extends StatelessWidget {
                     onPaymentHistory?.call();
                   } else if (value == "delete") {
                     onDelete(quotation['id']);
+                  } else if (value == "set_low") {
+                    onUpdatePriority?.call(quotation['id'], 1);
+                  } else if (value == "set_medium") {
+                    onUpdatePriority?.call(quotation['id'], 2);
+                  } else if (value == "set_urgent") {
+                    onUpdatePriority?.call(quotation['id'], 3);
                   }
                 },
                 itemBuilder: (context) {
@@ -1364,11 +1441,61 @@ class InvoiceCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                  ];
-
-                  // 👇 Only add delete option for admin/superadmin
-                  if (canDelete) {
-                    items.add(
+                    // 👇 Priority options
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                      value: "set_low",
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.low_priority,
+                            size: 18,
+                            color: Colors.green,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            "Low Priority",
+                            style: TextStyle(color: Colors.green),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: "set_medium",
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.trending_flat,
+                            size: 18,
+                            color: Colors.orange,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            "Medium Priority",
+                            style: TextStyle(color: Colors.orange),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: "set_urgent",
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.priority_high,
+                            size: 18,
+                            color: Colors.red,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            "Urgent Priority",
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (canDelete) ...[
+                      const PopupMenuDivider(),
                       const PopupMenuItem(
                         value: "delete",
                         child: Row(
@@ -1379,9 +1506,8 @@ class InvoiceCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                    );
-                  }
-
+                    ],
+                  ];
                   return items;
                 },
                 child: Container(

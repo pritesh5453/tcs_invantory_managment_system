@@ -604,7 +604,7 @@ class MainScreenWidget extends StatelessWidget {
       case "Customer Amount":
         return CustomerSearchScreen();
       case "Order Book":
-        return OrderBookManagementScreen();
+        return OrderManagementScreen();
       case "Payment History":
         return PaymentHistoryScreen();
       case "Permissions":

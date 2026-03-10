@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
+import 'package:tcs_invantory_managment_system/dashbard/Employee%20Attendance/daily_attendance.dart';
 import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 class EmployeeAttendanceScreen extends StatefulWidget {
@@ -164,6 +165,12 @@ class _EmployeeAttendanceScreenState extends State<EmployeeAttendanceScreen> {
                             icon: const Icon(Icons.calendar_month),
                             onPressed: _pickMonth,
                           ),
+
+                          IconButton(
+                            icon: const Icon(Icons.people),
+                            onPressed: _goToAllAttendance,
+                            tooltip: "All Employee Attendance",
+                          ),
                         ],
                       ),
                     ),
@@ -268,6 +275,13 @@ class _EmployeeAttendanceScreenState extends State<EmployeeAttendanceScreen> {
                   ],
                 ),
       ),
+    );
+  }
+
+  void _goToAllAttendance() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AllEmployeeAttendanceScreen()),
     );
   }
 

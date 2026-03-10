@@ -19,6 +19,7 @@ class Customer {
   final String phone;
   final String? altphone;
   final String email;
+  final String? gstNumber;
   final String? billingName;
   final String? assignedEmployee;
   final String? assignedEmployeeId;
@@ -42,6 +43,7 @@ class Customer {
     required this.phone,
     this.altphone,
     required this.email,
+    this.gstNumber,
     this.billingName,
     this.assignedEmployee,
     this.assignedEmployeeId,
@@ -67,6 +69,7 @@ class Customer {
       phone: json['phone'] ?? '',
       altphone: json['altphone']?.toString(),
       email: json['email'] ?? '',
+      gstNumber: json['GstNumber']?.toString(),
       billingName: json['billingName']?.toString(),
       assignedEmployee: json['assignedEmployee']?.toString(),
       assignedEmployeeId: json['assignedEmployeeId']?.toString(),
@@ -94,6 +97,7 @@ class Customer {
       'phone': phone,
       'altphone': altphone,
       'email': email,
+      'GstNumber': gstNumber,
       'billingName': billingName,
       'assignedEmployee': assignedEmployee,
       'assignedEmployeeId': assignedEmployeeId,
@@ -152,11 +156,14 @@ class CustomerApi {
         "/api/users/list",
         queryParameters: queryParams,
       );
-      final List list = response.data['customers'] ?? [];
+
+      // 🔐 Safe access to response.data
+      final data = response.data as Map<String, dynamic>?;
+      final List list = data?['customers'] as List? ?? [];
       final customers = list.map((e) => Customer.fromJson(e)).toList();
       customers.sort((a, b) => b.id.compareTo(a.id));
 
-      final pagination = response.data['pagination'] ?? {};
+      final pagination = data?['pagination'] as Map<String, dynamic>? ?? {};
       final currentPage = pagination['page'] ?? 1;
       final totalPages = pagination['totalPages'] ?? 1;
       final totalItems = pagination['total'] ?? list.length;
@@ -197,11 +204,14 @@ class CustomerApi {
         "/api/users/list/employee",
         queryParameters: queryParams,
       );
-      final List list = response.data['customers'] ?? [];
+
+      // 🔐 Safe access to response.data
+      final data = response.data as Map<String, dynamic>?;
+      final List list = data?['customers'] as List? ?? [];
       final customers = list.map((e) => Customer.fromJson(e)).toList();
       customers.sort((a, b) => b.id.compareTo(a.id));
 
-      final pagination = response.data['pagination'] ?? {};
+      final pagination = data?['pagination'] as Map<String, dynamic>? ?? {};
       final currentPage = pagination['page'] ?? 1;
       final totalPages = pagination['totalPages'] ?? 1;
       final totalItems = pagination['total'] ?? list.length;
@@ -227,8 +237,11 @@ class CustomerApi {
   static Future<bool> deleteCustomer(int customerId) async {
     try {
       final response = await _dio.delete("/api/users/delete/$customerId");
-      if (response.statusCode == 200 && response.data['success'] == true)
+      // 🔐 Safe check for response.data and success flag
+      final data = response.data as Map<String, dynamic>?;
+      if (response.statusCode == 200 && data?['success'] == true) {
         return true;
+      }
       return false;
     } catch (e) {
       debugPrint("Delete customer error: $e");
@@ -703,7 +716,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
               }, childCount: _adminCustomers.length),
             ),
             if (_adminCustomers.isEmpty && !_adminIsLoading)
-              _buildEmptyState(isAdmin: true),
+              SliverToBoxAdapter(child: _buildEmptyState(isAdmin: true)),
             if (_adminIsLoadingMore)
               const SliverToBoxAdapter(
                 child: Padding(

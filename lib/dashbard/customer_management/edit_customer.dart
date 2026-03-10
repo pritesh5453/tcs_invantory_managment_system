@@ -22,6 +22,7 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
   final mobileCtrl = TextEditingController();
   final altMobileCtrl = TextEditingController(); // 🔥 New
   final emailCtrl = TextEditingController();
+  final gstCtrl = TextEditingController(); // 🔥 New
   final projectCtrl = TextEditingController();
   final siteCtrl = TextEditingController();
   final notesCtrl = TextEditingController();
@@ -65,6 +66,7 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
     mobileCtrl.text = data['phone'] ?? '';
     altMobileCtrl.text = data['altphone'] ?? ''; // 🔥 New
     emailCtrl.text = data['email'] ?? '';
+    gstCtrl.text = data['GstNumber'] ?? ''; // 🔥 New
     projectCtrl.text = data['projectName'] ?? ''; // 🔥 Fixed
     siteCtrl.text = data['siteName'] ?? ''; // 🔥 Fixed
     notesCtrl.text = data['notes'] ?? ''; // 🔥 Fixed
@@ -237,6 +239,7 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
           "altphone":
               altMobileCtrl.text.isEmpty ? null : altMobileCtrl.text, // 🔥 New
           "email": emailCtrl.text.isEmpty ? null : emailCtrl.text,
+          "GstNumber": gstCtrl.text.isEmpty ? null : gstCtrl.text, // 🔥 New
           "billingName": billingNameController.text,
           "assignedEmployee": assignedEmployee,
           "assignedArchitect": assignedArchitect,
@@ -323,6 +326,10 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
 
             const Text("Email Address"),
             TextField(controller: emailCtrl, decoration: _dec("Email")),
+            const SizedBox(height: 12),
+
+            const Text("GST Number"),
+            TextField(controller: gstCtrl, decoration: _dec("GST Number")),
             const SizedBox(height: 12),
 
             // 🔥 New: Billing Name (if available)

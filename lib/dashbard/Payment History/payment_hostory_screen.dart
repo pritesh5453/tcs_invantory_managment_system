@@ -12,10 +12,12 @@ class PaymentHistoryScreen extends StatefulWidget {
 class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   final Dio _dio = Dio();
   final ScrollController _horizontalScrollController = ScrollController();
+  final ScrollController _verticalScrollController = ScrollController();
 
   // Controllers for filters
   final TextEditingController _partyController = TextEditingController();
-  final TextEditingController _dateController = TextEditingController();
+  final TextEditingController _fromDateController = TextEditingController();
+  final TextEditingController _toDateController = TextEditingController();
 
   bool isLoading = true;
   List<dynamic> allPayments = [];
@@ -26,21 +28,25 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    // Optional default value (matches image hint)
-    _partyController.text = '';
     fetchPaymentHistory();
   }
 
   @override
   void dispose() {
     _partyController.dispose();
-    _dateController.dispose();
+    _fromDateController.dispose();
+    _toDateController.dispose();
     _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
     super.dispose();
   }
 
-  /// 🔥 API CALL with optional query parameters
-  Future<void> fetchPaymentHistory({String? partyName, String? date}) async {
+  /// 🔥 API CALL with optional query parameters (partyName, fromDate, toDate)
+  Future<void> fetchPaymentHistory({
+    String? partyName,
+    String? fromDate,
+    String? toDate,
+  }) async {
     setState(() => isLoading = true);
 
     try {
@@ -48,10 +54,11 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
       if (partyName != null && partyName.isNotEmpty) {
         queryParams['partyName'] = partyName;
       }
-      if (date != null && date.isNotEmpty) {
-        // API expects YYYY-MM-DD, but we store/display DD-MM-YYYY
-        // Convert if necessary (assuming we pass the formatted date)
-        queryParams['date'] = date;
+      if (fromDate != null && fromDate.isNotEmpty) {
+        queryParams['fromDate'] = fromDate; // API expects YYYY-MM-DD
+      }
+      if (toDate != null && toDate.isNotEmpty) {
+        queryParams['toDate'] = toDate;
       }
 
       final response = await _dio.get(
@@ -83,20 +90,31 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
 
   /// 🔍 SEARCH action – calls API with current filter values
   void _performSearch() {
-    // Date from controller is in DD-MM-YYYY format, convert to YYYY-MM-DD for API
-    String? apiDate;
-    if (_dateController.text.isNotEmpty) {
-      // Simple conversion – assumes valid DD-MM-YYYY
-      final parts = _dateController.text.split('-');
+    // Convert date from DD-MM-YYYY to YYYY-MM-DD for API
+    String? fromApiDate;
+    if (_fromDateController.text.isNotEmpty) {
+      final parts = _fromDateController.text.split('-');
       if (parts.length == 3) {
-        apiDate = "${parts[2]}-${parts[1]}-${parts[0]}";
+        fromApiDate = "${parts[2]}-${parts[1]}-${parts[0]}";
       }
     }
-    fetchPaymentHistory(partyName: _partyController.text, date: apiDate);
+    String? toApiDate;
+    if (_toDateController.text.isNotEmpty) {
+      final parts = _toDateController.text.split('-');
+      if (parts.length == 3) {
+        toApiDate = "${parts[2]}-${parts[1]}-${parts[0]}";
+      }
+    }
+
+    fetchPaymentHistory(
+      partyName: _partyController.text,
+      fromDate: fromApiDate,
+      toDate: toApiDate,
+    );
   }
 
-  /// 📅 Show date picker and update controller (DD-MM-YYYY)
-  Future<void> _selectDate() async {
+  /// 📅 Show date picker and update the given controller (DD-MM-YYYY)
+  Future<void> _selectDate(TextEditingController controller) async {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
@@ -108,16 +126,8 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
           "${picked.day.toString().padLeft(2, '0')}-"
           "${picked.month.toString().padLeft(2, '0')}-"
           "${picked.year}";
-      setState(() => _dateController.text = formatted);
+      setState(() => controller.text = formatted);
     }
-  }
-
-  /// 📏 Dynamic table height
-  double _getTableHeight() {
-    const headerHeight = 48.0;
-    const rowHeight = 56.0;
-    const padding = 32.0;
-    return headerHeight + (filteredPayments.length * rowHeight) + padding;
   }
 
   @override
@@ -136,7 +146,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
           MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
           (route) => false,
         );
-        return false; // Must return false to prevent default pop
+        return false;
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFF7F9FC),
@@ -149,26 +159,26 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
           ),
         ),
         body: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12), // reduced from 16
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
                 "Categorized transaction history",
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(color: Colors.grey, fontSize: 13),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
-              // 🔍 FILTER SECTION (image style)
+              // 🔍 FILTER SECTION – more compact
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12), // reduced from 16
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.grey.withOpacity(0.1),
-                      blurRadius: 8,
+                      blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
                   ],
@@ -181,6 +191,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                         const Text(
                           "TOTAL RECORDS",
                           style: TextStyle(
+                            fontSize: 12,
                             fontWeight: FontWeight.w600,
                             color: Colors.grey,
                           ),
@@ -188,8 +199,8 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
+                            horizontal: 10,
+                            vertical: 2,
                           ),
                           decoration: BoxDecoration(
                             color: Colors.blueAccent.withOpacity(0.1),
@@ -198,6 +209,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                           child: Text(
                             "$totalRecords",
                             style: const TextStyle(
+                              fontSize: 12,
                               fontWeight: FontWeight.bold,
                               color: Colors.blueAccent,
                             ),
@@ -205,7 +217,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
                     // PARTY NAME ROW
                     Row(
@@ -213,6 +225,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                         const Text(
                           "PARTY NAME",
                           style: TextStyle(
+                            fontSize: 12,
                             fontWeight: FontWeight.w500,
                             color: Colors.grey,
                           ),
@@ -225,11 +238,11 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                               hintText: "Enter party name",
                               isDense: true,
                               contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
+                                horizontal: 10,
+                                vertical: 8, // reduced
                               ),
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(6),
                                 borderSide: BorderSide(
                                   color: Colors.grey.shade300,
                                 ),
@@ -239,14 +252,15 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
 
-                    // DATE FILTER + SEARCH BUTTONS
+                    // FROM DATE
                     Row(
                       children: [
                         const Text(
-                          "FILTER BY DATE",
+                          "FROM",
                           style: TextStyle(
+                            fontSize: 12,
                             fontWeight: FontWeight.w500,
                             color: Colors.grey,
                           ),
@@ -254,19 +268,59 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: GestureDetector(
-                            onTap: _selectDate,
+                            onTap: () => _selectDate(_fromDateController),
                             child: AbsorbPointer(
                               child: TextField(
-                                controller: _dateController,
+                                controller: _fromDateController,
                                 decoration: InputDecoration(
                                   hintText: "dd-mm-yyyy",
                                   isDense: true,
                                   contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
+                                    horizontal: 10,
+                                    vertical: 8,
                                   ),
                                   border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(6),
+                                    borderSide: BorderSide(
+                                      color: Colors.grey.shade300,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // TO DATE + SEARCH BUTTONS
+                    Row(
+                      children: [
+                        const Text(
+                          "TO",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => _selectDate(_toDateController),
+                            child: AbsorbPointer(
+                              child: TextField(
+                                controller: _toDateController,
+                                decoration: InputDecoration(
+                                  hintText: "dd-mm-yyyy",
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(6),
                                     borderSide: BorderSide(
                                       color: Colors.grey.shade300,
                                     ),
@@ -277,43 +331,34 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // Search button
+                        // Search button – smaller
                         Container(
                           decoration: BoxDecoration(
                             color: Colors.blueAccent,
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(6),
                           ),
                           child: IconButton(
                             onPressed: _performSearch,
-                            icon: const Icon(Icons.search, color: Colors.white),
-                            constraints: const BoxConstraints(
-                              minWidth: 40,
-                              minHeight: 40,
+                            icon: const Icon(
+                              Icons.search,
+                              size: 18,
+                              color: Colors.white,
                             ),
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                            padding: EdgeInsets.zero,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        // Link button (optional, as per image)
+                        const SizedBox(width: 6),
+                        // Link button (optional)
                         Container(
                           decoration: BoxDecoration(
                             color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(6),
                           ),
-                          // child: IconButton(
-                          //   onPressed: () {
-                          //     // You can implement link sharing if needed
-                          //     ScaffoldMessenger.of(context).showSnackBar(
-                          //       const SnackBar(
-                          //         content: Text("Link button pressed"),
-                          //       ),
-                          //     );
-                          //   },
-                          //   // icon: const Icon(Icons.link, color: Colors.grey),
-                          //   constraints: const BoxConstraints(
-                          //     minWidth: 40,
-                          //     minHeight: 40,
-                          //   ),
-                          // ),
+                          // child: IconButton(...) if needed
                         ),
                       ],
                     ),
@@ -321,9 +366,9 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
-              // 🔘 TABS (Billing / Non-Billing)
+              // 🔘 TABS (colored boxes)
               Row(
                 children: [
                   _buildTab("Billing", Colors.red),
@@ -331,52 +376,51 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                 ],
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
-              // 💳 TABLE
+              // 💳 TABLE – now with proper vertical + horizontal scrolling
               Expanded(
                 child:
                     isLoading
                         ? const Center(child: CircularProgressIndicator())
                         : Scrollbar(
-                          controller: _horizontalScrollController,
+                          controller: _verticalScrollController,
                           thumbVisibility: true,
                           trackVisibility: true,
-                          thickness: 8,
-                          radius: const Radius.circular(10),
+                          thickness: 6,
+                          radius: const Radius.circular(8),
                           child: SingleChildScrollView(
-                            controller: _horizontalScrollController,
-                            scrollDirection: Axis.horizontal,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                minHeight: _getTableHeight(),
-                              ),
+                            controller: _verticalScrollController,
+                            scrollDirection: Axis.vertical,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              controller: _horizontalScrollController,
                               child: Container(
                                 padding: const EdgeInsets.fromLTRB(
-                                  12,
-                                  12,
-                                  12,
-                                  36,
+                                  10,
+                                  10,
+                                  10,
+                                  24,
                                 ),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFF9FAFF),
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color: Colors.blueAccent.withOpacity(0.25),
                                   ),
                                   boxShadow: [
                                     BoxShadow(
                                       color: Colors.blueAccent.withOpacity(
-                                        0.10,
+                                        0.08,
                                       ),
-                                      blurRadius: 14,
-                                      offset: const Offset(0, 6),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
                                     ),
                                   ],
                                 ),
                                 child: DataTable(
-                                  headingRowHeight: 48,
-                                  dataRowHeight: 56,
+                                  headingRowHeight: 42,
+                                  dataRowHeight: 48,
                                   headingRowColor: MaterialStateProperty.all(
                                     Colors.blueAccent.withOpacity(0.06),
                                   ),
@@ -397,7 +441,6 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                                           id: "#${e['id']}",
                                           quotation: "#${e['quotation_id']}",
                                           name: e['clientName'],
-                                          // projectName: e["projectName"],   // ← REMOVE THIS LINE
                                           number: e['contactNo'],
                                           date:
                                               e['created_at'].toString().split(
@@ -423,8 +466,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     );
   }
 
-  /// 🔘 Tab button with label and color
-  /// 🔘 Tab button without label (just colored)
+  /// 🔘 Tab button – just a colored box without label
   Widget _buildTab(String title, Color baseColor) {
     final isActive = selectedTab == title;
     return GestureDetector(
@@ -436,26 +478,25 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
-        margin: const EdgeInsets.only(right: 14),
-        width: 100, // fixed width
-        height: 40, // fixed height
+        margin: const EdgeInsets.only(right: 12),
+        width: 80, // slightly smaller
+        height: 34,
         decoration: BoxDecoration(
           color: isActive ? baseColor : baseColor.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(15),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: baseColor, width: 1.5),
           boxShadow:
               isActive
                   ? [
-                    BoxShadow(color: baseColor.withOpacity(0.4), blurRadius: 8),
+                    BoxShadow(color: baseColor.withOpacity(0.3), blurRadius: 6),
                   ]
                   : null,
         ),
-        // No child – just a colored box
       ),
     );
   }
 
-  /// 💰 Payment row (unchanged)
+  /// 💰 Payment row
   static DataRow _paymentRow({
     required String id,
     required String quotation,
@@ -469,32 +510,42 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   }) {
     return DataRow(
       cells: [
-        DataCell(Text(id)),
-        DataCell(Text(quotation)),
-        DataCell(Text(name)),
-        DataCell(Text(number)),
-        DataCell(Text(date)),
-        DataCell(Text(type)),
-        DataCell(Text(remark)),
+        DataCell(Text(id, style: const TextStyle(fontSize: 13))),
+        DataCell(Text(quotation, style: const TextStyle(fontSize: 13))),
+        DataCell(Text(name, style: const TextStyle(fontSize: 13))),
+        DataCell(Text(number, style: const TextStyle(fontSize: 13))),
+        DataCell(Text(date, style: const TextStyle(fontSize: 13))),
+        DataCell(Text(type, style: const TextStyle(fontSize: 13))),
+        DataCell(
+          Text(
+            remark,
+            style: const TextStyle(fontSize: 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
         DataCell(
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: approved ? Colors.green.shade100 : Colors.orange.shade100,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Text(
               approved ? "APPROVED" : "REJECTED",
               style: TextStyle(
                 color: approved ? Colors.green : Colors.orange,
                 fontWeight: FontWeight.bold,
-                fontSize: 12,
+                fontSize: 11,
               ),
             ),
           ),
         ),
         DataCell(
-          Text(amount, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            amount,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
         ),
       ],
     );

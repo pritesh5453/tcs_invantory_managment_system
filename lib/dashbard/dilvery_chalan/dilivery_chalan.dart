@@ -187,7 +187,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
   Map<int, bool> _hasMoreData = {0: true, 1: true, 2: true};
 
   String searchQuery = '';
-  String? _selectedPriority; // 👈 new: null = all priorities
+  String? _selectedPriority; // 👈 filter by priority
 
   final Debouncer _debouncer = Debouncer(milliseconds: 500);
   final ScrollController _scrollController = ScrollController();
@@ -289,8 +289,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
         queryParams['search'] = searchQuery;
       }
       if (_selectedPriority != null) {
-        queryParams['priority'] =
-            _selectedPriority; // e.g., "LOW", "MEDIUM", "URGENT"
+        queryParams['priority'] = _selectedPriority;
       }
 
       debugPrint('Fetching $type challans with query: $queryParams');
@@ -380,8 +379,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
       searchQuery = '';
       _selectedPriority = null;
     });
-    // Also clear the search text field
-    // We'll access it via GlobalKey? For simplicity, we'll just reload.
     final type = _getTypeForIndex(_currentTabIndex);
     _fetchChallans(type: type);
   }
@@ -482,6 +479,32 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
       debugPrint("Error: $e");
       debugPrint("StackTrace: $stack");
       _showError("Unable to download PDF");
+    }
+  }
+
+  /// ================= UPDATE PRIORITY =================
+  Future<void> _updatePriority(int challanId, String newPriority) async {
+    try {
+      final response = await dio.put(
+        "https://dashboard.theceramicstudio.in/api/Quotation/update-priority/$challanId",
+        data: {"priority": newPriority},
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response.data['message'] ?? "Priority updated"),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Refresh current tab
+        final type = _getTypeForIndex(_currentTabIndex);
+        _fetchChallans(type: type);
+      } else {
+        _showError("Failed to update priority");
+      }
+    } catch (e) {
+      debugPrint("Update priority error: $e");
+      _showError("Error updating priority");
     }
   }
 
@@ -987,31 +1010,80 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                           return;
                         }
                         _printPdf(challanId: chalan.id, isReturn: true);
+                      } else if (value == "set_low") {
+                        _updatePriority(chalan.id, "LOW");
+                      } else if (value == "set_medium") {
+                        _updatePriority(chalan.id, "MEDIUM");
+                      } else if (value == "set_urgent") {
+                        _updatePriority(chalan.id, "URGENT");
                       }
                     },
-                    itemBuilder:
-                        (context) => const [
-                          PopupMenuItem(
-                            value: "dc",
-                            child: Row(
-                              children: [
-                                Icon(Icons.print),
-                                SizedBox(width: 8),
-                                Text("DC Print"),
-                              ],
-                            ),
+                    itemBuilder: (context) {
+                      return [
+                        // Priority update options
+                        const PopupMenuItem(
+                          value: "set_low",
+                          child: Row(
+                            children: [
+                              Icon(Icons.low_priority, color: Colors.green),
+                              SizedBox(width: 8),
+                              Text(
+                                "Set Low",
+                                style: TextStyle(color: Colors.green),
+                              ),
+                            ],
                           ),
-                          PopupMenuItem(
-                            value: "return",
-                            child: Row(
-                              children: [
-                                Icon(Icons.print),
-                                SizedBox(width: 8),
-                                Text("Return DC Print"),
-                              ],
-                            ),
+                        ),
+                        const PopupMenuItem(
+                          value: "set_medium",
+                          child: Row(
+                            children: [
+                              Icon(Icons.trending_flat, color: Colors.orange),
+                              SizedBox(width: 8),
+                              Text(
+                                "Set Medium",
+                                style: TextStyle(color: Colors.orange),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
+                        const PopupMenuItem(
+                          value: "set_urgent",
+                          child: Row(
+                            children: [
+                              Icon(Icons.priority_high, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text(
+                                "Set Urgent",
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuDivider(),
+                        // Print options
+                        const PopupMenuItem(
+                          value: "dc",
+                          child: Row(
+                            children: [
+                              Icon(Icons.print),
+                              SizedBox(width: 8),
+                              Text("DC Print"),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: "return",
+                          child: Row(
+                            children: [
+                              Icon(Icons.print),
+                              SizedBox(width: 8),
+                              Text("Return DC Print"),
+                            ],
+                          ),
+                        ),
+                      ];
+                    },
                   ),
                 ],
               ),

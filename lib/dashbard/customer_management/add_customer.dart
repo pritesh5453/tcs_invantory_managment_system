@@ -46,8 +46,10 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
   final phoneCtrl = TextEditingController();
   final altPhoneCtrl = TextEditingController();
   final emailCtrl = TextEditingController();
+  final gstCtrl = TextEditingController();
   final projectCtrl = TextEditingController();
   final siteCtrl = TextEditingController();
+  final billingNameController = TextEditingController();
   final notesCtrl = TextEditingController();
 
   String? siteType;
@@ -255,7 +257,6 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
   // ================= ADD CUSTOMER =================
   Future<void> _addCustomer() async {
-    // Validate mandatory fields
     if (!_validateMandatoryFields()) {
       return;
     }
@@ -263,7 +264,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     setState(() => isLoading = true);
 
     try {
-      await dio.post(
+      final response = await dio.post(
         "/api/users/add",
         data: {
           "name": firstNameCtrl.text,
@@ -271,6 +272,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
           "phone": phoneCtrl.text,
           "altphone": altPhoneCtrl.text,
           "email": emailCtrl.text,
+          "GstNumber": gstCtrl.text,
           "assignedEmployee": assignedEmployee,
           "assignedArchitect": assignedArchitect,
           "status": "New",
@@ -279,13 +281,23 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
           "siteName": siteCtrl.text,
           "siteType": siteType,
           "priority": priority,
+          "billingName": billingNameController.text,
           "assignedEmployeeId": assignedEmployeeId,
           "assignedEmployeeName": assignedEmployee,
         },
       );
 
+      print("SUCCESS RESPONSE: ${response.data}");
+
       Navigator.pop(context, true);
     } catch (e) {
+      print("ADD CUSTOMER ERROR: $e");
+
+      if (e is DioException) {
+        print("STATUS CODE: ${e.response?.statusCode}");
+        print("RESPONSE DATA: ${e.response?.data}");
+      }
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Failed to add customer")));
@@ -357,6 +369,9 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
               label("Email Address"),
               TextField(controller: emailCtrl, decoration: _dec("Email")),
 
+              label("GST Number"),
+              TextField(controller: gstCtrl, decoration: _dec("GST Number")),
+
               const SizedBox(height: 16),
 
               const Text(
@@ -397,6 +412,12 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                   DropdownMenuItem(value: "High", child: Text("High")),
                 ],
                 onChanged: (v) => setState(() => priority = v),
+              ),
+
+              label("Billing Name"),
+              TextField(
+                controller: billingNameController,
+                decoration: _dec("Billing Name"),
               ),
 
               const SizedBox(height: 16),

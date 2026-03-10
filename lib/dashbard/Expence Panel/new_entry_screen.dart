@@ -183,8 +183,6 @@ class _NewEntrySectionState extends State<NewEntrySection> {
       widget.onSavePressed!();
 
       // Clear form after successful save
-      // Note: We should actually clear form only after successful API call
-      // We'll use a delayed clear to ensure parent has time to process
       Future.delayed(const Duration(milliseconds: 300), () {
         _clearForm();
       });
@@ -213,7 +211,7 @@ class _NewEntrySectionState extends State<NewEntrySection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              /// 🔽 ENTRY TYPE DROPDOWN (Expense / Credit / Salary)
+              /// 🔽 ENTRY TYPE DROPDOWN (Expense / Credit / Salary / Home)
               DropdownButtonFormField<String>(
                 value: widget.selectedEntryType,
                 items: const [
@@ -226,6 +224,7 @@ class _NewEntrySectionState extends State<NewEntrySection> {
                     child: Text("Stock/Add (Credit)"),
                   ),
                   DropdownMenuItem(value: "Salary", child: Text("Salary")),
+                  DropdownMenuItem(value: "Home", child: Text("Home")),
                 ],
                 onChanged: widget.onEntryTypeChanged,
                 decoration: InputDecoration(
@@ -390,7 +389,7 @@ class _NewEntrySectionState extends State<NewEntrySection> {
               ),
               const SizedBox(height: 20),
 
-              // Save Button
+              // Save Button (always enabled for all types)
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
