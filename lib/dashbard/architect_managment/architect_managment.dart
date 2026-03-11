@@ -113,6 +113,7 @@ class Architect {
   final String whatsapp;
   final int commission;
   final String birthdate;
+  final String remark;
 
   Architect({
     required this.id,
@@ -121,6 +122,7 @@ class Architect {
     required this.whatsapp,
     required this.commission,
     required this.birthdate,
+    required this.remark,
   });
 
   String get fullName => '$firstname $lastname';
@@ -133,6 +135,7 @@ class Architect {
       whatsapp: json['whatsapp'] ?? "",
       commission: json['commission'] ?? 0,
       birthdate: json['birthdate'] ?? "",
+      remark: json['remark'] ?? "",
     );
   }
 }
@@ -783,7 +786,7 @@ class ArchitectCard extends StatelessWidget {
                               whatsapp: architect.whatsapp,
                               commission: architect.commission,
                               birthdate: architect.birthdate,
-                              remark: "",
+                              remark: architect.remark,
                             ),
                       ),
                     );

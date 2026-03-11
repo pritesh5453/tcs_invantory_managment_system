@@ -5,11 +5,12 @@ import 'package:dio/dio.dart';
 
 class EditCustomerPopup extends StatefulWidget {
   final Map<String, dynamic> customerData;
+  final int customerId; // ✅ ID store kar li
 
   const EditCustomerPopup({
     super.key,
     required this.customerData,
-    required int customerId,
+    required this.customerId, // ✅ constructor se assign
   });
 
   @override
@@ -20,9 +21,9 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
   final firstNameCtrl = TextEditingController();
   final lastNameCtrl = TextEditingController();
   final mobileCtrl = TextEditingController();
-  final altMobileCtrl = TextEditingController(); // 🔥 New
+  final altMobileCtrl = TextEditingController();
   final emailCtrl = TextEditingController();
-  final gstCtrl = TextEditingController(); // 🔥 New
+  final gstCtrl = TextEditingController();
   final projectCtrl = TextEditingController();
   final siteCtrl = TextEditingController();
   final notesCtrl = TextEditingController();
@@ -32,15 +33,13 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
   String? siteType;
   String? assignedEmployee;
   String? assignedArchitect;
-  String? billingName; // 🔥 New
-  String? status; // 🔥 New
+  String? billingName;
+  String? status;
 
   bool isLoading = false;
 
   List<Map<String, dynamic>> employees = [];
   List<Map<String, dynamic>> architects = [];
-  List<Map<String, dynamic>> filteredEmployees = [];
-  List<Map<String, dynamic>> filteredArchitects = [];
 
   final Dio dio = Dio(
     BaseOptions(baseUrl: "https://dashboard.theceramicstudio.in"),
@@ -60,25 +59,24 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
     billingName = data['billingName'];
     billingNameController.text = billingName ?? '';
 
-    // 🔥 Populate all fields from customerData
     firstNameCtrl.text = data['name'] ?? '';
     lastNameCtrl.text = data['Last_Name'] ?? '';
     mobileCtrl.text = data['phone'] ?? '';
-    altMobileCtrl.text = data['altphone'] ?? ''; // 🔥 New
+    altMobileCtrl.text = data['altphone'] ?? '';
     emailCtrl.text = data['email'] ?? '';
-    gstCtrl.text = data['GstNumber'] ?? ''; // 🔥 New
-    projectCtrl.text = data['projectName'] ?? ''; // 🔥 Fixed
-    siteCtrl.text = data['siteName'] ?? ''; // 🔥 Fixed
-    notesCtrl.text = data['notes'] ?? ''; // 🔥 Fixed
+    gstCtrl.text = data['GstNumber'] ?? '';
+    projectCtrl.text = data['projectName'] ?? '';
+    siteCtrl.text = data['siteName'] ?? '';
+    notesCtrl.text = data['notes'] ?? '';
 
     siteType = data['siteType'];
     assignedEmployee = data['assignedEmployee'];
     assignedArchitect = data['assignedArchitect'];
     priority = data['priority'] ?? 'Low';
-    billingName = data['billingName']; // 🔥 New
-    status = data['status']; // 🔥 New
+    billingName = data['billingName'];
+    status = data['status'];
 
-    print("✅ Populated customer data: ${data}");
+    print("✅ Populated customer data: $data");
   }
 
   Future<void> _fetchEmployees() async {
@@ -86,7 +84,6 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
       final res = await dio.get("/api/employees/list");
       final List list = res.data['employees'];
       employees = list.map((e) => {"id": e['id'], "name": e['name']}).toList();
-      filteredEmployees = List.from(employees);
       setState(() {});
     } catch (e) {
       debugPrint("Employee fetch error: $e");
@@ -103,7 +100,6 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
             final last = (e['lastname'] ?? '').toString().trim();
             return {"id": e['id'], "name": "$first $last".trim()};
           }).toList();
-      filteredArchitects = List.from(architects);
       setState(() {});
     } catch (e) {
       debugPrint("Architect fetch error: $e");
@@ -226,20 +222,29 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
   }
 
   Future<void> updateCustomer() async {
+    // ✅ Debug: check ID
+    final customerId = widget.customerId; // widget se le rahe hain
+    print("🆔 Updating customer with ID: $customerId");
+
+    if (customerId == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Customer ID is missing!")));
+      return;
+    }
+
     setState(() => isLoading = true);
 
     try {
-      final customerId = widget.customerData['id'];
       final response = await dio.put(
-        "/api/users/update/$customerId",
+        "/api/users/update/$customerId", // ✅ ID use kar rahe hain
         data: {
           "name": firstNameCtrl.text,
           "Last_Name": lastNameCtrl.text,
           "phone": mobileCtrl.text,
-          "altphone":
-              altMobileCtrl.text.isEmpty ? null : altMobileCtrl.text, // 🔥 New
+          "altphone": altMobileCtrl.text.isEmpty ? null : altMobileCtrl.text,
           "email": emailCtrl.text.isEmpty ? null : emailCtrl.text,
-          "GstNumber": gstCtrl.text.isEmpty ? null : gstCtrl.text, // 🔥 New
+          "GstNumber": gstCtrl.text.isEmpty ? null : gstCtrl.text,
           "billingName": billingNameController.text,
           "assignedEmployee": assignedEmployee,
           "assignedArchitect": assignedArchitect,
@@ -248,7 +253,7 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
           "siteName": siteCtrl.text.isEmpty ? null : siteCtrl.text,
           "siteType": siteType,
           "notes": notesCtrl.text.isEmpty ? null : notesCtrl.text,
-          "status": status, // 🔥 New
+          "status": status,
         },
       );
 
@@ -316,7 +321,6 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
             TextField(controller: mobileCtrl, decoration: _dec("Mobile")),
             const SizedBox(height: 12),
 
-            // 🔥 New: Alternate Mobile
             const Text("Alternate Mobile (Optional)"),
             TextField(
               controller: altMobileCtrl,
@@ -332,7 +336,6 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
             TextField(controller: gstCtrl, decoration: _dec("GST Number")),
             const SizedBox(height: 12),
 
-            // 🔥 New: Billing Name (if available)
             if (billingName != null) ...[
               const Text("Billing Name"),
               const SizedBox(height: 4),
@@ -345,7 +348,6 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
               const SizedBox(height: 12),
             ],
 
-            // 🔥 New: Status (if available)
             const SizedBox(height: 16),
             const Text(
               "Project Details",

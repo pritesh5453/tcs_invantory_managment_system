@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 import 'package:tcs_invantory_managment_system/dashbard/customer_management/add_customer.dart';
@@ -976,9 +977,12 @@ class CustomerCard extends StatelessWidget {
           _infoRow("Customer Name:", "${customer.name} ${customer.lastName}"),
           _infoRow("Mobile No.", customer.phone),
           _infoRow("Employee:", customer.assignedEmployee ?? "-"),
-          _infoRow("Employee ID:", customer.assignedEmployeeId ?? "-"),
+          // _infoRow("Employee ID:", customer.assignedEmployeeId ?? "-"),
           _infoRow("Site Type:", customer.siteType ?? "-"),
-          _infoRow("Next FollowUP Date:", customer.nextFollowupDate ?? "-"),
+          _infoRow(
+            "Next FollowUP Date:",
+            formatDate(customer.nextFollowupDate),
+          ),
           const SizedBox(height: 14),
           Row(
             children: [
@@ -1071,6 +1075,17 @@ class CustomerCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String formatDate(String? dateStr) {
+    if (dateStr == null) return "-";
+    try {
+      final date = DateTime.parse(dateStr);
+      // Format as yyyy-MM-dd (e.g., 2026-03-13)
+      return DateFormat('yyyy-MM-dd').format(date);
+    } catch (e) {
+      return dateStr; // fallback agar parse fail ho jaye
+    }
   }
 
   Widget _walletWidget(String? amount) {
