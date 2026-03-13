@@ -256,39 +256,42 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
   /// Add a new product row and pre-fill it with product details
   void _addProductRowWithData(Map<String, dynamic> product) {
-    // Add product to _products list if not already there (for size/quality dropdown)
     bool exists = _products.any((p) => p['id'] == product['id']);
     if (!exists) {
       _products.add(product);
-      // Also update filtered products for search consistency
       _filteredProducts.add(product);
     }
 
-    final row = ProductRow(onChanged: () => setState(() {}));
+    ProductRow row;
+
+    // ✅ If first row is empty → use that
+    if (_productRows.isNotEmpty && _productRows.first.productName.isEmpty) {
+      row = _productRows.first;
+    } else {
+      // otherwise add new row
+      row = ProductRow(onChanged: () => setState(() {}));
+      _productRows.add(row);
+    }
+
     row.productId = product['id'];
     row.productName = product['name'] ?? '';
     row.size = product['size']?.toString() ?? '';
     row.quality = product['quality']?.toString() ?? '';
     row.rateController.text = product['rate']?.toString() ?? '0';
     row.covController.text = product['cov']?.toString() ?? '0';
-    row.productSearchController.text =
-        product['name'] ?? ''; // ✅ Set search field
+    row.productSearchController.text = product['name'] ?? '';
     row.selectedProductDetails = product;
 
-    // Pre-fill godown if needed
     if (product['godown'] != null &&
         product['godown'] is List &&
         product['godown'].isNotEmpty) {
       row.godown = product['godown'][0];
     }
 
-    // Trigger calculations
     row.updateTWGT();
     row.updateTotal();
 
-    setState(() {
-      _productRows.add(row);
-    });
+    setState(() {});
   }
 
   void _removeProductRow(int index) {

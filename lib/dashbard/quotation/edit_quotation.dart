@@ -217,7 +217,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     setState(() => _isLoadingEmployees = true);
     try {
       final response = await _dio.get(
-        'https://dashboard.theceramicstudio.in/api/employees/list',
+        'https://dashboard.theceramicstudio.in/api/employees/Getlist',
         queryParameters: {'search': search},
       );
       if (response.statusCode == 200 && response.data['success'] == true) {

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'dart:typed_data'; // ✅ For Uint8List
 import 'package:file_saver/file_saver.dart';
 import 'package:intl/intl.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:tcs_invantory_managment_system/dashbard/orderbook/add_order_screen.dart';
@@ -430,23 +431,25 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
 
       Uint8List uint8list = Uint8List.fromList(fileBytes);
 
-      // Save file in device storage
-      final directory = await getApplicationDocumentsDirectory();
-      final filePath = "${directory.path}/products_export.xlsx";
+      // Save file in temporary directory (no permissions needed)
+      final directory = await getTemporaryDirectory();
+      final fileName = 'products_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+      final filePath = '${directory.path}/$fileName';
 
       final file = File(filePath);
       await file.writeAsBytes(uint8list);
-
-      // Share file option
-      await Share.shareXFiles([XFile(filePath)]);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Excel exported successfully"),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
           ),
         );
+
+        // Show open/share options
+        _showExcelOptions(filePath, fileName);
       }
     } catch (e) {
       if (mounted) {
@@ -458,6 +461,91 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
         );
       }
     }
+  }
+
+  void _showExcelOptions(String filePath, String fileName) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Excel Exported',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text('What would you like to do?'),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildOptionButton(
+                    icon: Icons.visibility,
+                    label: 'Open',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final result = await OpenFilex.open(filePath);
+                      if (result.type != ResultType.done) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              "Could not open file: ${result.message}",
+                            ),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  _buildOptionButton(
+                    icon: Icons.share,
+                    label: 'Share',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await Share.shareXFiles([
+                        XFile(filePath),
+                      ], text: 'Order Products');
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOptionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 32, color: Colors.orange),
+            const SizedBox(height: 8),
+            Text(label),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _productTag(String title, String value, Color color) {

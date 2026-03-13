@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/add_delivery_challan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
@@ -303,12 +304,15 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
         ),
       );
       final tempDir = await getTemporaryDirectory();
-      final filePath =
-          '${tempDir.path}/quotation_${quotationId}_${pdfType.toLowerCase()}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final fileName =
+          'quotation_${quotationId}_${pdfType.toLowerCase()}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final filePath = '${tempDir.path}/$fileName';
+
       String url = "/Quotation/print/$quotationId";
       if (pdfType == "Name") {
         url = "/Quotation/print/$quotationId?mode=qname";
       }
+
       final response = await dio.get(
         url,
         options: Options(
@@ -316,27 +320,105 @@ class _Quontation_home_screenState extends State<Quontation_home_screen> {
           headers: {'Accept': 'application/pdf'},
         ),
       );
+
       if (response.statusCode == 200) {
         final file = File(filePath);
         await file.writeAsBytes(response.data);
-        final result = await OpenFilex.open(filePath);
-        if (result.type == ResultType.done) {
-          _showSnackbar('$pdfType PDF opened successfully!', isError: false);
-        } else {
-          _showSnackbar('Unable to open PDF', isError: true);
-        }
+
+        setState(() => _isDownloadingPdf = false);
+
+        // Show open/share options
+        _showPdfOptions(context, filePath, fileName);
       } else {
+        setState(() => _isDownloadingPdf = false);
         _showSnackbar(
           'Failed to download PDF (${response.statusCode})',
           isError: true,
         );
       }
     } catch (e) {
+      setState(() => _isDownloadingPdf = false);
       debugPrint("PDF download error: $e");
       _showSnackbar('PDF error: $e', isError: true);
-    } finally {
-      setState(() => _isDownloadingPdf = false);
     }
+  }
+
+  void _showPdfOptions(BuildContext context, String filePath, String fileName) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'PDF Downloaded',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text('What would you like to do?'),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildOptionButton(
+                    icon: Icons.visibility,
+                    label: 'Open',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final result = await OpenFilex.open(filePath);
+                      if (result.type != ResultType.done) {
+                        _showSnackbar('Unable to open PDF', isError: true);
+                      }
+                    },
+                  ),
+                  _buildOptionButton(
+                    icon: Icons.share,
+                    label: 'Share',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await Share.shareXFiles([
+                        XFile(filePath),
+                      ], text: 'Quotation PDF');
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOptionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 32, color: Colors.orange),
+            const SizedBox(height: 8),
+            Text(label),
+          ],
+        ),
+      ),
+    );
   }
 
   void _onSearchChanged(String query) {

@@ -1,8 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:open_filex/open_filex.dart'; // <-- Add this for opening files
+import 'package:open_filex/open_filex.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 class AdvanceAnalyticsScreen extends StatefulWidget {
@@ -29,7 +30,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     {"name": "Dec", "value": 12},
   ];
 
-  final List<int> years = [2024, 2025, 2026, 2027];
+  late List<int> _years; // dynamically generated
 
   /// ================= REPORT STATES =================
   final Map<String, int?> selectedMonth = {
@@ -56,6 +57,24 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
 
   List<Map<String, dynamic>> employees = [];
   int? selectedEmployeeId;
+
+  @override
+  void initState() {
+    super.initState();
+    _initYears();
+  }
+
+  /// Generate years dynamically from 2020 to current year + 2
+  void _initYears() {
+    final now = DateTime.now();
+    final currentYear = now.year;
+    const startYear = 2024;
+    final endYear = currentYear + 2;
+    _years = List.generate(
+      endYear - startYear + 1,
+      (index) => startYear + index,
+    );
+  }
 
   /// ================= DATE PICKER =================
   Future<void> _pickDate({required bool isFrom}) async {
@@ -120,29 +139,89 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
   }
 
   /// ================= OPEN DOWNLOADED FILE =================
-  Future<void> _openFile(String path) async {
-    try {
-      final result = await OpenFilex.open(path);
-      if (result.type != ResultType.done) {
-        // Show a message if opening fails but file is downloaded
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "File downloaded but could not open: ${result.message}",
-            ),
-            backgroundColor: Colors.orange,
+  void _showExcelOptions(String filePath, String fileName) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Excel Downloaded',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text('What would you like to do?'),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildOptionButton(
+                    icon: Icons.visibility,
+                    label: 'Open',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final result = await OpenFilex.open(filePath);
+                      if (result.type != ResultType.done) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              "Could not open file: ${result.message}",
+                            ),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  _buildOptionButton(
+                    icon: Icons.share,
+                    label: 'Share',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await Share.shareXFiles([
+                        XFile(filePath),
+                      ], text: 'Analytics Report');
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
         );
-      }
-    } catch (e) {
-      debugPrint("OPEN FILE ERROR: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error opening file: $e"),
-          backgroundColor: Colors.red,
+      },
+    );
+  }
+
+  Widget _buildOptionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
         ),
-      );
-    }
+        child: Column(
+          children: [
+            Icon(icon, size: 32, color: Colors.orange),
+            const SizedBox(height: 8),
+            Text(label),
+          ],
+        ),
+      ),
+    );
   }
 
   /// ================= DOWNLOAD EMPLOYEE ATTENDANCE =================
@@ -158,8 +237,6 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     }
 
     try {
-      await Permission.storage.request();
-
       final from = _formatApiDate(fromDate!);
       final to = _formatApiDate(toDate!);
 
@@ -174,8 +251,8 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
         },
       );
 
-      final dir = Directory("/storage/emulated/0/Download");
-      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final dir = await getExternalStorageDirectory();
+      if (dir == null) throw Exception("Cannot access external storage");
 
       final path =
           "${dir.path}/Employee_Attendance_${selectedEmployeeId}_$from\_to_$to.xlsx";
@@ -186,11 +263,11 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
         SnackBar(
           content: Text("Downloaded: $path"),
           backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
         ),
       );
 
-      // Automatically open the downloaded file
-      await _openFile(path);
+      _showExcelOptions(path, "Employee_Attendance_$selectedEmployeeId");
     } catch (e) {
       debugPrint("ATTENDANCE DOWNLOAD ERROR: $e");
       ScaffoldMessenger.of(context).showSnackBar(
@@ -219,8 +296,6 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     }
 
     try {
-      await Permission.storage.request();
-
       final res = await Dio(BaseOptions(responseType: ResponseType.bytes)).get(
         url,
         queryParameters: {
@@ -229,8 +304,8 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
         },
       );
 
-      final dir = Directory("/storage/emulated/0/Download");
-      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final dir = await getExternalStorageDirectory();
+      if (dir == null) throw Exception("Cannot access external storage");
 
       final path =
           "${dir.path}/${fileName}_${selectedMonth[key]}_${selectedYear[key]}.xlsx";
@@ -241,11 +316,11 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
         SnackBar(
           content: Text("Downloaded: $path"),
           backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
         ),
       );
 
-      // Automatically open the downloaded file
-      await _openFile(path);
+      _showExcelOptions(path, fileName);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -266,7 +341,6 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
           MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
           (route) => false,
         );
-
         return false;
       },
       child: Scaffold(
@@ -463,7 +537,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
                     hint: const Text("Year"),
                     underline: const SizedBox(),
                     items:
-                        years
+                        _years
                             .map(
                               (y) => DropdownMenuItem<int>(
                                 value: y,

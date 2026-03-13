@@ -41,7 +41,7 @@ class _EmployeeAttendanceScreenState extends State<EmployeeAttendanceScreen> {
   /// ================= EMPLOYEES =================
   Future<void> _fetchEmployees() async {
     try {
-      final res = await dio.get("/employees/list");
+      final res = await dio.get("/employees/Getlist");
       if (res.data['success'] == true) {
         setState(() {
           employees = res.data['employees'];

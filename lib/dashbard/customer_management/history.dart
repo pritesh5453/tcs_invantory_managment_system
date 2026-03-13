@@ -133,17 +133,7 @@ class _FollowUpHistoryPopupState extends State<FollowUpHistoryPopup> {
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 6),
-          const Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(
-                  text: "Handled by: ",
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                TextSpan(text: "System"),
-              ],
-            ),
-          ),
+
           const SizedBox(height: 4),
           Text.rich(
             TextSpan(

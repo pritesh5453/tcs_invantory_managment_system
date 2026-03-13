@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/add_delivery_challan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/update_timeline.dart';
@@ -428,6 +429,12 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
   }) async {
     try {
       debugPrint("========== PRINT PDF START ==========");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Downloading PDF...'),
+          backgroundColor: Colors.orange,
+        ),
+      );
 
       final Dio pdfDio = Dio(
         BaseOptions(
@@ -456,23 +463,17 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
         return;
       }
 
-      final filePath =
-          "${directory.path}/DC_${challanId}_${isReturn ? "RETURN" : "NORMAL"}.pdf";
+      final fileName =
+          "DC_${challanId}_${isReturn ? "RETURN" : "NORMAL"}_${DateTime.now().millisecondsSinceEpoch}.pdf";
+      final filePath = "${directory.path}/$fileName";
 
       final file = File(filePath);
       await file.writeAsBytes(bytes, flush: true);
 
       debugPrint("✅ PDF SAVED AT: $filePath");
 
-      await OpenFilex.open(filePath);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("PDF downloaded successfully"),
-          backgroundColor: Colors.green,
-        ),
-      );
-
+      // Show options instead of auto-open
+      _showPdfOptions(context, filePath, fileName);
       debugPrint("========== PRINT PDF END ==========");
     } catch (e, stack) {
       debugPrint("❌ PDF DOWNLOAD EXCEPTION");
@@ -480,6 +481,84 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
       debugPrint("StackTrace: $stack");
       _showError("Unable to download PDF");
     }
+  }
+
+  void _showPdfOptions(BuildContext context, String filePath, String fileName) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'PDF Downloaded',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text('What would you like to do?'),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildOptionButton(
+                    icon: Icons.visibility,
+                    label: 'Open',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final result = await OpenFilex.open(filePath);
+                      if (result.type != ResultType.done) {
+                        _showError('Unable to open PDF');
+                      }
+                    },
+                  ),
+                  _buildOptionButton(
+                    icon: Icons.share,
+                    label: 'Share',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await Share.shareXFiles([
+                        XFile(filePath),
+                      ], text: 'Delivery Challan PDF');
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOptionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 32, color: Colors.orange),
+            const SizedBox(height: 8),
+            Text(label),
+          ],
+        ),
+      ),
+    );
   }
 
   /// ================= UPDATE PRIORITY =================
