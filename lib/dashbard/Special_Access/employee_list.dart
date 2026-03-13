@@ -45,7 +45,7 @@ class _EmployeesListScreenState extends State<EmployeesListScreen> {
 
     try {
       final response = await dio.get(
-        "/employees/list",
+        "/employees/Getlist",
         options: Options(validateStatus: (s) => true),
       );
 

@@ -81,7 +81,7 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
 
   Future<void> _fetchEmployees() async {
     try {
-      final res = await dio.get("/api/employees/list");
+      final res = await dio.get("/api/employees/Getlist");
       final List list = res.data['employees'];
       employees = list.map((e) => {"id": e['id'], "name": e['name']}).toList();
       setState(() {});
@@ -318,13 +318,18 @@ class _EditCustomerPopupState extends State<EditCustomerPopup> {
             ),
             const SizedBox(height: 12),
             const Text("Mobile Number"),
-            TextField(controller: mobileCtrl, decoration: _dec("Mobile")),
+            TextField(
+              controller: mobileCtrl,
+              decoration: _dec("Mobile"),
+              keyboardType: TextInputType.number,
+            ),
             const SizedBox(height: 12),
 
             const Text("Alternate Mobile (Optional)"),
             TextField(
               controller: altMobileCtrl,
               decoration: _dec("Alternate mobile"),
+              keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
 

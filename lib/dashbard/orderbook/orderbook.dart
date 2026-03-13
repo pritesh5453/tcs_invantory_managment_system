@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/orderbook/add_order_screen.dart';
 import 'package:tcs_invantory_managment_system/dashbard/orderbook/edit_order.dart';
 import 'package:tcs_invantory_managment_system/dashbard/orderbook/order_model.dart'
@@ -588,16 +589,26 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(),
-            _buildFilters(),
-            Expanded(child: _buildOrderList()),
-            _buildPagination(),
-          ],
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(),
+              _buildFilters(),
+              Expanded(child: _buildOrderList()),
+              _buildPagination(),
+            ],
+          ),
         ),
       ),
     );
@@ -868,24 +879,6 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
                       ),
                       Row(
                         children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.shopping_cart,
-                              color: Colors.orange,
-                            ),
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Cart for ${order.orderId} - Coming Soon',
-                                  ),
-                                ),
-                              );
-                            },
-                            constraints: const BoxConstraints(),
-                            padding: EdgeInsets.zero,
-                            visualDensity: VisualDensity.compact,
-                          ),
                           PopupMenuButton<String>(
                             icon: const Icon(Icons.more_vert),
                             onSelected: (value) {

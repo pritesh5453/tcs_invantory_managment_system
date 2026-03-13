@@ -516,7 +516,11 @@ class _AddProductSheetState extends State<AddProductSheet> {
                     ),
 
                     _label("Coverage"),
-                    _textField(coverageCtrl, hint: "Enter coverage area"),
+                    _textField(
+                      coverageCtrl,
+                      hint: "Enter coverage area",
+                      type: TextInputType.number,
+                    ),
 
                     _label("Description"),
                     _textField(

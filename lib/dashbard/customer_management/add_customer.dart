@@ -83,7 +83,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
   // ================= FETCH EMPLOYEES =================
   Future<void> _fetchEmployees() async {
-    final res = await dio.get("/api/employees//Getlist");
+    final res = await dio.get("/api/employees/Getlist");
     employees =
         res.data['employees']
             .map<Map<String, dynamic>>(

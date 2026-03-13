@@ -243,9 +243,14 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
           return true;
         }
 
+        // ✅ Customer Amount sabko dikhega
+        if (item.title == "Customer Amount") {
+          return true;
+        }
+
         // Reports aur Order Book employee ke liye nahi honge
         if (item.title == "Reports" || item.title == "Order Book") {
-          return false;
+          return true;
         }
 
         // Permissions employee ke liye nahi (ye to special mein hai hi)
@@ -405,7 +410,7 @@ class MainScreenWidget extends StatelessWidget {
     if (userRole == "employee") {
       // Reports aur Order Book employee ke liye nahi
       if (screenName == "Reports" || screenName == "Order Book") {
-        return false;
+        return true;
       }
 
       // Permissions employee ke liye nahi

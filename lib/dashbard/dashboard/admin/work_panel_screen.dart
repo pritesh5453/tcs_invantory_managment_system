@@ -41,7 +41,7 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
 
     try {
       final response = await dio.get(
-        'https://dashboard.theceramicstudio.in/api/employees/list',
+        'https://dashboard.theceramicstudio.in/api/employees/Getlist',
       );
 
       if (response.data['success'] == true) {

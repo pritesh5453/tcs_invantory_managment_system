@@ -572,7 +572,7 @@ class _EditProductSheetState extends State<EditProductSheet> {
             ),
 
             _label("Coverage"),
-            _textField(controller: coverageCtrl),
+            _textField(controller: coverageCtrl, type: TextInputType.number),
 
             _label("Description"), // ADDED
             _textField(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
+import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
 class CustomerSearchScreen extends StatefulWidget {
   @override
@@ -147,471 +148,493 @@ class _CustomerSearchScreenState extends State<CustomerSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      body: GestureDetector(
-        // 🔥 Add GestureDetector to dismiss keyboard on tap outside
-        onTap: () {
-          _searchFocusNode.unfocus();
-        },
-        child: Column(
-          children: [
-            // Search Bar Section
-            Container(
-              padding: const EdgeInsets.all(16),
-              color: Colors.white,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Search Label
-                  const Text(
-                    'Search Customer',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black54,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Search Field
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey[300]!),
-                    ),
-                    child: TextField(
-                      focusNode: _searchFocusNode, // 🔥 Add focus node
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search by name or mobile...',
-                        hintStyle: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[500],
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.search,
-                          size: 20,
-                          color: Colors.grey,
-                        ),
-                        suffixIcon:
-                            _isLoading
-                                ? const Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Color(0xffFFA54A),
-                                    ),
-                                  ),
-                                )
-                                : null,
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeWithAnimatedDrawer()),
+          (route) => false,
+        );
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey[100],
+        body: GestureDetector(
+          // 🔥 Add GestureDetector to dismiss keyboard on tap outside
+          onTap: () {
+            _searchFocusNode.unfocus();
+          },
+          child: Column(
+            children: [
+              // Search Bar Section
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.white,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Search Label
+                    const Text(
+                      'Search Customer',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black54,
                       ),
-                      onChanged: _searchCustomers,
                     ),
-                  ),
+                    const SizedBox(height: 8),
 
-                  // Search Results Dropdown
-                  if (_searchResults.isNotEmpty)
+                    // Search Field
                     Container(
-                      margin: const EdgeInsets.only(top: 8),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Colors.grey[100],
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.grey[300]!),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.1),
-                            spreadRadius: 1,
-                            blurRadius: 5,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
                       ),
-                      constraints: const BoxConstraints(maxHeight: 300),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: _searchResults.length,
-                        itemBuilder: (context, index) {
-                          final customer = _searchResults[index];
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: const Color(
-                                0xffFFA54A,
-                              ).withOpacity(0.1),
-                              child: Text(
-                                customer['name'][0].toUpperCase(),
-                                style: const TextStyle(
-                                  color: Color(0xffFFA54A),
-                                  fontWeight: FontWeight.bold,
+                      child: TextField(
+                        focusNode: _searchFocusNode, // 🔥 Add focus node
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Search by name or mobile...',
+                          hintStyle: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[500],
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            size: 20,
+                            color: Colors.grey,
+                          ),
+                          suffixIcon:
+                              _isLoading
+                                  ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Color(0xffFFA54A),
+                                      ),
+                                    ),
+                                  )
+                                  : null,
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
+                        onChanged: _searchCustomers,
+                      ),
+                    ),
+
+                    // Search Results Dropdown
+                    if (_searchResults.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.1),
+                              spreadRadius: 1,
+                              blurRadius: 5,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        constraints: const BoxConstraints(maxHeight: 300),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: _searchResults.length,
+                          itemBuilder: (context, index) {
+                            final customer = _searchResults[index];
+                            return ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: const Color(
+                                  0xffFFA54A,
+                                ).withOpacity(0.1),
+                                child: Text(
+                                  customer['name'][0].toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Color(0xffFFA54A),
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
-                            title: Text(
-                              customer['name'] ?? '',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
+                              title: Text(
+                                customer['name'] ?? '',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                customer['phone'] ?? '',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              trailing: const Icon(
+                                Icons.arrow_forward_ios,
+                                size: 16,
+                                color: Colors.grey,
+                              ),
+                              onTap: () => _selectCustomer(customer),
+                            );
+                          },
+                        ),
+                      ),
+
+                    // Error Message
+                    if (_errorMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              // Loading Indicator for details
+              if (_isLoading && _searchResults.isEmpty)
+                const Expanded(
+                  child: Center(
+                    child: CircularProgressIndicator(color: Color(0xffFFA54A)),
+                  ),
+                ),
+
+              // Customer Details Section (shows when customer is selected)
+              if (_showCustomerDetails && _customerDetails != null) ...[
+                // Currently Viewing Bar
+                Container(
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xffFEF5E7),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xffFFA54A).withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xffFFA54A).withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.visibility,
+                          size: 20,
+                          color: Color(0xffFFA54A),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'CURRENTLY VIEWING',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.black54,
                               ),
                             ),
-                            subtitle: Text(
-                              customer['phone'] ?? '',
+                            const SizedBox(height: 2),
+                            Text(
+                              _customerDetails!['name'] ?? '',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            Text(
+                              'Customer ID: ${_customerDetails!['id']}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey[600],
                               ),
                             ),
-                            trailing: const Icon(
-                              Icons.arrow_forward_ios,
-                              size: 16,
-                              color: Colors.grey,
-                            ),
-                            onTap: () => _selectCustomer(customer),
-                          );
-                        },
-                      ),
-                    ),
-
-                  // Error Message
-                  if (_errorMessage != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        _errorMessage!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
-            // Loading Indicator for details
-            if (_isLoading && _searchResults.isEmpty)
-              const Expanded(
-                child: Center(
-                  child: CircularProgressIndicator(color: Color(0xffFFA54A)),
-                ),
-              ),
-
-            // Customer Details Section (shows when customer is selected)
-            if (_showCustomerDetails && _customerDetails != null) ...[
-              // Currently Viewing Bar
-              Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xffFEF5E7),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: const Color(0xffFFA54A).withOpacity(0.3),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xffFFA54A).withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.visibility,
-                        size: 20,
-                        color: Color(0xffFFA54A),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'CURRENTLY VIEWING',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black54,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _customerDetails!['name'] ?? '',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          Text(
-                            'Customer ID: ${_customerDetails!['id']}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Action Buttons Row
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _buildActionButton(
-                        icon: Icons.receipt_long,
-                        label: 'Delivery Challans (${_challans.length})',
-                        color: Colors.blue,
-                        onTap: () {
-                          _searchFocusNode.unfocus(); // 🔥 Close keyboard
-                          _showChallansDialog();
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildActionButton(
-                        icon: Icons.payment,
-                        label: 'Payments (${_payments.length})',
-                        color: Colors.green,
-                        onTap: () {
-                          _searchFocusNode.unfocus(); // 🔥 Close keyboard
-                          _showPaymentsDialog();
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Wallet Balance Card
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      spreadRadius: 1,
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Wallet Balance Label
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.account_balance_wallet,
-                          size: 24,
-                          color: Color(0xffFFA54A),
+                          ],
                         ),
-                        SizedBox(width: 8),
-                        Text(
-                          'AVAILABLE WALLET BALANCE',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Balance Amount
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '₹ ${_getWalletAmount().abs().toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color:
-                                _getWalletAmount() < 0
-                                    ? Colors.red
-                                    : Colors.green,
-                          ),
-                        ),
-
-                        // Credit Limit
-                      ],
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    // Balance Status
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        _getWalletAmount() < 0
-                            ? 'Negative Balance'
-                            : 'Positive Balance',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color:
-                              _getWalletAmount() < 0
-                                  ? Colors.red
-                                  : Colors.green,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Account Info Card
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      spreadRadius: 1,
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Account Holder Row
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Account Holder',
-                          style: TextStyle(fontSize: 14, color: Colors.black54),
-                        ),
-                        Text(
-                          _customerDetails!['name'] ?? '',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Divider(height: 1),
-                    ),
-
-                    // Status Row
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Status',
-                          style: TextStyle(fontSize: 14, color: Colors.black54),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                  color: Colors.green,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _selectedCustomer?['status'] ?? 'Active',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.green,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    // Phone Number Row
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // View Details Button
-            ] else if (!_isLoading &&
-                _searchController.text.isEmpty &&
-                !_showCustomerDetails) ...[
-              // Empty State - No Customer Selected
-              Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.person_search,
-                        size: 80,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Search for a customer',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Enter name or mobile number to search',
-                        style: TextStyle(fontSize: 14, color: Colors.grey[500]),
                       ),
                     ],
                   ),
                 ),
-              ),
+
+                // Action Buttons Row
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _buildActionButton(
+                          icon: Icons.receipt_long,
+                          label: 'Delivery Challans (${_challans.length})',
+                          color: Colors.blue,
+                          onTap: () {
+                            _searchFocusNode.unfocus(); // 🔥 Close keyboard
+                            _showChallansDialog();
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildActionButton(
+                          icon: Icons.payment,
+                          label: 'Payments (${_payments.length})',
+                          color: Colors.green,
+                          onTap: () {
+                            _searchFocusNode.unfocus(); // 🔥 Close keyboard
+                            _showPaymentsDialog();
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Wallet Balance Card
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        spreadRadius: 1,
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      // Wallet Balance Label
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.account_balance_wallet,
+                            size: 24,
+                            color: Color(0xffFFA54A),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'AVAILABLE WALLET BALANCE',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Balance Amount
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '₹ ${_getWalletAmount().abs().toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  _getWalletAmount() < 0
+                                      ? Colors.red
+                                      : Colors.green,
+                            ),
+                          ),
+
+                          // Credit Limit
+                        ],
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      // Balance Status
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _getWalletAmount() < 0
+                              ? 'Negative Balance'
+                              : 'Positive Balance',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color:
+                                _getWalletAmount() < 0
+                                    ? Colors.red
+                                    : Colors.green,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Account Info Card
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        spreadRadius: 1,
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      // Account Holder Row
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Account Holder',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          Text(
+                            _customerDetails!['name'] ?? '',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Divider(height: 1),
+                      ),
+
+                      // Status Row
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Status',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.green,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _selectedCustomer?['status'] ?? 'Active',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // Phone Number Row
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // View Details Button
+              ] else if (!_isLoading &&
+                  _searchController.text.isEmpty &&
+                  !_showCustomerDetails) ...[
+                // Empty State - No Customer Selected
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.person_search,
+                          size: 80,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Search for a customer',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Enter name or mobile number to search',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
