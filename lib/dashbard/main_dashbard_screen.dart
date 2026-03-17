@@ -54,6 +54,14 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
   late AnimationController _controller;
   late Animation<double> slideAnim;
 
+  bool isManagementDropdownExpanded = false;
+
+  void toggleManagementDropdown() {
+    setState(() {
+      isManagementDropdownExpanded = !isManagementDropdownExpanded;
+    });
+  }
+
   bool isOpen = false;
   String selectedPage = "Dashboard";
   String userRole = "";
@@ -66,12 +74,6 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
   // Special top items (will appear at the top of drawer)
   final List<MenuItem> specialMenuItems = [
     MenuItem(
-      title: "Permissions",
-      icon: Icons.access_time,
-      moduleName: "",
-      isSpecial: true,
-    ),
-    MenuItem(
       title: "Employee Attendance",
       icon: Icons.calendar_today,
       moduleName: "Employee Attendance",
@@ -83,6 +85,11 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
       moduleName: "Expense Stock Management",
       isSpecial: true,
     ),
+    MenuItem(
+      title: "Payment History",
+      icon: Icons.payment,
+      moduleName: "Payment History",
+    ),
   ];
 
   // Regular menu items (will appear after divider)
@@ -92,6 +99,23 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
       title: "Customer Management",
       icon: Icons.people,
       moduleName: "Customer Management",
+    ),
+    MenuItem(
+      title: "Quotation",
+      icon: Icons.request_quote,
+      moduleName: "Quotation Management",
+    ),
+    MenuItem(
+      title: "Delivery Challan",
+      icon: Icons.local_shipping,
+      moduleName: "Delivery Challans",
+    ),
+    MenuItem(title: "Customer Amount", icon: Icons.wallet, moduleName: ""),
+    MenuItem(title: "Order Book", icon: Icons.book_online, moduleName: ""),
+    MenuItem(
+      title: "Architect Registration",
+      icon: Icons.architecture,
+      moduleName: "Architect Registration",
     ),
     MenuItem(
       title: "Employee Registration",
@@ -123,33 +147,20 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
       icon: Icons.inventory_2,
       moduleName: "Supplier Management",
     ),
-    MenuItem(
-      title: "Architect Registration",
-      icon: Icons.architecture,
-      moduleName: "Architect Registration",
-    ),
+
     MenuItem(
       title: "Inventory",
       icon: Icons.store,
       moduleName: "Inventory Management",
     ),
-    MenuItem(
-      title: "Quotation",
-      icon: Icons.request_quote,
-      moduleName: "Quotation Management",
-    ),
-    MenuItem(
-      title: "Delivery Challan",
-      icon: Icons.local_shipping,
-      moduleName: "Delivery Challans",
-    ),
+
     MenuItem(title: "Reports", icon: Icons.report, moduleName: ""),
-    MenuItem(title: "Customer Amount", icon: Icons.wallet, moduleName: ""),
-    MenuItem(title: "Order Book", icon: Icons.book_online, moduleName: ""),
+
     MenuItem(
-      title: "Payment History",
-      icon: Icons.payment,
-      moduleName: "Payment History",
+      title: "Permissions",
+      icon: Icons.access_time,
+      moduleName: "",
+      isSpecial: true,
     ),
     MenuItem(title: "Logout", icon: Icons.logout, moduleName: ""),
   ];
@@ -353,6 +364,8 @@ class _HomeWithAnimatedDrawerState extends State<HomeWithAnimatedDrawer>
                     filteredMenuItems: getCombinedMenuItems(),
                     specialMenuItems: getFilteredSpecialItems(),
                     regularMenuItems: getFilteredRegularItems(),
+                    isManagementDropdownExpanded: isManagementDropdownExpanded,
+                    onToggleManagementDropdown: toggleManagementDropdown,
                   ),
                 );
               },
@@ -664,6 +677,8 @@ class AnimatedDrawerWidget extends StatelessWidget {
   final List<MenuItem> filteredMenuItems;
   final List<MenuItem> specialMenuItems;
   final List<MenuItem> regularMenuItems;
+  final bool isManagementDropdownExpanded;
+  final VoidCallback onToggleManagementDropdown;
 
   const AnimatedDrawerWidget({
     super.key,
@@ -675,7 +690,20 @@ class AnimatedDrawerWidget extends StatelessWidget {
     required this.filteredMenuItems,
     required this.specialMenuItems,
     required this.regularMenuItems,
+    required this.isManagementDropdownExpanded,
+    required this.onToggleManagementDropdown,
   });
+
+  static const Set<String> dropdownTitles = {
+    "Employee Registration",
+    "Quality Management",
+    "Category Management",
+    "Brand Management",
+    "Product Management",
+    "Supplier Management",
+    "Inventory",
+    "Reports",
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -697,23 +725,14 @@ class AnimatedDrawerWidget extends StatelessWidget {
                 physics: const BouncingScrollPhysics(),
                 child: Column(
                   children: [
-                    /// SPECIAL ITEMS (Top 3 items - Bold)
+                    // Special items
                     if (specialMenuItems.isNotEmpty)
-                      Column(
-                        children:
-                            specialMenuItems
-                                .map(
-                                  (menuItem) => _item(
-                                    context,
-                                    menuItem.icon,
-                                    menuItem.title,
-                                    isSpecial: true,
-                                  ),
-                                )
-                                .toList(),
+                      ...specialMenuItems.map(
+                        (item) =>
+                            _buildMenuItem(context, item, isSpecial: true),
                       ),
 
-                    /// DIVIDER
+                    // Divider after special items if both exist
                     if (specialMenuItems.isNotEmpty &&
                         regularMenuItems.isNotEmpty)
                       Padding(
@@ -724,26 +743,152 @@ class AnimatedDrawerWidget extends StatelessWidget {
                         child: Divider(
                           color: Colors.grey.shade700,
                           thickness: 1,
-                          height: 1,
                         ),
                       ),
 
-                    /// REGULAR ITEMS
+                    // Regular items with dropdown group
                     if (regularMenuItems.isNotEmpty)
-                      Column(
-                        children:
-                            regularMenuItems
-                                .map(
-                                  (menuItem) => _item(
-                                    context,
-                                    menuItem.icon,
-                                    menuItem.title,
-                                    isSpecial: false,
-                                  ),
-                                )
-                                .toList(),
-                      ),
+                      ..._buildRegularItems(context),
                   ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildRegularItems(BuildContext context) {
+    final List<Widget> widgets = [];
+    int i = 0;
+    while (i < regularMenuItems.length) {
+      final item = regularMenuItems[i];
+      if (dropdownTitles.contains(item.title)) {
+        // Start of dropdown section – add header if any dropdown item exists
+        widgets.add(_buildDropdownHeader());
+
+        if (isManagementDropdownExpanded) {
+          // Add all consecutive dropdown items with indentation
+          while (i < regularMenuItems.length &&
+              dropdownTitles.contains(regularMenuItems[i].title)) {
+            widgets.add(
+              _buildMenuItem(context, regularMenuItems[i], isSubItem: true),
+            );
+            i++;
+          }
+        } else {
+          // Skip all dropdown items
+          while (i < regularMenuItems.length &&
+              dropdownTitles.contains(regularMenuItems[i].title)) {
+            i++;
+          }
+        }
+      } else {
+        // Normal item (before or after dropdown)
+        widgets.add(_buildMenuItem(context, regularMenuItems[i]));
+        i++;
+      }
+    }
+    return widgets;
+  }
+
+  Widget _buildMenuItem(
+    BuildContext context,
+    MenuItem item, {
+    bool isSpecial = false,
+    bool isSubItem = false,
+  }) {
+    final bool selected = selectedPage == item.title;
+    return InkWell(
+      onTap: () {
+        if (item.title == "Logout") {
+          onClose();
+          showLogoutDialog(context);
+        } else {
+          onPageSelected(item.title);
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: EdgeInsets.only(
+          left: isSubItem ? 28.0 : 14.0,
+          top: 12,
+          bottom: 12,
+          right: 14,
+        ),
+        decoration: BoxDecoration(
+          color:
+              selected ? Colors.orange.withOpacity(0.25) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              item.icon,
+              size: 20,
+              color:
+                  selected
+                      ? Colors.orange
+                      : (isSpecial ? Colors.white : Colors.white70),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                item.title,
+                style: TextStyle(
+                  color:
+                      selected
+                          ? Colors.orange
+                          : (isSpecial ? Colors.white : Colors.white70),
+                  fontSize: 14,
+                  fontWeight:
+                      isSpecial
+                          ? FontWeight.bold
+                          : (selected ? FontWeight.w600 : FontWeight.normal),
+                ),
+              ),
+            ),
+            if (isSpecial && !selected)
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDropdownHeader() {
+    return InkWell(
+      onTap: onToggleManagementDropdown,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(
+              isManagementDropdownExpanded
+                  ? Icons.expand_less
+                  : Icons.expand_more,
+              size: 20,
+              color: Colors.white70,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                "Management", // You can change the label
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -808,75 +953,6 @@ class AnimatedDrawerWidget extends StatelessWidget {
     );
   }
 
-  Widget _item(
-    BuildContext context,
-    IconData icon,
-    String title, {
-    bool isSpecial = false,
-  }) {
-    final bool selected = selectedPage == title;
-
-    return InkWell(
-      onTap: () {
-        if (title == "Logout") {
-          onClose();
-          showLogoutDialog(context);
-        } else {
-          onPageSelected(title);
-        }
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color:
-              selected ? Colors.orange.withOpacity(0.25) : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 20,
-              color:
-                  selected
-                      ? Colors.orange
-                      : (isSpecial ? Colors.white : Colors.white70),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  color:
-                      selected
-                          ? Colors.orange
-                          : (isSpecial ? Colors.white : Colors.white70),
-                  fontSize: 14,
-                  fontWeight:
-                      isSpecial
-                          ? FontWeight.bold
-                          : (selected ? FontWeight.w600 : FontWeight.normal),
-                ),
-              ),
-            ),
-            // Special items ke liye ek indicator (optional)
-            if (isSpecial && !selected)
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: Colors.orange,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void showLogoutDialog(BuildContext outerContext) {
     showDialog(
       context: outerContext,
@@ -913,7 +989,7 @@ class AnimatedDrawerWidget extends StatelessWidget {
 
   Future<void> _logout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // 🔥 CLEAR LOGIN STATE
+    await prefs.clear();
 
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
