@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
-import 'package:image_picker/image_picker.dart'; // ADDED
-import 'dart:io'; // ADDED
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 /// ================= BATCH FORM MODEL =================
 class BatchForm {
   final TextEditingController batchNo;
   final TextEditingController qty;
   final TextEditingController location;
+  final FocusNode batchNoFocus;
+  final FocusNode qtyFocus;
+  final FocusNode locationFocus;
 
   BatchForm({String batchNo = "", String qty = "", String location = ""})
     : batchNo = TextEditingController(text: batchNo),
       qty = TextEditingController(text: qty),
-      location = TextEditingController(text: location);
+      location = TextEditingController(text: location),
+      batchNoFocus = FocusNode(),
+      qtyFocus = FocusNode(),
+      locationFocus = FocusNode();
 }
 
 /// ================= ADD PRODUCT SHEET =================
@@ -26,20 +32,23 @@ class AddProductSheet extends StatefulWidget {
 class _AddProductSheetState extends State<AddProductSheet> {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: "https://dashboard.theceramicstudio.in/api", // UPDATED
-      headers: {
-        "Accept": "application/json",
-        // "Content-Type": "application/json", // REMOVED – will be set automatically for multipart
-      },
+      baseUrl: "https://dashboard.theceramicstudio.in/api",
+      headers: {"Accept": "application/json"},
     ),
   );
 
-  /// TEXT CONTROLLERS
-  final productNameCtrl = TextEditingController();
-  final sizeCtrl = TextEditingController();
-  final rateCtrl = TextEditingController();
-  final coverageCtrl = TextEditingController();
-  final descriptionCtrl = TextEditingController();
+  /// TEXT CONTROLLERS & FOCUS NODES
+  final TextEditingController productNameCtrl = TextEditingController();
+  final TextEditingController sizeCtrl = TextEditingController();
+  final TextEditingController rateCtrl = TextEditingController();
+  final TextEditingController coverageCtrl = TextEditingController();
+  final TextEditingController descriptionCtrl = TextEditingController();
+
+  final FocusNode _nameFocus = FocusNode();
+  final FocusNode _sizeFocus = FocusNode();
+  final FocusNode _rateFocus = FocusNode();
+  final FocusNode _coverageFocus = FocusNode();
+  final FocusNode _descriptionFocus = FocusNode();
 
   /// DROPDOWN DATA
   List<Map<String, dynamic>> brands = [];
@@ -57,15 +66,17 @@ class _AddProductSheetState extends State<AddProductSheet> {
   List<String> selectedGodowns = [];
 
   /// BATCHES
-  List<BatchForm> batchForms = [BatchForm()];
+  List<BatchForm> batchForms = [];
 
   /// IMAGE PICKER
-  File? _imageFile; // ADDED
-  final ImagePicker _picker = ImagePicker(); // ADDED
+  File? _imageFile;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
+    // Add initial batch
+    batchForms.add(BatchForm());
     fetchDropdowns();
   }
 
@@ -76,10 +87,18 @@ class _AddProductSheetState extends State<AddProductSheet> {
     rateCtrl.dispose();
     coverageCtrl.dispose();
     descriptionCtrl.dispose();
+    _nameFocus.dispose();
+    _sizeFocus.dispose();
+    _rateFocus.dispose();
+    _coverageFocus.dispose();
+    _descriptionFocus.dispose();
     for (var batch in batchForms) {
       batch.batchNo.dispose();
       batch.qty.dispose();
       batch.location.dispose();
+      batch.batchNoFocus.dispose();
+      batch.qtyFocus.dispose();
+      batch.locationFocus.dispose();
     }
     super.dispose();
   }
@@ -124,30 +143,21 @@ class _AddProductSheetState extends State<AddProductSheet> {
         ),
       );
     }
-
     setState(() => dropdownLoading = false);
   }
 
   /// ================= IMAGE PICKER METHODS =================
   Future<void> _pickImage() async {
-    // ADDED
     final XFile? pickedFile = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 70, // optional compression
+      imageQuality: 70,
     );
     if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-      });
+      setState(() => _imageFile = File(pickedFile.path));
     }
   }
 
-  void _removeImage() {
-    // ADDED
-    setState(() {
-      _imageFile = null;
-    });
-  }
+  void _removeImage() => setState(() => _imageFile = null);
 
   /// ================= VALIDATE FORM =================
   bool _validateForm() {
@@ -203,7 +213,6 @@ class _AddProductSheetState extends State<AddProductSheet> {
         return false;
       }
     }
-
     return true;
   }
 
@@ -213,13 +222,11 @@ class _AddProductSheetState extends State<AddProductSheet> {
 
     setState(() => loading = true);
 
-    // Prepare batches
     final List<Map<String, dynamic>> batches = [];
     for (var batch in batchForms) {
       final batchNo = batch.batchNo.text.trim();
       final qty = batch.qty.text.trim();
       final location = batch.location.text.trim();
-
       if (batchNo.isNotEmpty) {
         batches.add({
           "batchNo": batchNo,
@@ -229,7 +236,6 @@ class _AddProductSheetState extends State<AddProductSheet> {
       }
     }
 
-    // Build FormData
     final formData = FormData.fromMap({
       "name": productNameCtrl.text.trim(),
       "size": sizeCtrl.text.trim(),
@@ -238,20 +244,15 @@ class _AddProductSheetState extends State<AddProductSheet> {
       "quality": selectedQuality,
       "rate": rateCtrl.text.trim(),
       "cov": coverageCtrl.text.trim(),
-      "godown": selectedGodowns, // will be sent as repeated fields
+      "godown": selectedGodowns,
       "description": descriptionCtrl.text.trim(),
-      "batches": batches, // will be sent as JSON string? Dio handles lists/maps
-      // "availQty": 0, // optional, API might default
-      // "status": "", // optional
-      // "link": "", // optional
-      // "image_url": "", // not needed when sending file; field name might be "image"
+      "batches": batches,
     });
 
-    // Attach image if selected – using field name "image" (adjust if API expects "image_url")
     if (_imageFile != null) {
       formData.files.add(
         MapEntry(
-          "image", // CHANGE to "image_url" if API expects that field name for file
+          "image",
           await MultipartFile.fromFile(
             _imageFile!.path,
             filename: _imageFile!.path.split('/').last,
@@ -266,12 +267,7 @@ class _AddProductSheetState extends State<AddProductSheet> {
       final res = await dio.post(
         "/product/add",
         data: formData,
-        options: Options(
-          headers: {
-            "Accept": "application/json",
-            // Content-Type will be set automatically with boundary
-          },
-        ),
+        options: Options(headers: {"Accept": "application/json"}),
       );
 
       debugPrint("Response: ${res.data}");
@@ -347,7 +343,7 @@ class _AddProductSheetState extends State<AddProductSheet> {
 
                     const SizedBox(height: 10),
 
-                    /// PRODUCT IMAGE SECTION (ADDED)
+                    /// PRODUCT IMAGE SECTION
                     _label("Product Image"),
                     Row(
                       children: [
@@ -413,11 +409,25 @@ class _AddProductSheetState extends State<AddProductSheet> {
                     ),
                     const SizedBox(height: 8),
 
+                    /// PRODUCT NAME
                     _label("Product Name *"),
-                    _textField(productNameCtrl, hint: "Enter product name"),
+                    _textField(
+                      productNameCtrl,
+                      hint: "Enter product name",
+                      focusNode: _nameFocus,
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => _sizeFocus.requestFocus(),
+                    ),
 
+                    /// SIZE
                     _label("Size *"),
-                    _textField(sizeCtrl, hint: "e.g., 600x1200"),
+                    _textField(
+                      sizeCtrl,
+                      hint: "e.g., 600x1200",
+                      focusNode: _sizeFocus,
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => _rateFocus.requestFocus(),
+                    ),
 
                     /// BRAND
                     _label("Brand Name *"),
@@ -467,20 +477,23 @@ class _AddProductSheetState extends State<AddProductSheet> {
                               )
                               .toList(),
                       onChanged: (v) {
-                        setState(() {
-                          selectedCategory = v;
-                        });
+                        setState(() => selectedCategory = v);
                       },
                       decoration: _decoration(),
                     ),
 
+                    /// RATE
                     _label("Rate *"),
                     _textField(
                       rateCtrl,
                       hint: "Enter rate",
                       type: TextInputType.number,
+                      focusNode: _rateFocus,
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => _coverageFocus.requestFocus(),
                     ),
 
+                    /// GODOWN
                     _label("Godown"),
                     Wrap(
                       spacing: 8,
@@ -498,7 +511,6 @@ class _AddProductSheetState extends State<AddProductSheet> {
                             });
                           },
                         ),
-
                         FilterChip(
                           label: const Text("TCS"),
                           selected: selectedGodowns.contains("TCS"),
@@ -515,18 +527,31 @@ class _AddProductSheetState extends State<AddProductSheet> {
                       ],
                     ),
 
+                    /// COVERAGE
                     _label("Coverage"),
                     _textField(
                       coverageCtrl,
                       hint: "Enter coverage area",
                       type: TextInputType.number,
+                      focusNode: _coverageFocus,
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => _descriptionFocus.requestFocus(),
                     ),
 
+                    /// DESCRIPTION
                     _label("Description"),
                     _textField(
                       descriptionCtrl,
                       hint: "Enter product description",
                       maxLines: 3,
+                      focusNode: _descriptionFocus,
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) {
+                        // After description, focus first batch's batchNo
+                        if (batchForms.isNotEmpty) {
+                          batchForms.first.batchNoFocus.requestFocus();
+                        }
+                      },
                     ),
 
                     const SizedBox(height: 14),
@@ -534,22 +559,25 @@ class _AddProductSheetState extends State<AddProductSheet> {
                       "Stock Batches",
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
-
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton.icon(
                         icon: const Icon(Icons.add),
                         label: const Text("Add Batch"),
                         onPressed: () {
-                          setState(() => batchForms.add(BatchForm()));
+                          setState(() {
+                            batchForms.add(BatchForm());
+                          });
                         },
                       ),
                     ),
 
                     /// BATCH LIST
-                    ...batchForms.asMap().entries.map((e) {
-                      final i = e.key;
-                      final b = e.value;
+                    ...batchForms.asMap().entries.map((entry) {
+                      final i = entry.key;
+                      final b = entry.value;
+                      final isLast = i == batchForms.length - 1;
+
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.all(12),
@@ -572,6 +600,10 @@ class _AddProductSheetState extends State<AddProductSheet> {
                                   child: _textField(
                                     b.batchNo,
                                     hint: "Batch No",
+                                    focusNode: b.batchNoFocus,
+                                    textInputAction: TextInputAction.next,
+                                    onSubmitted:
+                                        (_) => b.qtyFocus.requestFocus(),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -580,6 +612,10 @@ class _AddProductSheetState extends State<AddProductSheet> {
                                     b.qty,
                                     hint: "Qty",
                                     type: TextInputType.number,
+                                    focusNode: b.qtyFocus,
+                                    textInputAction: TextInputAction.next,
+                                    onSubmitted:
+                                        (_) => b.locationFocus.requestFocus(),
                                   ),
                                 ),
                               ],
@@ -591,6 +627,19 @@ class _AddProductSheetState extends State<AddProductSheet> {
                                   child: _textField(
                                     b.location,
                                     hint: "Location",
+                                    focusNode: b.locationFocus,
+                                    textInputAction:
+                                        isLast
+                                            ? TextInputAction.done
+                                            : TextInputAction.next,
+                                    onSubmitted: (_) {
+                                      if (!isLast) {
+                                        batchForms[i + 1].batchNoFocus
+                                            .requestFocus();
+                                      } else {
+                                        b.locationFocus.unfocus();
+                                      }
+                                    },
                                   ),
                                 ),
                                 if (batchForms.length > 1)
@@ -601,9 +650,9 @@ class _AddProductSheetState extends State<AddProductSheet> {
                                     ),
                                     onPressed: () {
                                       setState(() {
-                                        b.batchNo.dispose();
-                                        b.qty.dispose();
-                                        b.location.dispose();
+                                        b.batchNoFocus.dispose();
+                                        b.qtyFocus.dispose();
+                                        b.locationFocus.dispose();
                                         batchForms.removeAt(i);
                                       });
                                     },
@@ -681,10 +730,16 @@ Widget _textField(
   TextInputType type = TextInputType.text,
   String? hint,
   int maxLines = 1,
+  FocusNode? focusNode,
+  TextInputAction? textInputAction,
+  void Function(String)? onSubmitted,
 }) => TextField(
   controller: controller,
+  focusNode: focusNode,
   keyboardType: type,
   maxLines: maxLines,
+  textInputAction: textInputAction,
+  onSubmitted: onSubmitted,
   decoration: InputDecoration(
     hintText: hint,
     isDense: true,

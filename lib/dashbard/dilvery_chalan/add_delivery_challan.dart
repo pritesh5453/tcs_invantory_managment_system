@@ -215,12 +215,9 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   final TextEditingController _driverContactController =
       TextEditingController();
   final TextEditingController _vehicleNoController = TextEditingController();
-  final TextEditingController _transportationController = TextEditingController(
-    text: '',
-  );
-  final TextEditingController _unloadingController = TextEditingController(
-    text: '',
-  );
+  final TextEditingController _transportationController =
+      TextEditingController();
+  final TextEditingController _unloadingController = TextEditingController();
   // Note fields (optional)
   final TextEditingController _note1Controller = TextEditingController();
   final TextEditingController _note2Controller = TextEditingController();
@@ -354,8 +351,13 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       _driverNameController.clear();
       _driverContactController.clear();
       _vehicleNoController.clear();
-      _transportationController.text = quotation.transportation.toString();
-      _unloadingController.text = quotation.unloading.toString();
+      _transportationController.text =
+          quotation.transportation == 0
+              ? ''
+              : quotation.transportation.toString();
+
+      _unloadingController.text =
+          quotation.unloading == 0 ? '' : quotation.unloading.toString();
       _additionalDiscountController.text =
           quotation.additionalDiscount.toString();
       _additionalDiscount = quotation.additionalDiscount; // set from quotation
@@ -1971,7 +1973,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             hintText: "Enter transportation amount",
             controller: _transportationController,
             icon: Icons.local_shipping_outlined,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: TextInputType.number,
           ),
 
           const SizedBox(height: 12),
@@ -1982,7 +1984,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             hintText: "Enter unloading amount",
             controller: _unloadingController,
             icon: Icons.unarchive_outlined,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: TextInputType.number,
           ),
         ],
       ),
