@@ -8,6 +8,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/add_delivery_challan.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/return_order.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/update_timeline.dart';
 import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
@@ -123,8 +124,9 @@ class DeliveryChallan {
   final String deliveryBoy;
   final String tempo;
   final int totalItems;
+  final double totalWeight; // Changed to double
   final bool isBlackChallan;
-  final String priority; // 👈 new field
+  final String priority;
 
   DeliveryChallan({
     required this.id,
@@ -134,24 +136,27 @@ class DeliveryChallan {
     required this.deliveryBoy,
     required this.tempo,
     required this.totalItems,
+    required this.totalWeight,
     required this.isBlackChallan,
     required this.priority,
   });
 
   factory DeliveryChallan.fromJson(Map<String, dynamic> json) {
     return DeliveryChallan(
-      id: json['id'],
-      quotationId: json['quotationId'],
+      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      quotationId: int.tryParse(json['quotationId']?.toString() ?? '0') ?? 0,
       seriesNumber: int.tryParse(json['seriesNumber']?.toString() ?? '0') ?? 0,
-      client: json['client'],
-      deliveryBoy: json['deliveryBoy'] ?? "",
-      tempo: json['tempo'] ?? "",
-      totalItems: json['totalItems'],
+      client: json['client'] ?? '',
+      deliveryBoy: json['deliveryBoy'] ?? '',
+      tempo: json['tempo'] ?? '',
+      totalItems: int.tryParse(json['totalItems']?.toString() ?? '0') ?? 0,
+      totalWeight:
+          double.tryParse(json['totalWeight']?.toString() ?? '0.0') ?? 0.0,
       isBlackChallan:
           json['isBlackChallan'] == 1 ||
           json['isBlackChallan'] == "1" ||
           json['isBlackChallan'] == true,
-      priority: json['priority'] ?? "",
+      priority: json['priority'] ?? '',
     );
   }
 }
@@ -1089,6 +1094,26 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                           return;
                         }
                         _printPdf(challanId: chalan.id, isReturn: true);
+                      } else if (value == "return order") {
+                        // 👇 New: Open Return Items Page
+                        if (!canReturnPrint) {
+                          // ya koi naya permission, same use kar sakte hain
+                          _showError(
+                            "You don't have permission to create return order",
+                          );
+                          return;
+                        }
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder:
+                                (_) => ReturnItemsPage(challanId: chalan.id),
+                          ),
+                        ).then((_) {
+                          // Jab return page close ho, toh current list refresh kar sakte hain (optional)
+                          final type = _getTypeForIndex(_currentTabIndex);
+                          _fetchChallans(type: type);
+                        });
                       } else if (value == "set_low") {
                         _updatePriority(chalan.id, "LOW");
                       } else if (value == "set_medium") {
@@ -1161,6 +1186,16 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                             ],
                           ),
                         ),
+                        const PopupMenuItem(
+                          value: "return order",
+                          child: Row(
+                            children: [
+                              Icon(Icons.print),
+                              SizedBox(width: 8),
+                              Text("Return Order"),
+                            ],
+                          ),
+                        ),
                       ];
                     },
                   ),
@@ -1181,6 +1216,8 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
           Text("Tempo No. : ${chalan.tempo.isEmpty ? "-" : chalan.tempo}"),
           const SizedBox(height: 4),
           Text("Total Items : ${chalan.totalItems}"),
+          const SizedBox(height: 4),
+          Text("Total Weight : ${chalan.totalWeight} kg"),
           const SizedBox(height: 18),
 
           Row(

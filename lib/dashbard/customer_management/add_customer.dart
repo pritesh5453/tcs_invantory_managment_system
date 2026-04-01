@@ -52,6 +52,18 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
   final billingNameController = TextEditingController();
   final notesCtrl = TextEditingController();
 
+  // ===== FOCUS NODES =====
+  final FocusNode _firstNameFocus = FocusNode();
+  final FocusNode _lastNameFocus = FocusNode();
+  final FocusNode _phoneFocus = FocusNode();
+  final FocusNode _altPhoneFocus = FocusNode();
+  final FocusNode _emailFocus = FocusNode();
+  final FocusNode _gstFocus = FocusNode();
+  final FocusNode _projectFocus = FocusNode();
+  final FocusNode _siteFocus = FocusNode();
+  final FocusNode _billingNameFocus = FocusNode();
+  final FocusNode _notesFocus = FocusNode();
+
   String? siteType;
   String? priority;
 
@@ -81,11 +93,38 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     _fetchArchitects();
   }
 
+  @override
+  void dispose() {
+    firstNameCtrl.dispose();
+    lastNameCtrl.dispose();
+    phoneCtrl.dispose();
+    altPhoneCtrl.dispose();
+    emailCtrl.dispose();
+    gstCtrl.dispose();
+    projectCtrl.dispose();
+    siteCtrl.dispose();
+    billingNameController.dispose();
+    notesCtrl.dispose();
+
+    _firstNameFocus.dispose();
+    _lastNameFocus.dispose();
+    _phoneFocus.dispose();
+    _altPhoneFocus.dispose();
+    _emailFocus.dispose();
+    _gstFocus.dispose();
+    _projectFocus.dispose();
+    _siteFocus.dispose();
+    _billingNameFocus.dispose();
+    _notesFocus.dispose();
+
+    super.dispose();
+  }
+
   // ================= FETCH EMPLOYEES =================
   Future<void> _fetchEmployees() async {
     final res = await dio.get("/api/employees/Getlist");
     employees =
-        res.data['employees']
+        (res.data['employees'] as List)
             .map<Map<String, dynamic>>(
               (e) => {"id": e['id'], "name": e['name']},
             )
@@ -97,7 +136,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
   Future<void> _fetchArchitects() async {
     final res = await dio.get("/api/architects/list");
     architects =
-        res.data['architects']
+        (res.data['architects'] as List)
             .map<Map<String, dynamic>>(
               (e) => {
                 "id": e['id'],
@@ -339,6 +378,9 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                   Expanded(
                     child: TextField(
                       controller: firstNameCtrl,
+                      focusNode: _firstNameFocus,
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => _lastNameFocus.requestFocus(),
                       decoration: _dec("First name", isRequired: true),
                     ),
                   ),
@@ -346,6 +388,9 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                   Expanded(
                     child: TextField(
                       controller: lastNameCtrl,
+                      focusNode: _lastNameFocus,
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => _phoneFocus.requestFocus(),
                       decoration: _dec("Last name", isRequired: true),
                     ),
                   ),
@@ -355,6 +400,9 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
               label("Mobile Number *"),
               TextField(
                 controller: phoneCtrl,
+                focusNode: _phoneFocus,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => _altPhoneFocus.requestFocus(),
                 keyboardType: TextInputType.phone,
                 decoration: _dec("Mobile", isRequired: true),
               ),
@@ -362,15 +410,30 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
               label("Alternate Mobile Number"),
               TextField(
                 controller: altPhoneCtrl,
+                focusNode: _altPhoneFocus,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => _emailFocus.requestFocus(),
                 keyboardType: TextInputType.phone,
                 decoration: _dec("Alternate mobile"),
               ),
 
               label("Email Address"),
-              TextField(controller: emailCtrl, decoration: _dec("Email")),
+              TextField(
+                controller: emailCtrl,
+                focusNode: _emailFocus,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => _gstFocus.requestFocus(),
+                decoration: _dec("Email"),
+              ),
 
               label("GST Number"),
-              TextField(controller: gstCtrl, decoration: _dec("GST Number")),
+              TextField(
+                controller: gstCtrl,
+                focusNode: _gstFocus,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => _projectFocus.requestFocus(),
+                decoration: _dec("GST Number"),
+              ),
 
               const SizedBox(height: 16),
 
@@ -380,10 +443,22 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
               ),
 
               label("Project Name"),
-              TextField(controller: projectCtrl, decoration: _dec("Project")),
+              TextField(
+                controller: projectCtrl,
+                focusNode: _projectFocus,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => _siteFocus.requestFocus(),
+                decoration: _dec("Project"),
+              ),
 
               label("Site Name / Location"),
-              TextField(controller: siteCtrl, decoration: _dec("Site")),
+              TextField(
+                controller: siteCtrl,
+                focusNode: _siteFocus,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => _billingNameFocus.requestFocus(),
+                decoration: _dec("Site"),
+              ),
 
               label("Site Type"),
               DropdownButtonFormField<String>(
@@ -417,6 +492,9 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
               label("Billing Name"),
               TextField(
                 controller: billingNameController,
+                focusNode: _billingNameFocus,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => _notesFocus.requestFocus(),
                 decoration: _dec("Billing Name"),
               ),
 
@@ -534,6 +612,9 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
               label("Additional Notes"),
               TextField(
                 controller: notesCtrl,
+                focusNode: _notesFocus,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _notesFocus.unfocus(),
                 maxLines: 3,
                 decoration: InputDecoration(
                   hintText: "Any specific requirement or follow-up",

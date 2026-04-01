@@ -1605,6 +1605,12 @@ class _AddProductPopupState extends State<AddProductPopup> {
   List<dynamic> _filteredProducts = [];
   bool _showDropdown = false;
 
+  // Pagination
+  int _currentPage = 1;
+  int _totalPages = 1;
+  bool _isLoadingMore = false;
+  final ScrollController _scrollController = ScrollController();
+
   // Selected product details
   Map<String, dynamic>? _selectedProduct;
   String _selectedSize = '';
@@ -1634,19 +1640,26 @@ class _AddProductPopupState extends State<AddProductPopup> {
   final FocusNode _areaFocusNode = FocusNode();
 
   @override
-  @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
 
-    // Add listeners to update computed fields
     _rateController.addListener(_updateCalculations);
     _discountController.addListener(_updateCalculations);
     _coverageController.addListener(_updateCalculations);
     _weightController.addListener(_updateCalculations);
     _boxController.addListener(_updateCalculations);
 
-    // Pre-fill if editing
+    // Scroll listener for infinite scroll
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >=
+              _scrollController.position.maxScrollExtent - 100 &&
+          !_isLoadingMore &&
+          _currentPage < _totalPages) {
+        _loadMoreProducts();
+      }
+    });
+
     if (widget.initialProduct != null) {
       _fillWithProduct(widget.initialProduct!);
     }
@@ -1693,7 +1706,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
     if (_isSelectingProduct || !_showDropdown) return;
     if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 400), () {
-      _fetchProducts(_searchController.text);
+      _fetchProducts(_searchController.text, page: 1);
     });
   }
 
@@ -1713,29 +1726,68 @@ class _AddProductPopupState extends State<AddProductPopup> {
     _totalController.text = total.toStringAsFixed(2);
   }
 
-  Future<void> _fetchProducts(String query) async {
+  Future<void> _fetchProducts(String query, {int page = 1}) async {
     if (query.trim().isEmpty) {
       setState(() {
         _filteredProducts = [];
         _showDropdown = false;
+        _currentPage = 1;
+        _totalPages = 1;
+        _isLoadingMore = false;
       });
       return;
     }
+
+    if (page == 1) {
+      // Reset for new search
+      setState(() {
+        _currentPage = 1;
+        _totalPages = 1;
+        _products = [];
+        _filteredProducts = [];
+        _isLoadingMore = false;
+      });
+    } else {
+      setState(() => _isLoadingMore = true);
+    }
+
     try {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/product/list',
-        queryParameters: {'search': query},
+        queryParameters: {'search': query, 'page': page},
       );
+
       if (response.statusCode == 200 && response.data['success'] == true) {
+        final newProducts = response.data['products'] as List<dynamic>? ?? [];
+
+        // Extract pagination info – adjust keys to match your API response
+        final pagination = response.data['pagination'] ?? {};
+        _totalPages = pagination['totalPages'] ?? 1;
+
         setState(() {
-          _products = response.data['products'];
-          _filteredProducts = _products;
+          if (page == 1) {
+            _products = newProducts;
+          } else {
+            _products.addAll(newProducts);
+          }
+          _filteredProducts =
+              _products; // Keep filtered list same as full list for simplicity
           _showDropdown = true;
+          _currentPage = page;
         });
       }
     } catch (e) {
       debugPrint('Product search error: $e');
+    } finally {
+      if (page != 1) {
+        setState(() => _isLoadingMore = false);
+      }
     }
+  }
+
+  void _loadMoreProducts() {
+    if (_isLoadingMore || _currentPage >= _totalPages) return;
+    _fetchProducts(_searchController.text, page: _currentPage + 1);
   }
 
   Future<Map<String, dynamic>?> _fetchProductById(int id) async {
@@ -2042,8 +2094,19 @@ class _AddProductPopupState extends State<AddProductPopup> {
                                   ),
                                 ),
                                 child: ListView.builder(
-                                  itemCount: _filteredProducts.length,
+                                  controller: _scrollController,
+                                  itemCount:
+                                      _filteredProducts.length +
+                                      (_isLoadingMore ? 1 : 0),
                                   itemBuilder: (ctx, i) {
+                                    if (i == _filteredProducts.length) {
+                                      return const Center(
+                                        child: Padding(
+                                          padding: EdgeInsets.all(8.0),
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                      );
+                                    }
                                     final p = _filteredProducts[i];
                                     return ListTile(
                                       dense: true,
@@ -2374,8 +2437,8 @@ class _AddProductPopupState extends State<AddProductPopup> {
     _twgtController.dispose();
     _totalController.dispose();
     _searchDebounce?.cancel();
+    _scrollController.dispose();
 
-    // Dispose focus nodes
     _searchFocusNode.dispose();
     _rateFocusNode.dispose();
     _coverageFocusNode.dispose();

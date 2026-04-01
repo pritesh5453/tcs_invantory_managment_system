@@ -42,6 +42,16 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
   final salaryCtrl = TextEditingController();
   final commissionCtrl = TextEditingController();
 
+  // ===== FOCUS NODES =====
+  final FocusNode _firstNameFocus = FocusNode();
+  final FocusNode _lastNameFocus = FocusNode();
+  final FocusNode _phoneFocus = FocusNode();
+  final FocusNode _dobFocus = FocusNode();
+  final FocusNode _passwordFocus = FocusNode();
+  final FocusNode _expenseFocus = FocusNode();
+  final FocusNode _salaryFocus = FocusNode();
+  final FocusNode _commissionFocus = FocusNode();
+
   // ===== IMAGES =====
   File? profileImage;
   File? aadharImage;
@@ -66,9 +76,11 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
 
   @override
   void dispose() {
-    // Dispose controllers and remove listeners
+    // Remove listeners
     firstNameCtrl.removeListener(_generateEmail);
     lastNameCtrl.removeListener(_generateEmail);
+
+    // Dispose controllers
     firstNameCtrl.dispose();
     lastNameCtrl.dispose();
     phoneCtrl.dispose();
@@ -78,6 +90,17 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
     expenseCtrl.dispose();
     salaryCtrl.dispose();
     commissionCtrl.dispose();
+
+    // Dispose focus nodes
+    _firstNameFocus.dispose();
+    _lastNameFocus.dispose();
+    _phoneFocus.dispose();
+    _dobFocus.dispose();
+    _passwordFocus.dispose();
+    _expenseFocus.dispose();
+    _salaryFocus.dispose();
+    _commissionFocus.dispose();
+
     super.dispose();
   }
 
@@ -89,15 +112,11 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
     String generatedEmail = "";
 
     if (firstName.isNotEmpty && lastName.isNotEmpty) {
-      // FirstName.LastName@tcs format
       generatedEmail = "$firstName.$lastName@tcs";
     } else if (firstName.isNotEmpty) {
-      // Only FirstName@tcs format
       generatedEmail = "$firstName@tcs";
     }
 
-    // Only update if email field is not manually edited or is empty
-    // OR we can force update it every time name changes
     setState(() {
       emailCtrl.text = generatedEmail;
     });
@@ -145,26 +164,21 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
         "password": passwordCtrl.text.trim(),
         "phone": phoneCtrl.text.trim(),
         "birthdate": dobCtrl.text,
-
         "commission":
             commissionCtrl.text.isEmpty ? "0.00" : commissionCtrl.text,
         "salary": salaryCtrl.text.isEmpty ? "0.00" : salaryCtrl.text,
         "expense": expenseCtrl.text.isEmpty ? "0.00" : expenseCtrl.text,
         "advance": "0.00",
-
-        // ===== FILES =====
         if (profileImage != null)
           "profile": await MultipartFile.fromFile(
             profileImage!.path,
             filename: profileImage!.path.split('/').last,
           ),
-
         if (aadharImage != null)
           "aadhar": await MultipartFile.fromFile(
             aadharImage!.path,
             filename: aadharImage!.path.split('/').last,
           ),
-
         if (panImage != null)
           "pancard": await MultipartFile.fromFile(
             panImage!.path,
@@ -172,7 +186,6 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
           ),
       });
 
-      /// -------- DEBUG --------
       debugPrint("====== FORM DATA FIELDS ======");
       for (var f in formData.fields) {
         debugPrint("${f.key} : ${f.value}");
@@ -221,7 +234,6 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-
       appBar: AppBar(
         backgroundColor: const Color(0xFFFFA54A),
         leading: IconButton(
@@ -230,7 +242,6 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
         ),
         title: const Text("Add New Employee"),
       ),
-
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
         child: Column(
@@ -264,12 +275,16 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
               ),
             ),
 
+            /// FIRST NAME / LAST NAME
             label("Employee Name"),
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: firstNameCtrl,
+                    focusNode: _firstNameFocus,
+                    textInputAction: TextInputAction.next,
+                    onSubmitted: (_) => _lastNameFocus.requestFocus(),
                     decoration: _dec("First name"),
                   ),
                 ),
@@ -277,24 +292,32 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
                 Expanded(
                   child: TextField(
                     controller: lastNameCtrl,
+                    focusNode: _lastNameFocus,
+                    textInputAction: TextInputAction.next,
+                    onSubmitted: (_) => _phoneFocus.requestFocus(),
                     decoration: _dec("Last name"),
                   ),
                 ),
               ],
             ),
 
+            /// MOBILE
             label("Mobile Number"),
             TextField(
               controller: phoneCtrl,
+              focusNode: _phoneFocus,
+              textInputAction: TextInputAction.next,
+              onSubmitted: (_) => _dobFocus.requestFocus(),
               keyboardType: TextInputType.phone,
               decoration: _dec("enter mobile number"),
             ),
 
+            /// EMAIL (auto‑generated, read‑only)
             label("Email Address"),
             TextField(
               controller: emailCtrl,
-              readOnly: true, // Email field is not editable
-              enableInteractiveSelection: false, // Disable copy-paste
+              readOnly: true,
+              enableInteractiveSelection: false,
               keyboardType: TextInputType.emailAddress,
               decoration: _dec("email will auto-generate"),
             ),
@@ -308,10 +331,14 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
               ),
             ),
 
+            /// DATE OF BIRTH (read‑only, with picker)
             label("Date Of Birth"),
             TextField(
               controller: dobCtrl,
+              focusNode: _dobFocus,
               readOnly: true,
+              textInputAction: TextInputAction.next,
+              onSubmitted: (_) => _passwordFocus.requestFocus(),
               decoration: _dec(
                 "DD/MM/YYYY",
                 suffix: const Icon(Icons.calendar_today, size: 18),
@@ -326,6 +353,8 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
                 if (d != null) {
                   dobCtrl.text =
                       "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+                  // After selection, move focus to the next field
+                  _passwordFocus.requestFocus();
                 }
               },
             ),
@@ -336,29 +365,46 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
 
+            /// PASSWORD
             label("Access Password"),
             TextField(
               controller: passwordCtrl,
+              focusNode: _passwordFocus,
+              textInputAction: TextInputAction.next,
+              onSubmitted: (_) => _expenseFocus.requestFocus(),
+              obscureText: true,
               decoration: _dec("Enter password"),
             ),
 
+            /// EXPENSE
             label("Allowed Expense"),
             TextField(
               controller: expenseCtrl,
+              focusNode: _expenseFocus,
+              textInputAction: TextInputAction.next,
+              onSubmitted: (_) => _salaryFocus.requestFocus(),
               keyboardType: TextInputType.number,
               decoration: _dec("enter expense"),
             ),
 
+            /// SALARY
             label("Salary"),
             TextField(
               controller: salaryCtrl,
+              focusNode: _salaryFocus,
+              textInputAction: TextInputAction.next,
+              onSubmitted: (_) => _commissionFocus.requestFocus(),
               keyboardType: TextInputType.number,
               decoration: _dec("enter salary"),
             ),
 
+            /// BONUS
             label("Bonus (%)"),
             TextField(
               controller: commissionCtrl,
+              focusNode: _commissionFocus,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _commissionFocus.unfocus(),
               keyboardType: TextInputType.number,
               decoration: _dec("enter Bonus"),
             ),
@@ -369,6 +415,7 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
 
+            /// AADHAR
             label("Upload Aadhar Card"),
             InkWell(
               onTap: () => pickImage(DocType.aadhar),
@@ -382,6 +429,7 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
               ),
             ),
 
+            /// PAN
             label("Upload Pan Card"),
             InkWell(
               onTap: () => pickImage(DocType.pan),
@@ -395,7 +443,6 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
           ],
         ),
       ),
-
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: Colors.orange,
         onPressed: isLoading ? null : addEmployee,

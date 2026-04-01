@@ -1359,18 +1359,45 @@ class InvoiceCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Text(
-                  quotation['clientName']?.toString() ?? "N/A",
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      quotation['clientName']?.toString() ?? "N/A",
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    Text(
+                      "👤 ${quotation['attendedByName'] ?? 'N/A'}",
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Text(
-                _formatDate(quotation['createdAt']?.toString() ?? ""),
-                style: const TextStyle(color: Colors.grey),
+              Column(
+                children: [
+                  Text(
+                    _formatDate(quotation['createdAt']?.toString() ?? ""),
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                  Text(
+                    " ${quotation['totalWeight'] ?? 0} kg",
+                    style: const TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
