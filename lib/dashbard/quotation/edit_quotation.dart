@@ -1316,9 +1316,12 @@ class _AddProductPopupState extends State<AddProductPopup> {
 
   // Product search
   final TextEditingController _searchController = TextEditingController();
-  List<dynamic> _products = [];
-  List<dynamic> _filteredProducts = [];
+  List<dynamic> _allProducts = []; // Master list of all fetched products
   bool _showDropdown = false;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  int _currentPage = 1;
+  final ScrollController _scrollController = ScrollController();
 
   // Selected product details
   Map<String, dynamic>? _selectedProduct;
@@ -1339,7 +1342,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
   final TextEditingController _twgtController = TextEditingController();
   final TextEditingController _totalController = TextEditingController();
 
-  // Focus nodes for text fields
+  // Focus nodes
   final FocusNode _searchFocusNode = FocusNode();
   final FocusNode _rateFocusNode = FocusNode();
   final FocusNode _coverageFocusNode = FocusNode();
@@ -1352,6 +1355,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
+    _scrollController.addListener(_onScroll);
 
     _rateController.addListener(_updateCalculations);
     _discountController.addListener(_updateCalculations);
@@ -1362,6 +1366,57 @@ class _AddProductPopupState extends State<AddProductPopup> {
     if (widget.initialProduct != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _fillWithProduct(widget.initialProduct!);
+      });
+    }
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        _hasMore &&
+        !_isLoadingMore &&
+        _showDropdown) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() {
+      _isLoadingMore = true;
+    });
+    try {
+      final nextPage = _currentPage + 1;
+      final response = await _dio.get(
+        'https://dashboard.theceramicstudio.in/api/product/list',
+        queryParameters: {
+          'search': _searchController.text,
+          'page': nextPage,
+          'limit': 10,
+        },
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final newProducts = response.data['products'] as List<dynamic>;
+        if (newProducts.isEmpty) {
+          _hasMore = false;
+        } else {
+          setState(() {
+            _allProducts.addAll(newProducts);
+            _currentPage = nextPage;
+            if (newProducts.length < 10) {
+              _hasMore = false;
+            }
+          });
+        }
+      } else {
+        _hasMore = false;
+      }
+    } catch (e) {
+      debugPrint('Load more error: $e');
+      _hasMore = false;
+    } finally {
+      setState(() {
+        _isLoadingMore = false;
       });
     }
   }
@@ -1379,10 +1434,9 @@ class _AddProductPopupState extends State<AddProductPopup> {
       'weight': product.weight,
     };
 
-    bool exists = _products.any((p) => p['id'] == product.productId);
+    bool exists = _allProducts.any((p) => p['id'] == product.productId);
     if (!exists) {
-      _products.add(productMap);
-      _filteredProducts.add(productMap);
+      _allProducts.add(productMap);
     }
 
     setState(() {
@@ -1396,18 +1450,10 @@ class _AddProductPopupState extends State<AddProductPopup> {
       _boxController.text = product.box.toString();
       _discountController.text = product.discount.toString();
       _areaController.text = product.area;
+      _showDropdown = false;
     });
 
     _updateCalculations();
-
-    Future.microtask(() {
-      if (mounted) {
-        setState(() {
-          _weightController.text = product.weight.toString();
-        });
-      }
-    });
-
     Future.microtask(() => _isSelectingProduct = false);
   }
 
@@ -1438,25 +1484,44 @@ class _AddProductPopupState extends State<AddProductPopup> {
   Future<void> _fetchProducts(String query) async {
     if (query.trim().isEmpty) {
       setState(() {
-        _filteredProducts = [];
+        _allProducts = [];
         _showDropdown = false;
       });
       return;
     }
+    // Reset pagination state
+    _currentPage = 1;
+    _hasMore = true;
+    _isLoadingMore = false;
+    setState(() {
+      _showDropdown = true;
+      _allProducts = []; // clear previous results
+    });
     try {
       final response = await _dio.get(
         'https://dashboard.theceramicstudio.in/api/product/list',
-        queryParameters: {'search': query},
+        queryParameters: {'search': query, 'page': _currentPage, 'limit': 10},
       );
       if (response.statusCode == 200 && response.data['success'] == true) {
+        final products = response.data['products'] as List<dynamic>;
         setState(() {
-          _products = response.data['products'];
-          _filteredProducts = _products;
-          _showDropdown = true;
+          _allProducts = products;
+          if (products.length < 10) {
+            _hasMore = false;
+          }
+        });
+      } else {
+        setState(() {
+          _allProducts = [];
+          _hasMore = false;
         });
       }
     } catch (e) {
       debugPrint('Product search error: $e');
+      setState(() {
+        _allProducts = [];
+        _hasMore = false;
+      });
     }
   }
 
@@ -1476,7 +1541,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
 
   List<String> _getSizes() {
     if (_searchController.text.isEmpty) return [];
-    return _products
+    return _allProducts
         .where((p) => p['name'] == _searchController.text)
         .map((p) => p['size']?.toString() ?? '')
         .where((s) => s.isNotEmpty)
@@ -1486,7 +1551,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
 
   List<String> _getQualities() {
     if (_searchController.text.isEmpty || _selectedSize.isEmpty) return [];
-    return _products
+    return _allProducts
         .where(
           (p) =>
               p['name'] == _searchController.text &&
@@ -1564,10 +1629,11 @@ class _AddProductPopupState extends State<AddProductPopup> {
                     return;
                   }
 
-                  bool exists = _products.any((p) => p['id'] == product['id']);
+                  bool exists = _allProducts.any(
+                    (p) => p['id'] == product['id'],
+                  );
                   if (!exists) {
-                    _products.add(product);
-                    _filteredProducts.add(product);
+                    _allProducts.add(product);
                   }
 
                   _isSelectingProduct = true;
@@ -1759,7 +1825,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
                                     () => setState(() => _showDropdown = true),
                               ),
                             ),
-                            if (_showDropdown && _filteredProducts.isNotEmpty)
+                            if (_showDropdown)
                               Container(
                                 height: 150,
                                 decoration: const BoxDecoration(
@@ -1767,20 +1833,38 @@ class _AddProductPopupState extends State<AddProductPopup> {
                                     top: BorderSide(color: Colors.grey),
                                   ),
                                 ),
-                                child: ListView.builder(
-                                  itemCount: _filteredProducts.length,
-                                  itemBuilder: (ctx, i) {
-                                    final p = _filteredProducts[i];
-                                    return ListTile(
-                                      dense: true,
-                                      title: Text(p['name'] ?? ''),
-                                      subtitle: Text(
-                                        'Size: ${p['size']} | Quality: ${p['quality']}',
-                                      ),
-                                      onTap: () => _selectProduct(p),
-                                    );
-                                  },
-                                ),
+                                child:
+                                    _allProducts.isEmpty && !_isLoadingMore
+                                        ? const Center(
+                                          child: Text('No products found'),
+                                        )
+                                        : ListView.builder(
+                                          controller: _scrollController,
+                                          itemCount:
+                                              _allProducts.length +
+                                              (_isLoadingMore ? 1 : 0),
+                                          itemBuilder: (ctx, i) {
+                                            if (i == _allProducts.length &&
+                                                _isLoadingMore) {
+                                              return const Padding(
+                                                padding: EdgeInsets.all(8.0),
+                                                child: Center(
+                                                  child:
+                                                      CircularProgressIndicator(),
+                                                ),
+                                              );
+                                            }
+                                            final p = _allProducts[i];
+                                            return ListTile(
+                                              dense: true,
+                                              title: Text(p['name'] ?? ''),
+                                              subtitle: Text(
+                                                'Size: ${p['size']} | Quality: ${p['quality']}',
+                                              ),
+                                              onTap: () => _selectProduct(p),
+                                            );
+                                          },
+                                        ),
                               ),
                           ],
                         ),
@@ -1797,7 +1881,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
                               _selectedSize = val;
                               _selectedQuality = '';
                               final matches =
-                                  _products
+                                  _allProducts
                                       .where(
                                         (p) =>
                                             p['name'] ==
@@ -1810,9 +1894,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
                               }
                             });
                           }),
-
                           const SizedBox(height: 12),
-
                           _buildDropdown(
                             'QUALITY',
                             qualities,
@@ -1820,7 +1902,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
                             (val) {
                               setState(() {
                                 _selectedQuality = val;
-                                final match = _products.firstWhere(
+                                final match = _allProducts.firstWhere(
                                   (p) =>
                                       p['name'] == _searchController.text &&
                                       p['size']?.toString() == _selectedSize &&
@@ -1844,7 +1926,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
                         textInputAction: TextInputAction.next,
                         onSubmitted: (_) => _coverageFocusNode.requestFocus(),
                       ),
-
                       const SizedBox(height: 12),
 
                       // 4. COVERAGE
@@ -1856,7 +1937,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
                         textInputAction: TextInputAction.next,
                         onSubmitted: (_) => _boxFocusNode.requestFocus(),
                       ),
-
                       const SizedBox(height: 12),
 
                       // 5. BOX
@@ -1868,7 +1948,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
                         textInputAction: TextInputAction.next,
                         onSubmitted: (_) => _discountFocusNode.requestFocus(),
                       ),
-
                       const SizedBox(height: 12),
 
                       // 6. DISCOUNT %
@@ -1880,7 +1959,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
                         textInputAction: TextInputAction.next,
                         onSubmitted: (_) => _weightFocusNode.requestFocus(),
                       ),
-
                       const SizedBox(height: 12),
 
                       // 7. DISCOUNTED RATE (read-only)
@@ -1888,7 +1966,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
                         'DISC. RATE (₹)',
                         _discountedRateController,
                       ),
-
                       const SizedBox(height: 12),
 
                       // 8. WEIGHT
@@ -1900,17 +1977,14 @@ class _AddProductPopupState extends State<AddProductPopup> {
                         textInputAction: TextInputAction.next,
                         onSubmitted: (_) => _areaFocusNode.requestFocus(),
                       ),
-
                       const SizedBox(height: 12),
 
                       // 9. TWGT (read-only)
                       _buildReadOnlyField('TWGT', _twgtController),
-
                       const SizedBox(height: 12),
 
                       // 10. TOTAL AMOUNT (read-only)
                       _buildReadOnlyField('TOTAL AMOUNT (₹)', _totalController),
-
                       const SizedBox(height: 12),
 
                       // 11. AREA
@@ -1922,7 +1996,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
                         textInputAction: TextInputAction.done,
                         onSubmitted: (_) => _areaFocusNode.unfocus(),
                       ),
-
                       const SizedBox(height: 24),
 
                       // Buttons
@@ -2085,8 +2158,9 @@ class _AddProductPopupState extends State<AddProductPopup> {
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
-    _discountController.removeListener(_updateCalculations);
+    _scrollController.dispose();
     _rateController.removeListener(_updateCalculations);
+    _discountController.removeListener(_updateCalculations);
     _coverageController.removeListener(_updateCalculations);
     _weightController.removeListener(_updateCalculations);
     _boxController.removeListener(_updateCalculations);
@@ -2101,7 +2175,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
     _totalController.dispose();
     _searchDebounce?.cancel();
 
-    // Dispose focus nodes
     _searchFocusNode.dispose();
     _rateFocusNode.dispose();
     _coverageFocusNode.dispose();
