@@ -183,9 +183,8 @@ class _ReturnsListScreenState extends State<ReturnsListScreen> {
               : Column(
                 children: [
                   // Header (optional, just for clarity)
-                  SizedBox(
-                    height: 15,
-                  ), // List of cards (each card contains all fields in a clean layout)
+                  SizedBox(height: 15),
+                  // List of cards (each card contains all fields in a clean layout)
                   Expanded(
                     child:
                         _isLoading && _items.isEmpty
