@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'dart:math';
 
-/// ================= MODEL CLASSES =================
+// ================= MODEL CLASSES (unchanged, same as before) =================
 class Quotation {
   final int id;
   final String clientName;
@@ -113,7 +113,6 @@ class Batch {
   }
 }
 
-/// ================= MODEL FOR MANUALLY ADDED PRODUCT ROWS =================
 class AdditionalProductRow {
   String productName = '';
   String size = '';
@@ -179,9 +178,9 @@ class AdditionalProductRow {
   }
 }
 
-/// ================= MAIN SCREEN =================
+// ================= MAIN SCREEN WITH REMARKS FIELD =================
 class AddDeliveryChallanScreen extends StatefulWidget {
-  final int? quotationId; // 👈 optional parameter
+  final int? quotationId;
 
   const AddDeliveryChallanScreen({super.key, this.quotationId});
 
@@ -196,21 +195,21 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   // Search
   final TextEditingController _searchController = TextEditingController();
 
-  // Selected quotation and its items (displayed list)
+  // Selected quotation and its items
   Quotation? _selectedQuotation;
   List<QuotationItem> _displayedQuotationItems = [];
 
-  // Payment summary data
+  // Payment summary
   double? _quotationAmount;
   double? _quotationPaidAmount;
   double? _customerWalletAmount;
   double? _additionalDiscount;
   bool _isLoadingSummary = false;
 
-  // Black/White challan toggle
+  // Challan type
   bool? _isBlackChallan;
 
-  // Dispatch logistics (now optional)
+  // Dispatch logistics
   final TextEditingController _driverNameController = TextEditingController();
   final TextEditingController _driverContactController =
       TextEditingController();
@@ -218,14 +217,18 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   final TextEditingController _transportationController =
       TextEditingController();
   final TextEditingController _unloadingController = TextEditingController();
+
+  // 👇 NEW: Remarks controller
+  final TextEditingController _remarkController = TextEditingController();
+
   // Note fields (optional)
   final TextEditingController _note1Controller = TextEditingController();
   final TextEditingController _note2Controller = TextEditingController();
 
-  // Dispatch boxes controllers for each quotation item
+  // Dispatch boxes controllers
   final Map<int, TextEditingController> _dispatchBoxesControllers = {};
 
-  // Additional product rows
+  // Additional rows
   List<AdditionalProductRow> _additionalRows = [];
 
   // Additional discount
@@ -235,16 +238,12 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   // Loading states
   bool _isSearching = false;
   bool _isSubmitting = false;
-  bool _isLoadingQuotation = false; // 👈 new loading state for initial fetch
+  bool _isLoadingQuotation = false;
 
-  // Quotations list for search
   List<Quotation> _quotations = [];
-
-  // Debounce timers
   Timer? _searchDebounce;
   Timer? _productSearchDebounce;
 
-  // Product search data (for manual rows)
   List<dynamic> _products = [];
   List<dynamic> _filteredProducts = [];
 
@@ -256,7 +255,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     }
   }
 
-  /// Fetch a single quotation by ID and pre‑fill the form
   Future<void> _loadQuotationById(int id) async {
     setState(() => _isLoadingQuotation = true);
     try {
@@ -288,6 +286,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     _vehicleNoController.dispose();
     _transportationController.dispose();
     _unloadingController.dispose();
+    _remarkController.dispose(); // 👈 dispose remarks
     _note1Controller.dispose();
     _note2Controller.dispose();
     _additionalDiscountController.dispose();
@@ -303,7 +302,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   void _initializeControllers() {
     for (var item in _displayedQuotationItems) {
       if (!_dispatchBoxesControllers.containsKey(item.id)) {
-        // If remainingBoxes > 0, prefill; otherwise leave empty.
         final initialText =
             item.remainingBoxes > 0 ? item.remainingBoxes.toString() : '';
         final controller = TextEditingController(text: initialText);
@@ -314,12 +312,9 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
 
   Future<void> _searchQuotations(String query) async {
     if (query.length < 3) {
-      setState(() {
-        _quotations = [];
-      });
+      setState(() => _quotations = []);
       return;
     }
-
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
       setState(() => _isSearching = true);
@@ -345,7 +340,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   void _selectQuotation(Quotation quotation) async {
     setState(() {
       _selectedQuotation = quotation;
-      _displayedQuotationItems = List.from(quotation.items); // copy
+      _displayedQuotationItems = List.from(quotation.items);
       _quotations = [];
       _searchController.text = '';
       _driverNameController.clear();
@@ -355,17 +350,16 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           quotation.transportation == 0
               ? ''
               : quotation.transportation.toString();
-
       _unloadingController.text =
           quotation.unloading == 0 ? '' : quotation.unloading.toString();
       _additionalDiscountController.text =
           quotation.additionalDiscount.toString();
-      _additionalDiscount = quotation.additionalDiscount; // set from quotation
+      _additionalDiscount = quotation.additionalDiscount;
       _note1Controller.clear();
       _note2Controller.clear();
+      _remarkController.clear(); // 👈 clear remarks
       _isBlackChallan = null;
     });
-
     _initializeControllers();
     await _fetchPaymentSummary(quotation.id);
   }
@@ -383,7 +377,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           _quotationPaidAmount = (data['quotationPaidAmount'] ?? 0).toDouble();
           _customerWalletAmount =
               (data['customerWalletAmount'] ?? 0).toDouble();
-          // If payment summary includes additionalDiscount, use it; otherwise keep existing
           if (data.containsKey('additionalDiscount')) {
             _additionalDiscount =
                 double.tryParse(
@@ -413,6 +406,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       _additionalDiscountController.text = '';
       _transportationController.text = '';
       _unloadingController.text = '';
+      _remarkController.clear(); // 👈 clear remarks
     });
   }
 
@@ -422,13 +416,11 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       setState(() => _filteredProducts = []);
       return;
     }
-
     try {
       final response = await dio.get(
         'https://dashboard.theceramicstudio.in/api/product/list',
         queryParameters: {'search': search},
       );
-
       if (response.statusCode == 200 && response.data['success'] == true) {
         setState(() {
           _filteredProducts = response.data['products'];
@@ -492,7 +484,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     return qualities;
   }
 
-  // ---------- Manual row management ----------
   void _addAdditionalRow() {
     setState(() {
       _additionalRows.add(AdditionalProductRow());
@@ -506,7 +497,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     });
   }
 
-  // ---------- Delete quotation item ----------
   void _deleteQuotationItem(int itemId) {
     setState(() {
       _displayedQuotationItems.removeWhere((item) => item.id == itemId);
@@ -514,7 +504,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     });
   }
 
-  // ---------- Calculations ----------
   double _calculateQuotationItemsTotal() {
     double total = 0;
     for (var item in _displayedQuotationItems) {
@@ -544,45 +533,34 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     double transportation =
         double.tryParse(_transportationController.text) ?? 0;
     double unloading = double.tryParse(_unloadingController.text) ?? 0;
-
-    // Discount only on subtotal (products)
     double discountAmount = subtotal * (additionalDiscount / 100);
     double discountedSubtotal = subtotal - discountAmount;
-
     return discountedSubtotal + transportation + unloading;
   }
 
-  // ---------- Refresh grand total (called after any change in additional rows) ----------
   void _refreshGrandTotal() {
     setState(() {});
   }
 
-  // ---------- Validation ----------
   bool _validateForm() {
     if (_selectedQuotation == null && _additionalRows.isEmpty) {
       _showError("Please select a quotation or add at least one product");
       return false;
     }
-
-    // Driver fields are optional – validation removed.
-
     if (_transportationController.text.isEmpty ||
         double.tryParse(_transportationController.text) == null) {
       _showError("Please enter a valid transportation amount");
       return false;
     }
-
     if (_unloadingController.text.isEmpty ||
         double.tryParse(_unloadingController.text) == null) {
       _showError("Please enter a valid unloading amount");
       return false;
     }
-
     if (_isBlackChallan == null) {
       _showError("Please select Challan Type (Blue or Red)");
       return false;
     }
-
     bool hasQuotationDispatch = false;
     for (var item in _displayedQuotationItems) {
       final controller = _dispatchBoxesControllers[item.id];
@@ -596,7 +574,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       _showError("Please enter dispatch boxes for at least one product");
       return false;
     }
-
     for (int i = 0; i < _additionalRows.length; i++) {
       final row = _additionalRows[i];
       if (row.productName.isEmpty) {
@@ -621,7 +598,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
         return false;
       }
     }
-
     return true;
   }
 
@@ -637,17 +613,12 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- API Submission ----------
-  // ---------- API Submission ----------
+  // ---------- API Submission with Remarks ----------
   Future<void> _generateDeliveryChallan() async {
     if (!_validateForm()) return;
-
     setState(() => _isSubmitting = true);
-
     try {
       final List<Map<String, dynamic>> items = [];
-
-      // Quotation items (isExtra: 0)
       int rowId = 1;
       for (var item in _displayedQuotationItems) {
         final controller = _dispatchBoxesControllers[item.id];
@@ -677,8 +648,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           });
         }
       }
-
-      // Additional items (isExtra: 1)
       for (var row in _additionalRows) {
         final productDetails = row.selectedProductDetails;
         if (productDetails == null) continue;
@@ -697,9 +666,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           "batches": [],
         });
       }
-
       final double grandTotal = _calculateGrandTotal();
-
       final Map<String, dynamic> payload = {
         "quotationId": _selectedQuotation?.id,
         "client": _selectedQuotation?.clientName ?? "",
@@ -718,17 +685,15 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           "contact": _driverContactController.text.trim(),
           "tempo": _vehicleNoController.text.trim(),
         },
+        "remark": _remarkController.text.trim(), // 👈 remarks added
         "items": items,
       };
-
       debugPrint("Payload: ${jsonEncode(payload)}");
-
       final response = await dio.post(
         "https://dashboard.theceramicstudio.in/api/Quotation/generate-dc",
         data: payload,
         options: Options(headers: {"Content-Type": "application/json"}),
       );
-
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = response.data;
         if (data['success'] == true) {
@@ -792,8 +757,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- Updated Product Card with conditional prefilled dispatch boxes ----------
-  // ---------- Updated Product Card with conditional prefilled dispatch boxes ----------
   Widget _buildProductItem(QuotationItem item) {
     final controller =
         _dispatchBoxesControllers[item.id] ??
@@ -801,11 +764,8 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
           text: item.remainingBoxes > 0 ? item.remainingBoxes.toString() : '',
         );
     final remaining = max(0, item.remainingBoxes);
-
-    // 🔥 Calculate amount for this product
     final dispatchBoxes = double.tryParse(controller.text) ?? 0;
     final productAmount = dispatchBoxes * item.disRate * item.cov;
-
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -823,7 +783,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Product name and IN STOCK badge
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -858,10 +817,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 8),
-
-          // Size and Quality
           Row(
             children: [
               Container(
@@ -895,13 +851,9 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 12),
-
-          // COV, RATE, REMAINING, DISPATCH BOXES, DELETE
           Row(
             children: [
-              // COV
               Expanded(
                 flex: 1,
                 child: Column(
@@ -926,7 +878,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                   ],
                 ),
               ),
-              // RATE (Discounted Rate)
               Expanded(
                 flex: 1,
                 child: Column(
@@ -951,7 +902,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                   ],
                 ),
               ),
-              // REMAINING
               Expanded(
                 flex: 1,
                 child: Column(
@@ -976,7 +926,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                   ],
                 ),
               ),
-              // DISPATCH BOXES
               Expanded(
                 flex: 2,
                 child: Column(
@@ -997,9 +946,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                         controller: controller,
                         keyboardType: TextInputType.number,
                         textAlign: TextAlign.center,
-                        onChanged: (_) {
-                          setState(() {});
-                        },
+                        onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
                           hintStyle: const TextStyle(color: Colors.grey),
                           border: OutlineInputBorder(
@@ -1021,7 +968,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                   ],
                 ),
               ),
-              // DELETE button
               Container(
                 margin: const EdgeInsets.only(left: 8),
                 child: IconButton(
@@ -1033,10 +979,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 12),
-
-          // 🔥 NEW: Product Amount Row
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(8),
@@ -1069,10 +1012,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               ],
             ),
           ),
-
           const SizedBox(height: 12),
-
-          // Batches section
           if (item.batches.isNotEmpty) ...[
             const Text(
               "Batches:",
@@ -1132,7 +1072,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- Additional Product Row with auto-update callback ----------
   Widget _buildAdditionalProductRow(
     int index,
     AdditionalProductRow row,
@@ -1140,7 +1079,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
   ) {
     final sizes = _getSizesForProduct(row.productName);
     final qualities = _getQualitiesForProduct(row.productName, row.size);
-
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
@@ -1180,7 +1118,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                             row.rateController.clear();
                             row.amountController.clear();
                             row.selectedProductDetails = null;
-
                             _productSearchDebounce?.cancel();
                             _productSearchDebounce = Timer(
                               const Duration(milliseconds: 400),
@@ -1194,9 +1131,10 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                             );
                             setState(() {});
                           },
-                          onTap: () {
-                            setState(() => row.showProductDropdown = true);
-                          },
+                          onTap:
+                              () => setState(
+                                () => row.showProductDropdown = true,
+                              ),
                           decoration: const InputDecoration(
                             hintText: 'Search product...',
                             hintStyle: TextStyle(fontSize: 14),
@@ -1269,9 +1207,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               ],
             ),
           ),
-
           const SizedBox(height: 12),
-
           Row(
             children: [
               Expanded(
@@ -1386,9 +1322,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 12),
-
           Row(
             children: [
               Expanded(
@@ -1434,9 +1368,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 12),
-
           Row(
             children: [
               Expanded(
@@ -1478,9 +1410,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 12),
-
           Row(
             children: [
               Expanded(
@@ -1506,7 +1436,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               ),
             ],
           ),
-
           Align(
             alignment: Alignment.centerRight,
             child: Material(
@@ -1544,10 +1473,8 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- Payment Summary Section ----------
   Widget _buildPaymentSummarySection() {
     if (_selectedQuotation == null) return const SizedBox();
-
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),
@@ -1575,7 +1502,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
           if (_isLoadingSummary)
             const Center(child: CircularProgressIndicator())
           else if (_quotationAmount != null) ...[
@@ -1597,9 +1523,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                 "${_additionalDiscount!.toStringAsFixed(0)}%",
               ),
           ],
-
           const Divider(height: 24),
-
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -1635,7 +1559,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- Challan Type Toggle ----------
   Widget _buildChallanTypeToggle() {
     return Container(
       width: double.infinity,
@@ -1728,7 +1651,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- Search Bar ----------
   Widget _buildSearchBar() {
     return Container(
       decoration: BoxDecoration(
@@ -1746,9 +1668,9 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color.fromARGB(255, 249, 249, 249),
-              borderRadius: const BorderRadius.only(
+            decoration: const BoxDecoration(
+              color: Color.fromARGB(255, 249, 249, 249),
+              borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
               ),
@@ -1778,7 +1700,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               ],
             ),
           ),
-
           if (_quotations.isNotEmpty || _isSearching)
             Container(
               constraints: const BoxConstraints(maxHeight: 200),
@@ -1820,10 +1741,8 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- Selected Quotation Card ----------
   Widget _buildSelectedQuotation() {
     if (_selectedQuotation == null) return const SizedBox();
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -1850,7 +1769,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
           Row(
             children: [
               Container(
@@ -1891,9 +1809,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 8),
-
           Row(
             children: [
               Icon(Icons.location_on, size: 16, color: Colors.grey.shade500),
@@ -1911,7 +1827,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- Dispatch Logistics ----------
   Widget _buildDispatchLogistics() {
     return Container(
       width: double.infinity,
@@ -1939,16 +1854,13 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             ),
           ),
           const SizedBox(height: 16),
-
           _buildInputField(
             label: "Driver Name (Optional)",
             hintText: "Enter driver name",
             controller: _driverNameController,
             icon: Icons.person_outline,
           ),
-
           const SizedBox(height: 12),
-
           _buildInputField(
             label: "Contact (Optional)",
             hintText: "Enter contact number",
@@ -1956,9 +1868,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             icon: Icons.phone_outlined,
             keyboardType: TextInputType.phone,
           ),
-
           const SizedBox(height: 12),
-
           _buildInputField(
             label: "Vehicle No (Optional)",
             hintText: "Enter vehicle number",
@@ -1966,8 +1876,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             icon: Icons.local_shipping_outlined,
           ),
           const SizedBox(height: 10),
-
-          // Transportation
           _buildInputField(
             label: "Transportation (₹)",
             hintText: "Enter transportation amount",
@@ -1975,16 +1883,21 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
             icon: Icons.local_shipping_outlined,
             keyboardType: TextInputType.number,
           ),
-
           const SizedBox(height: 12),
-
-          // Unloading
           _buildInputField(
             label: "Unloading (₹)",
             hintText: "Enter unloading amount",
             controller: _unloadingController,
             icon: Icons.unarchive_outlined,
             keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 12),
+          // 👇 Remarks field
+          _buildInputField(
+            label: "Remarks (Optional)",
+            hintText: "Enter any remarks",
+            controller: _remarkController,
+            icon: Icons.comment_outlined,
           ),
         ],
       ),
@@ -2026,9 +1939,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                 child: TextField(
                   controller: controller,
                   keyboardType: keyboardType,
-                  onChanged: (_) {
-                    setState(() {});
-                  },
+                  onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     hintText: hintText,
                     hintStyle: TextStyle(color: Colors.grey.shade500),
@@ -2045,7 +1956,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
     );
   }
 
-  // ---------- Main Build ----------
   @override
   Widget build(BuildContext context) {
     final subtotal = _calculateTotalAmount();
@@ -2053,7 +1963,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
         double.tryParse(_additionalDiscountController.text) ?? 0;
     final transportation = double.tryParse(_transportationController.text) ?? 0;
     final unloading = double.tryParse(_unloadingController.text) ?? 0;
-
     final discountAmount = subtotal * (additionalDiscount / 100);
     final discountedSubtotal = subtotal - discountAmount;
     final grandTotal = discountedSubtotal + transportation + unloading;
@@ -2070,7 +1979,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
         backgroundColor: const Color(0xFFFA9C42),
       ),
       body:
-          _isLoadingQuotation // 👈 show loading while fetching initial quotation
+          _isLoadingQuotation
               ? const Center(
                 child: CircularProgressIndicator(color: Color(0xFFFA9C42)),
               )
@@ -2088,8 +1997,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                     children: [
                       _buildSearchBar(),
                       const SizedBox(height: 20),
-
-                      // 👇 Everything below is shown only if a quotation is selected
                       if (_selectedQuotation != null) ...[
                         _buildSelectedQuotation(),
                         const SizedBox(height: 20),
@@ -2099,7 +2006,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                         const SizedBox(height: 20),
                         _buildDispatchLogistics(),
                         const SizedBox(height: 24),
-
                         if (_displayedQuotationItems.isNotEmpty) ...[
                           const Text(
                             "PRODUCTS FROM QUOTATION",
@@ -2115,7 +2021,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                               .toList(),
                           const SizedBox(height: 24),
                         ],
-
                         const Text(
                           "ADDITIONAL PRODUCTS",
                           style: TextStyle(
@@ -2125,7 +2030,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
-
                         ..._additionalRows.asMap().entries.map(
                           (entry) => _buildAdditionalProductRow(
                             entry.key,
@@ -2133,7 +2037,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                             _refreshGrandTotal,
                           ),
                         ),
-
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           child: Material(
@@ -2173,10 +2076,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                             ),
                           ),
                         ),
-
                         const SizedBox(height: 20),
-
-                        // Grand Total Section
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
@@ -2189,7 +2089,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                           ),
                           child: Column(
                             children: [
-                              // Subtotal
                               Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
@@ -2212,7 +2111,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                                 ],
                               ),
                               const SizedBox(height: 8),
-                              // Transportation
                               if (transportation != 0)
                                 Row(
                                   mainAxisAlignment:
@@ -2228,7 +2126,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                                     ),
                                   ],
                                 ),
-                              // Unloading
                               if (unloading != 0)
                                 Row(
                                   mainAxisAlignment:
@@ -2246,32 +2143,6 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                                 ),
                               if (transportation != 0 || unloading != 0)
                                 const SizedBox(height: 8),
-
-                              // Additional Discount
-                              // if (additionalDiscount > 0) ...[
-                              //   Row(
-                              //     mainAxisAlignment:
-                              //         MainAxisAlignment.spaceBetween,
-                              //     children: [
-                              //       Text(
-                              //         'Additional Discount ($additionalDiscount%)',
-                              //         style: const TextStyle(
-                              //           fontSize: 14,
-                              //           color: Colors.green,
-                              //         ),
-                              //       ),
-                              //       Text(
-                              //         '-₹${discountAmount.toStringAsFixed(2)}',
-                              //         style: const TextStyle(
-                              //           fontSize: 14,
-                              //           fontWeight: FontWeight.w500,
-                              //           color: Colors.green,
-                              //         ),
-                              //       ),
-                              //     ],
-                              //   ),
-                              //   const SizedBox(height: 8),
-                              // ],
                               const Divider(height: 24, thickness: 1),
                               Row(
                                 mainAxisAlignment:
@@ -2298,9 +2169,7 @@ class _AddDeliveryChallanScreenState extends State<AddDeliveryChallanScreen> {
                             ],
                           ),
                         ),
-
                         const SizedBox(height: 24),
-
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(

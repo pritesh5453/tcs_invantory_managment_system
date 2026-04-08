@@ -8,6 +8,10 @@ import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/add%
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/edit_product.dart';
 import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/product_view_screen.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
+import 'package:http/http.dart' as http;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 /// ================= DEBOUNCER CLASS =================
 class Debouncer {
@@ -207,7 +211,673 @@ class Product {
   }
 }
 
-/// ================= SCREEN =================
+/// ================= CONFIGURE EXPORT SCREEN (REUSED FROM PREVIOUS SOLUTION) =================
+class ConfigureExportScreen extends StatefulWidget {
+  const ConfigureExportScreen({super.key});
+
+  @override
+  State<ConfigureExportScreen> createState() => _ConfigureExportScreenState();
+}
+
+class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
+  // Data states
+  List<ExportProduct> products = [];
+  List<DropdownItem> brands = [];
+  List<DropdownItem> qualities = [];
+  bool isLoading = false;
+  String? errorMessage;
+
+  // Filter states
+  String selectedSize = '';
+  String selectedBrand = '';
+  String selectedQuality = '';
+  List<String> availableSizes = ['All Sizes'];
+
+  // Selection & image visibility
+  Set<int> selectedProductIds = {};
+  Map<int, bool> imageIncludedMap = {};
+
+  // Additional UI states
+  bool includeImagesInPdf = true;
+  String exportMode = 'Auto'; // 'Auto' or 'Manual'
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchBrandsAndQualities();
+    _fetchProducts();
+  }
+
+  Future<void> _fetchBrandsAndQualities() async {
+    try {
+      final brandResponse = await http.get(
+        Uri.parse(
+          'https://dashboard.theceramicstudio.in/api/brands/GetAlllist',
+        ),
+      );
+      final qualityResponse = await http.get(
+        Uri.parse(
+          'https://dashboard.theceramicstudio.in/api/qualities/GetAlllist',
+        ),
+      );
+
+      if (brandResponse.statusCode == 200 &&
+          qualityResponse.statusCode == 200) {
+        final brandData = json.decode(brandResponse.body);
+        final qualityData = json.decode(qualityResponse.body);
+
+        if (brandData['success'] == true) {
+          final List<dynamic> brandList = brandData['brands'];
+          setState(() {
+            brands = [
+              DropdownItem(id: '', name: 'All Brands'),
+              ...brandList.map(
+                (b) => DropdownItem(id: b['name'], name: b['name']),
+              ),
+            ];
+          });
+        }
+
+        if (qualityData['success'] == true) {
+          final List<dynamic> qualityList = qualityData['qualities'];
+          setState(() {
+            qualities = [
+              DropdownItem(id: '', name: 'All Qualities'),
+              ...qualityList.map(
+                (q) => DropdownItem(id: q['name'], name: q['name']),
+              ),
+            ];
+          });
+        }
+      } else {
+        throw Exception('Failed to load filters');
+      }
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Error loading filters: $e';
+      });
+    }
+  }
+
+  Future<void> _fetchProducts() async {
+    setState(() {
+      isLoading = true;
+      errorMessage = null;
+    });
+
+    try {
+      final sizeParam = selectedSize == 'All Sizes' ? '' : selectedSize;
+      final brandParam = selectedBrand == 'All Brands' ? '' : selectedBrand;
+      final qualityParam =
+          selectedQuality == 'All Qualities' ? '' : selectedQuality;
+
+      final url = Uri.parse(
+        'https://dashboard.theceramicstudio.in/api/product/export-list?size=$sizeParam&brand=$brandParam&quality=$qualityParam',
+      );
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          final List<dynamic> productsJson = data['products'];
+          final List<ExportProduct> fetchedProducts =
+              productsJson.map((json) => ExportProduct.fromJson(json)).toList();
+
+          final Set<String> sizesSet = {};
+          for (var product in fetchedProducts) {
+            sizesSet.add(product.size);
+          }
+          final newSizes = ['All Sizes', ...sizesSet.toList()..sort()];
+
+          final newSelectedIds = <int>{};
+          final newImageIncluded = <int, bool>{};
+
+          for (var product in fetchedProducts) {
+            if (selectedProductIds.contains(product.id)) {
+              newSelectedIds.add(product.id);
+            }
+            newImageIncluded[product.id] =
+                imageIncludedMap[product.id] ?? false;
+          }
+
+          setState(() {
+            products = fetchedProducts;
+            availableSizes = newSizes;
+            if (!availableSizes.contains(selectedSize)) {
+              selectedSize = 'All Sizes';
+            }
+            selectedProductIds = newSelectedIds;
+            imageIncludedMap = newImageIncluded;
+          });
+        } else {
+          throw Exception('API returned success false');
+        }
+      } else {
+        throw Exception('Failed to load products');
+      }
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Error: $e';
+        products = [];
+      });
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  void _toggleSelection(ExportProduct product) {
+    setState(() {
+      if (selectedProductIds.contains(product.id)) {
+        selectedProductIds.remove(product.id);
+      } else {
+        selectedProductIds.add(product.id);
+      }
+    });
+  }
+
+  void _toggleImageIncluded(ExportProduct product) {
+    setState(() {
+      imageIncludedMap[product.id] = !(imageIncludedMap[product.id] ?? false);
+    });
+  }
+
+  Future<void> _generateAndExportPdf() async {
+    if (selectedProductIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No products selected for export')),
+      );
+      return;
+    }
+
+    final selectedProducts =
+        products.where((p) => selectedProductIds.contains(p.id)).toList();
+
+    final pdf = pw.Document();
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        build:
+            (context) => [
+              pw.Header(
+                level: 0,
+                child: pw.Text(
+                  'Export Summary - ${exportMode} Mode',
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Text(
+                'Generated on: ${DateTime.now().toString().split('.')[0]}',
+                style: pw.TextStyle(fontSize: 12),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Text(
+                'Products Exported: ${selectedProducts.length}',
+                style: pw.TextStyle(
+                  fontSize: 16,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Table(
+                border: pw.TableBorder.all(),
+                tableWidth: pw.TableWidth.max,
+                children: [
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(
+                      color: PdfColors.grey300,
+                    ),
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Name',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Brand',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Size',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Stock',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Include Image',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  ...selectedProducts.map((product) {
+                    final includeImage =
+                        includeImagesInPdf &&
+                        (imageIncludedMap[product.id] ?? false);
+                    return pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(product.name),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(product.brandName),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(product.size),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(product.totalStock),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(includeImage ? 'Yes' : 'No'),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ],
+              ),
+              pw.SizedBox(height: 30),
+              pw.Text(
+                includeImagesInPdf
+                    ? '* Image inclusion is enabled for selected items where toggled ON'
+                    : '* Global "Include Images in PDF" is OFF, so no product images included',
+                style: pw.TextStyle(
+                  fontSize: 10,
+                  fontStyle: pw.FontStyle.italic,
+                ),
+              ),
+            ],
+      ),
+    );
+
+    await Printing.sharePdf(
+      bytes: await pdf.save(),
+      filename: 'export_products_${DateTime.now().millisecondsSinceEpoch}.pdf',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        title: const Text('Configure Export'),
+        centerTitle: false,
+        elevation: 0,
+        backgroundColor: Colors.orange,
+        foregroundColor: Colors.black87,
+      ),
+      body: Column(
+        children: [
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: MediaQuery.of(context).size.width,
+                      child: TextFormField(
+                        decoration: const InputDecoration(
+                          labelText: "Search Size",
+                          hintText: "e.g. 600x1200",
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            selectedSize = value;
+                          });
+                          _fetchProducts();
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: MediaQuery.of(context).size.width * 0.28,
+                      child: DropdownButtonFormField<String>(
+                        value:
+                            selectedBrand.isEmpty
+                                ? 'All Brands'
+                                : selectedBrand,
+                        decoration: const InputDecoration(
+                          labelText: 'Brands',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          isDense: true,
+                        ),
+                        style: const TextStyle(
+                          overflow: TextOverflow.ellipsis,
+                          color: Colors.black,
+                        ),
+                        isExpanded: true,
+                        items:
+                            brands.map((brand) {
+                              return DropdownMenuItem(
+                                value: brand.name,
+                                child: Text(
+                                  brand.name,
+                                  overflow: TextOverflow.ellipsis,
+                                  softWrap: false,
+                                ),
+                              );
+                            }).toList(),
+                        onChanged: (newValue) {
+                          if (newValue != null) {
+                            setState(() {
+                              selectedBrand = newValue;
+                            });
+                            _fetchProducts();
+                          }
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: MediaQuery.of(context).size.width * 0.28,
+                      child: DropdownButtonFormField<String>(
+                        value:
+                            selectedQuality.isEmpty
+                                ? 'All Qualities'
+                                : selectedQuality,
+                        decoration: const InputDecoration(
+                          labelText: 'Qualities',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          isDense: true,
+                        ),
+                        style: const TextStyle(overflow: TextOverflow.ellipsis),
+                        isExpanded: true,
+                        items:
+                            qualities.map((quality) {
+                              return DropdownMenuItem(
+                                value: quality.name,
+                                child: Text(
+                                  quality.name,
+                                  style: TextStyle(color: Colors.black),
+                                  overflow: TextOverflow.ellipsis,
+                                  softWrap: false,
+                                ),
+                              );
+                            }).toList(),
+                        onChanged: (newValue) {
+                          if (newValue != null) {
+                            setState(() {
+                              selectedQuality = newValue;
+                            });
+                            _fetchProducts();
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Text(
+                      'Export Mode: ',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(width: 12),
+                    ToggleButtons(
+                      isSelected: [
+                        exportMode == 'Auto',
+                        exportMode == 'Manual',
+                      ],
+                      onPressed: (index) {
+                        setState(() {
+                          exportMode = index == 0 ? 'Auto' : 'Manual';
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      selectedColor: Colors.white,
+                      fillColor: Colors.orange,
+                      color: Colors.orange,
+                      children: const [
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 20),
+                          child: Text('Auto'),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 20),
+                          child: Text('Manual'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Include Images in PDF'),
+                  value: includeImagesInPdf,
+                  onChanged: (value) {
+                    setState(() {
+                      includeImagesInPdf = value ?? true;
+                    });
+                  },
+                  activeColor: Colors.orange,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Ready to export ${products.length} items',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black54,
+                  ),
+                ),
+                Text(
+                  'Selected: ${selectedProductIds.length}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.orange,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child:
+                isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : errorMessage != null
+                    ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            size: 48,
+                            color: Colors.red,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(errorMessage!),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _fetchProducts,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    )
+                    : products.isEmpty
+                    ? const Center(child: Text('No products match the filters'))
+                    : ListView.builder(
+                      itemCount: products.length,
+                      itemBuilder: (context, index) {
+                        final product = products[index];
+                        final isSelected = selectedProductIds.contains(
+                          product.id,
+                        );
+                        final imageIncluded =
+                            imageIncludedMap[product.id] ?? false;
+
+                        return Card(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            leading: Checkbox(
+                              value: isSelected,
+                              onChanged: (_) => _toggleSelection(product),
+                              activeColor: Colors.orange,
+                            ),
+                            title: Text(
+                              product.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${product.brandName} | ${product.size} | Stock: ${product.totalStock}',
+                                ),
+                              ],
+                            ),
+                            trailing: IconButton(
+                              icon: Icon(
+                                imageIncluded
+                                    ? Icons.image
+                                    : Icons.image_not_supported,
+                                color:
+                                    imageIncluded ? Colors.orange : Colors.grey,
+                              ),
+                              onPressed: () => _toggleImageIncluded(product),
+                              tooltip: 'Toggle image visibility in PDF',
+                            ),
+                            onTap: () => _toggleSelection(product),
+                          ),
+                        );
+                      },
+                    ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: ElevatedButton.icon(
+              onPressed: _generateAndExportPdf,
+              icon: const Icon(Icons.picture_as_pdf),
+              label: Text('Export Selected (${selectedProductIds.length})'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ExportProduct {
+  final int id;
+  final String name;
+  final String size;
+  final String quality;
+  final String brandName;
+  final String totalStock;
+
+  ExportProduct({
+    required this.id,
+    required this.name,
+    required this.size,
+    required this.quality,
+    required this.brandName,
+    required this.totalStock,
+  });
+
+  factory ExportProduct.fromJson(Map<String, dynamic> json) {
+    return ExportProduct(
+      id: json['id'],
+      name: json['name'],
+      size: json['size'],
+      quality: json['quality'],
+      brandName: json['brand_name'],
+      totalStock: json['total_stock'],
+    );
+  }
+}
+
+class DropdownItem {
+  final String id;
+  final String name;
+
+  DropdownItem({required this.id, required this.name});
+}
+
+/// ================= MAIN PRODUCT REGISTRATION SCREEN (MODIFIED) =================
 class ProductRegistrationScreen extends StatefulWidget {
   const ProductRegistrationScreen({super.key});
 
@@ -231,7 +901,7 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
 
   int page = 1;
   String searchQuery = '';
-  bool _lowStockFilter = false; // 👈 new low stock toggle
+  bool _lowStockFilter = false;
 
   List<Product> products = [];
 
@@ -274,7 +944,6 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     super.dispose();
   }
 
-  /// ================= FIRST LOAD / REFRESH =================
   Future<void> fetchProducts() async {
     setState(() {
       page = 1;
@@ -294,7 +963,6 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     }
   }
 
-  /// ================= LOAD MORE =================
   Future<void> fetchMoreProducts() async {
     if (!hasMore || loadingMore) return;
 
@@ -306,7 +974,7 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
         queryParams["search"] = searchQuery;
       }
       if (_lowStockFilter) {
-        queryParams["lowStock"] = true; // 👈 low stock parameter
+        queryParams["lowStock"] = true;
       }
 
       print('Fetching products with query: $queryParams');
@@ -355,7 +1023,6 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     }
   }
 
-  /// ================= SEARCH PRODUCTS =================
   void onSearchChanged(String value) {
     setState(() {
       searchQuery = value;
@@ -366,7 +1033,6 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     fetchProducts();
   }
 
-  /// ================= LOW STOCK TOGGLE =================
   void _toggleLowStock() {
     setState(() {
       _lowStockFilter = !_lowStockFilter;
@@ -377,7 +1043,6 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     fetchProducts();
   }
 
-  /// ================= CLEAR FILTERS =================
   void _clearFilters() {
     setState(() {
       searchQuery = '';
@@ -389,7 +1054,6 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     fetchProducts();
   }
 
-  /// ================= DELETE PRODUCT =================
   Future<void> deleteProduct(int productId) async {
     try {
       final res = await _dio.delete("/product/delete/$productId");
@@ -458,7 +1122,6 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
     );
   }
 
-  /// ================= UI =================
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -476,7 +1139,7 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              /// TOP BAR WITH SEARCH, LOW STOCK BUTTON & ADD BUTTON
+              /// TOP BAR WITH SEARCH AND ADD BUTTON (LOW STOCK REMOVED FROM HERE)
               Container(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
                 decoration: const BoxDecoration(
@@ -490,64 +1153,11 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
                   children: [
                     Row(
                       children: [
-                        // Search bar (flex 2)
+                        // Search bar - now takes full remaining width
                         Expanded(
-                          flex: 2,
                           child: ProductSearchBarWidget(
                             onSearchChanged: onSearchChanged,
                             initialValue: searchQuery,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Low Stock toggle button (fixed width)
-                        InkWell(
-                          onTap: _toggleLowStock,
-                          borderRadius: BorderRadius.circular(24),
-                          child: Container(
-                            height: 42,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            decoration: BoxDecoration(
-                              color:
-                                  _lowStockFilter
-                                      ? const Color(
-                                        0xFFFFA54A,
-                                      ) // orange when active
-                                      : Colors.white,
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(
-                                color:
-                                    _lowStockFilter
-                                        ? Colors.transparent
-                                        : Colors.grey.shade300,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.inventory,
-                                  size: 18,
-                                  color:
-                                      _lowStockFilter
-                                          ? Colors.white
-                                          : Colors.grey,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  "Low Stock",
-                                  style: TextStyle(
-                                    color:
-                                        _lowStockFilter
-                                            ? Colors.white
-                                            : Colors.grey.shade700,
-                                    fontWeight:
-                                        _lowStockFilter
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                  ),
-                                ),
-                              ],
-                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -604,7 +1214,113 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
                 ),
               ),
 
-              /// LIST
+              /// NEW ROW: LOW STOCK BUTTON + EXPORT REPORT BUTTON
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                color: Colors.white,
+                child: Row(
+                  children: [
+                    // Low Stock toggle button
+                    InkWell(
+                      onTap: _toggleLowStock,
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color:
+                              _lowStockFilter
+                                  ? const Color(0xffFFA54A)
+                                  : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color:
+                                _lowStockFilter
+                                    ? Colors.transparent
+                                    : Colors.grey.shade300,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.inventory,
+                              size: 18,
+                              color:
+                                  _lowStockFilter
+                                      ? Colors.white
+                                      : Colors.grey.shade700,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              "Low Stock",
+                              style: TextStyle(
+                                color:
+                                    _lowStockFilter
+                                        ? Colors.white
+                                        : Colors.grey.shade700,
+                                fontWeight:
+                                    _lowStockFilter
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Export Report button
+                    InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ConfigureExportScreen(),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.orange.shade100),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(
+                              Icons.picture_as_pdf,
+                              size: 18,
+                              color: Colors.orange,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              "Export Report",
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              /// LIST OF PRODUCTS
               Expanded(
                 child:
                     loading
@@ -680,7 +1396,6 @@ class _ProductRegistrationScreenState extends State<ProductRegistrationScreen> {
   }
 
   Widget _buildEmptyState() {
-    // Build filter description
     List<String> filters = [];
     if (searchQuery.isNotEmpty) filters.add("'$searchQuery'");
     if (_lowStockFilter) filters.add("low stock");
@@ -749,7 +1464,6 @@ class ProductCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          /// TOP
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -836,10 +1550,7 @@ class ProductCard extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 10),
-
-          /// IMAGE + DETAILS
           Row(
             children: [
               Container(
@@ -909,7 +1620,6 @@ class ProductCard extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 8),
           Text(
             "Batches: ${product.batches.length} | Available Qty: $availableQty",
