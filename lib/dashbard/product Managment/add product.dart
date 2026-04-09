@@ -304,408 +304,413 @@ class _AddProductSheetState extends State<AddProductSheet> {
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      child:
-          dropdownLoading
-              ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    /// HEADER
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          "Add Product",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.red),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    /// PRODUCT IMAGE SECTION
-                    _label("Product Image"),
-                    Row(
-                      children: [
-                        if (_imageFile != null)
-                          Stack(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.file(
-                                  _imageFile!,
-                                  width: 80,
-                                  height: 80,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                              Positioned(
-                                top: 0,
-                                right: 0,
-                                child: GestureDetector(
-                                  onTap: _removeImage,
-                                  child: Container(
-                                    decoration: const BoxDecoration(
-                                      color: Colors.red,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    padding: const EdgeInsets.all(4),
-                                    child: const Icon(
-                                      Icons.close,
-                                      size: 16,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          )
-                        else
-                          Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(Icons.image, color: Colors.grey),
-                          ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextButton.icon(
-                            onPressed: _pickImage,
-                            icon: const Icon(Icons.photo_library),
-                            label: const Text("Select Image"),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.orange,
-                              side: const BorderSide(color: Colors.orange),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
+    return Material(
+      child: Container(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        child:
+            dropdownLoading
+                ? const Center(child: CircularProgressIndicator())
+                : SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      /// HEADER
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "Add Product",
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    /// PRODUCT NAME
-                    _label("Product Name *"),
-                    _textField(
-                      productNameCtrl,
-                      hint: "Enter product name",
-                      focusNode: _nameFocus,
-                      textInputAction: TextInputAction.next,
-                      onSubmitted: (_) => _sizeFocus.requestFocus(),
-                    ),
-
-                    /// SIZE
-                    _label("Size *"),
-                    _textField(
-                      sizeCtrl,
-                      hint: "e.g., 600x1200",
-                      focusNode: _sizeFocus,
-                      textInputAction: TextInputAction.next,
-                      onSubmitted: (_) => _rateFocus.requestFocus(),
-                    ),
-
-                    /// BRAND
-                    _label("Brand Name *"),
-                    DropdownButtonFormField<int>(
-                      value: selectedBrandId,
-                      items:
-                          brands
-                              .map<DropdownMenuItem<int>>(
-                                (b) => DropdownMenuItem<int>(
-                                  value: b['id'] as int,
-                                  child: Text(b['name'] as String),
-                                ),
-                              )
-                              .toList(),
-                      onChanged: (v) => setState(() => selectedBrandId = v),
-                      decoration: _decoration(),
-                    ),
-
-                    /// QUALITY
-                    _label("Quality Grade *"),
-                    DropdownButtonFormField<String>(
-                      value: selectedQuality,
-                      items:
-                          qualities
-                              .map<DropdownMenuItem<String>>(
-                                (q) => DropdownMenuItem<String>(
-                                  value: q['name'] as String,
-                                  child: Text(q['name'] as String),
-                                ),
-                              )
-                              .toList(),
-                      onChanged: (v) => setState(() => selectedQuality = v),
-                      decoration: _decoration(),
-                    ),
-
-                    /// CATEGORY
-                    _label("Category *"),
-                    DropdownButtonFormField<String>(
-                      value: selectedCategory,
-                      items:
-                          categories
-                              .map<DropdownMenuItem<String>>(
-                                (c) => DropdownMenuItem<String>(
-                                  value: c['name'] as String,
-                                  child: Text(c['name'] as String),
-                                ),
-                              )
-                              .toList(),
-                      onChanged: (v) {
-                        setState(() => selectedCategory = v);
-                      },
-                      decoration: _decoration(),
-                    ),
-
-                    /// RATE
-                    _label("Rate *"),
-                    _textField(
-                      rateCtrl,
-                      hint: "Enter rate",
-                      type: TextInputType.number,
-                      focusNode: _rateFocus,
-                      textInputAction: TextInputAction.next,
-                      onSubmitted: (_) => _coverageFocus.requestFocus(),
-                    ),
-
-                    /// GODOWN
-                    _label("Godown"),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        FilterChip(
-                          label: const Text("KKW"),
-                          selected: selectedGodowns.contains("KKW"),
-                          onSelected: (selected) {
-                            setState(() {
-                              if (selected) {
-                                selectedGodowns.add("KKW");
-                              } else {
-                                selectedGodowns.remove("KKW");
-                              }
-                            });
-                          },
-                        ),
-                        FilterChip(
-                          label: const Text("TCS"),
-                          selected: selectedGodowns.contains("TCS"),
-                          onSelected: (selected) {
-                            setState(() {
-                              if (selected) {
-                                selectedGodowns.add("TCS");
-                              } else {
-                                selectedGodowns.remove("TCS");
-                              }
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-
-                    /// COVERAGE
-                    _label("Coverage"),
-                    _textField(
-                      coverageCtrl,
-                      hint: "Enter coverage area",
-                      type: TextInputType.number,
-                      focusNode: _coverageFocus,
-                      textInputAction: TextInputAction.next,
-                      onSubmitted: (_) => _descriptionFocus.requestFocus(),
-                    ),
-
-                    /// DESCRIPTION
-                    _label("Description"),
-                    _textField(
-                      descriptionCtrl,
-                      hint: "Enter product description",
-                      maxLines: 3,
-                      focusNode: _descriptionFocus,
-                      textInputAction: TextInputAction.next,
-                      onSubmitted: (_) {
-                        // After description, focus first batch's batchNo
-                        if (batchForms.isNotEmpty) {
-                          batchForms.first.batchNoFocus.requestFocus();
-                        }
-                      },
-                    ),
-
-                    const SizedBox(height: 14),
-                    const Text(
-                      "Stock Batches",
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        icon: const Icon(Icons.add),
-                        label: const Text("Add Batch"),
-                        onPressed: () {
-                          setState(() {
-                            batchForms.add(BatchForm());
-                          });
-                        },
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.red),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
                       ),
-                    ),
 
-                    /// BATCH LIST
-                    ...batchForms.asMap().entries.map((entry) {
-                      final i = entry.key;
-                      final b = entry.value;
-                      final isLast = i == batchForms.length - 1;
+                      const SizedBox(height: 10),
 
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          children: [
-                            Text(
-                              "Batch ${i + 1}",
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
+                      /// PRODUCT IMAGE SECTION
+                      _label("Product Image"),
+                      Row(
+                        children: [
+                          if (_imageFile != null)
+                            Stack(
                               children: [
-                                Expanded(
-                                  child: _textField(
-                                    b.batchNo,
-                                    hint: "Batch No",
-                                    focusNode: b.batchNoFocus,
-                                    textInputAction: TextInputAction.next,
-                                    onSubmitted:
-                                        (_) => b.qtyFocus.requestFocus(),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.file(
+                                    _imageFile!,
+                                    width: 80,
+                                    height: 80,
+                                    fit: BoxFit.cover,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _textField(
-                                    b.qty,
-                                    hint: "Qty",
-                                    type: TextInputType.number,
-                                    focusNode: b.qtyFocus,
-                                    textInputAction: TextInputAction.next,
-                                    onSubmitted:
-                                        (_) => b.locationFocus.requestFocus(),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _textField(
-                                    b.location,
-                                    hint: "Location",
-                                    focusNode: b.locationFocus,
-                                    textInputAction:
-                                        isLast
-                                            ? TextInputAction.done
-                                            : TextInputAction.next,
-                                    onSubmitted: (_) {
-                                      if (!isLast) {
-                                        batchForms[i + 1].batchNoFocus
-                                            .requestFocus();
-                                      } else {
-                                        b.locationFocus.unfocus();
-                                      }
-                                    },
-                                  ),
-                                ),
-                                if (batchForms.length > 1)
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.delete,
-                                      color: Colors.red,
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        b.batchNoFocus.dispose();
-                                        b.qtyFocus.dispose();
-                                        b.locationFocus.dispose();
-                                        batchForms.removeAt(i);
-                                      });
-                                    },
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-
-                    const SizedBox(height: 18),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel"),
-                        ),
-                        const SizedBox(width: 10),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xffFFA54A),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          onPressed: loading ? null : addProduct,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 30,
-                              vertical: 10,
-                            ),
-                            child:
-                                loading
-                                    ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
+                                Positioned(
+                                  top: 0,
+                                  right: 0,
+                                  child: GestureDetector(
+                                    onTap: _removeImage,
+                                    child: Container(
+                                      decoration: const BoxDecoration(
+                                        color: Colors.red,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      padding: const EdgeInsets.all(4),
+                                      child: const Icon(
+                                        Icons.close,
+                                        size: 16,
                                         color: Colors.white,
                                       ),
-                                    )
-                                    : const Text("Save"),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          else
+                            Container(
+                              width: 80,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.image,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextButton.icon(
+                              onPressed: _pickImage,
+                              icon: const Icon(Icons.photo_library),
+                              label: const Text("Select Image"),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.orange,
+                                side: const BorderSide(color: Colors.orange),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      /// PRODUCT NAME
+                      _label("Product Name *"),
+                      _textField(
+                        productNameCtrl,
+                        hint: "Enter product name",
+                        focusNode: _nameFocus,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _sizeFocus.requestFocus(),
+                      ),
+
+                      /// SIZE
+                      _label("Size *"),
+                      _textField(
+                        sizeCtrl,
+                        hint: "e.g., 600x1200",
+                        focusNode: _sizeFocus,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _rateFocus.requestFocus(),
+                      ),
+
+                      /// BRAND
+                      _label("Brand Name *"),
+                      DropdownButtonFormField<int>(
+                        value: selectedBrandId,
+                        items:
+                            brands
+                                .map<DropdownMenuItem<int>>(
+                                  (b) => DropdownMenuItem<int>(
+                                    value: b['id'] as int,
+                                    child: Text(b['name'] as String),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged: (v) => setState(() => selectedBrandId = v),
+                        decoration: _decoration(),
+                      ),
+
+                      /// QUALITY
+                      _label("Quality Grade *"),
+                      DropdownButtonFormField<String>(
+                        value: selectedQuality,
+                        items:
+                            qualities
+                                .map<DropdownMenuItem<String>>(
+                                  (q) => DropdownMenuItem<String>(
+                                    value: q['name'] as String,
+                                    child: Text(q['name'] as String),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged: (v) => setState(() => selectedQuality = v),
+                        decoration: _decoration(),
+                      ),
+
+                      /// CATEGORY
+                      _label("Category *"),
+                      DropdownButtonFormField<String>(
+                        value: selectedCategory,
+                        items:
+                            categories
+                                .map<DropdownMenuItem<String>>(
+                                  (c) => DropdownMenuItem<String>(
+                                    value: c['name'] as String,
+                                    child: Text(c['name'] as String),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged: (v) {
+                          setState(() => selectedCategory = v);
+                        },
+                        decoration: _decoration(),
+                      ),
+
+                      /// RATE
+                      _label("Rate *"),
+                      _textField(
+                        rateCtrl,
+                        hint: "Enter rate",
+                        type: TextInputType.number,
+                        focusNode: _rateFocus,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _coverageFocus.requestFocus(),
+                      ),
+
+                      /// GODOWN
+                      _label("Godown"),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          FilterChip(
+                            label: const Text("KKW"),
+                            selected: selectedGodowns.contains("KKW"),
+                            onSelected: (selected) {
+                              setState(() {
+                                if (selected) {
+                                  selectedGodowns.add("KKW");
+                                } else {
+                                  selectedGodowns.remove("KKW");
+                                }
+                              });
+                            },
+                          ),
+                          FilterChip(
+                            label: const Text("TCS"),
+                            selected: selectedGodowns.contains("TCS"),
+                            onSelected: (selected) {
+                              setState(() {
+                                if (selected) {
+                                  selectedGodowns.add("TCS");
+                                } else {
+                                  selectedGodowns.remove("TCS");
+                                }
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+
+                      /// COVERAGE
+                      _label("Coverage"),
+                      _textField(
+                        coverageCtrl,
+                        hint: "Enter coverage area",
+                        type: TextInputType.number,
+                        focusNode: _coverageFocus,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _descriptionFocus.requestFocus(),
+                      ),
+
+                      /// DESCRIPTION
+                      _label("Description"),
+                      _textField(
+                        descriptionCtrl,
+                        hint: "Enter product description",
+                        maxLines: 3,
+                        focusNode: _descriptionFocus,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) {
+                          // After description, focus first batch's batchNo
+                          if (batchForms.isNotEmpty) {
+                            batchForms.first.batchNoFocus.requestFocus();
+                          }
+                        },
+                      ),
+
+                      const SizedBox(height: 14),
+                      const Text(
+                        "Stock Batches",
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.add),
+                          label: const Text("Add Batch"),
+                          onPressed: () {
+                            setState(() {
+                              batchForms.add(BatchForm());
+                            });
+                          },
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                  ],
+                      ),
+
+                      /// BATCH LIST
+                      ...batchForms.asMap().entries.map((entry) {
+                        final i = entry.key;
+                        final b = entry.value;
+                        final isLast = i == batchForms.length - 1;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                "Batch ${i + 1}",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _textField(
+                                      b.batchNo,
+                                      hint: "Batch No",
+                                      focusNode: b.batchNoFocus,
+                                      textInputAction: TextInputAction.next,
+                                      onSubmitted:
+                                          (_) => b.qtyFocus.requestFocus(),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: _textField(
+                                      b.qty,
+                                      hint: "Qty",
+                                      type: TextInputType.number,
+                                      focusNode: b.qtyFocus,
+                                      textInputAction: TextInputAction.next,
+                                      onSubmitted:
+                                          (_) => b.locationFocus.requestFocus(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _textField(
+                                      b.location,
+                                      hint: "Location",
+                                      focusNode: b.locationFocus,
+                                      textInputAction:
+                                          isLast
+                                              ? TextInputAction.done
+                                              : TextInputAction.next,
+                                      onSubmitted: (_) {
+                                        if (!isLast) {
+                                          batchForms[i + 1].batchNoFocus
+                                              .requestFocus();
+                                        } else {
+                                          b.locationFocus.unfocus();
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                  if (batchForms.length > 1)
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete,
+                                        color: Colors.red,
+                                      ),
+                                      onPressed: () {
+                                        setState(() {
+                                          b.batchNoFocus.dispose();
+                                          b.qtyFocus.dispose();
+                                          b.locationFocus.dispose();
+                                          batchForms.removeAt(i);
+                                        });
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+
+                      const SizedBox(height: 18),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text("Cancel"),
+                          ),
+                          const SizedBox(width: 10),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xffFFA54A),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                            onPressed: loading ? null : addProduct,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 30,
+                                vertical: 10,
+                              ),
+                              child:
+                                  loading
+                                      ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                      : const Text("Save"),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                  ),
                 ),
-              ),
+      ),
     );
   }
 }

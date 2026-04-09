@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:tcs_invantory_managment_system/dashbard/architect_managment/add_architect.dart';
+import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/add%20product.dart';
 
 // ---------- Model for a product in the quotation ----------
 class QuotationProduct {
@@ -620,6 +621,35 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.orange,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: TextButton.icon(
+                              onPressed: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => AddProductSheet(),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.add, color: Colors.black),
+                              label: const Text(
+                                "Add New Product",
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 12),
 
                       // CLIENT DETAILS SECTION
