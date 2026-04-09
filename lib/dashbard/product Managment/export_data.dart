@@ -1,12 +1,46 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
-import 'package:tcs_invantory_managment_system/dashbard/product%20Managment/Product_Management.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+// Models (same as before)
+class ExportProduct {
+  final int id;
+  final String name;
+  final String size;
+  final String quality;
+  final String brandName;
+  final String totalStock;
+  ExportProduct({
+    required this.id,
+    required this.name,
+    required this.size,
+    required this.quality,
+    required this.brandName,
+    required this.totalStock,
+  });
+  factory ExportProduct.fromJson(Map<String, dynamic> json) {
+    return ExportProduct(
+      id: json['id'],
+      name: json['name'],
+      size: json['size'],
+      quality: json['quality'],
+      brandName: json['brand_name'],
+      totalStock: json['total_stock'],
+    );
+  }
+}
+
+class DropdownItem {
+  final String id;
+  final String name;
+  DropdownItem({required this.id, required this.name});
+}
 
 class ConfigureExportScreen extends StatefulWidget {
   const ConfigureExportScreen({super.key});
@@ -20,9 +54,9 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
   List<DropdownItem> brands = [];
   List<DropdownItem> qualities = [];
   bool isLoading = false;
+  bool isExporting = false;
   String? errorMessage;
 
-  // ✅ Size search field
   final TextEditingController _sizeController = TextEditingController();
   String selectedSize = '';
   String selectedBrand = '';
@@ -31,9 +65,14 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
   Set<int> selectedProductIds = {};
   Map<int, bool> imageIncludedMap = {};
 
-  bool includeImagesInPdf = true;
-  String exportMode = 'Auto';
   Timer? _debounceTimer;
+
+  bool get isAllProductsSelected =>
+      products.isNotEmpty && selectedProductIds.length == products.length;
+
+  bool get isAllImagesSelected =>
+      products.isNotEmpty &&
+      imageIncludedMap.values.where((v) => v == true).length == products.length;
 
   @override
   void initState() {
@@ -173,106 +212,165 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
     });
   }
 
-  void _selectAll() =>
-      setState(() => selectedProductIds = products.map((p) => p.id).toSet());
-  void _clearAll() => setState(() => selectedProductIds.clear());
+  void _toggleSelectAllProducts(bool? selectAll) {
+    if (selectAll == null) return;
+    setState(() {
+      if (selectAll) {
+        selectedProductIds = products.map((p) => p.id).toSet();
+      } else {
+        selectedProductIds.clear();
+      }
+    });
+  }
 
-  Future<void> _generateAndExportPdf() async {
+  void _toggleSelectAllImages(bool? selectAll) {
+    if (selectAll == null) return;
+    setState(() {
+      for (var product in products) {
+        imageIncludedMap[product.id] = selectAll;
+      }
+    });
+  }
+
+  // ✅ NEW: Save PDF and show Open/Share bottom sheet (same as DeliveryChalanScreen)
+  Future<void> _exportPdf() async {
     if (selectedProductIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No products selected for export')),
       );
       return;
     }
-    final selectedProducts =
-        products.where((p) => selectedProductIds.contains(p.id)).toList();
-    final pdf = pw.Document();
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        build:
-            (context) => [
-              pw.Header(
-                level: 0,
-                child: pw.Text(
-                  'Export Summary - ${exportMode} Mode',
-                  style: pw.TextStyle(
-                    fontSize: 24,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
+
+    setState(() => isExporting = true);
+
+    try {
+      final selectedIds = selectedProductIds.join(',');
+      final showImageIds = imageIncludedMap.entries
+          .where((entry) => entry.value == true)
+          .map((e) => e.key.toString())
+          .join(',');
+
+      final uri = Uri.parse(
+        'https://dashboard.theceramicstudio.in/api/product/export-pdf'
+        '?showImageIds=$showImageIds&selectedIds=$selectedIds',
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Downloading PDF...'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+
+      final response = await http.get(uri);
+
+      if (response.statusCode != 200) {
+        throw Exception('Server returned ${response.statusCode}');
+      }
+
+      final bytes = response.bodyBytes;
+      final directory = await getExternalStorageDirectory();
+      if (directory == null) {
+        _showError('Storage not available');
+        return;
+      }
+
+      final fileName =
+          'products_export_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final filePath = '${directory.path}/$fileName';
+      final file = File(filePath);
+      await file.writeAsBytes(bytes, flush: true);
+
+      _showPdfOptionsDialog(filePath, fileName);
+    } catch (e) {
+      _showError('Export failed: $e');
+    } finally {
+      setState(() => isExporting = false);
+    }
+  }
+
+  void _showPdfOptionsDialog(String filePath, String fileName) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'PDF Downloaded',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-              pw.SizedBox(height: 20),
-              pw.Text(
-                'Generated on: ${DateTime.now().toString().split('.')[0]}',
-                style: pw.TextStyle(fontSize: 12),
-              ),
-              pw.SizedBox(height: 20),
-              pw.Text(
-                'Products Exported: ${selectedProducts.length}',
-                style: pw.TextStyle(
-                  fontSize: 16,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(height: 20),
-              pw.Table(
-                border: pw.TableBorder.all(),
-                tableWidth: pw.TableWidth.max,
+              const SizedBox(height: 16),
+              const Text('What would you like to do?'),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  pw.TableRow(
-                    decoration: const pw.BoxDecoration(
-                      color: PdfColors.grey300,
-                    ),
-                    children: [
-                      _pdfHeaderCell('Name'),
-                      _pdfHeaderCell('Brand'),
-                      _pdfHeaderCell('Size'),
-                      _pdfHeaderCell('Stock'),
-                      _pdfHeaderCell('Include Image'),
-                    ],
+                  _buildOptionButton(
+                    icon: Icons.visibility,
+                    label: 'Open',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final result = await OpenFilex.open(filePath);
+                      if (result.type != ResultType.done) {
+                        _showError('Unable to open PDF');
+                      }
+                    },
                   ),
-                  ...selectedProducts.map((product) {
-                    final includeImage =
-                        includeImagesInPdf &&
-                        (imageIncludedMap[product.id] ?? false);
-                    return pw.TableRow(
-                      children: [
-                        _pdfDataCell(product.name),
-                        _pdfDataCell(product.brandName),
-                        _pdfDataCell(product.size),
-                        _pdfDataCell(product.totalStock),
-                        _pdfDataCell(includeImage ? 'Yes' : 'No'),
-                      ],
-                    );
-                  }),
+                  _buildOptionButton(
+                    icon: Icons.share,
+                    label: 'Share',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await Share.shareXFiles([
+                        XFile(filePath),
+                      ], text: 'Products Export PDF');
+                    },
+                  ),
                 ],
               ),
-              pw.SizedBox(height: 30),
-              pw.Text(
-                includeImagesInPdf
-                    ? '* Image inclusion is enabled for selected items where toggled ON'
-                    : '* Global "Include Images in PDF" is OFF, so no product images included',
-                style: pw.TextStyle(
-                  fontSize: 10,
-                  fontStyle: pw.FontStyle.italic,
-                ),
-              ),
             ],
-      ),
-    );
-    await Printing.sharePdf(
-      bytes: await pdf.save(),
-      filename: 'export_products_${DateTime.now().millisecondsSinceEpoch}.pdf',
+          ),
+        );
+      },
     );
   }
 
-  pw.Widget _pdfHeaderCell(String text) => pw.Padding(
-    padding: const pw.EdgeInsets.all(8),
-    child: pw.Text(text, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-  );
-  pw.Widget _pdfDataCell(String text) =>
-      pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(text));
+  Widget _buildOptionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 32, color: const Color(0xFFFFA54A)),
+            const SizedBox(height: 8),
+            Text(label),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -292,13 +390,6 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
             borderSide: BorderSide(color: Colors.grey),
           ),
         ),
-        toggleButtonsTheme: ToggleButtonsThemeData(
-          selectedColor: Colors.white,
-          fillColor: const Color(0xFFFFA54A),
-          color: const Color(0xFFFFA54A),
-          borderColor: const Color(0xFFFFA54A),
-          selectedBorderColor: const Color(0xFFFFA54A),
-        ),
         checkboxTheme: CheckboxThemeData(
           fillColor: MaterialStateProperty.resolveWith(
             (states) =>
@@ -311,7 +402,7 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xffF6F6F6),
         appBar: AppBar(
-          title: const Text('Configure Export'),
+          title: const Text('Products'),
           centerTitle: false,
           elevation: 0,
           backgroundColor: const Color(0xFFFFA54A),
@@ -320,6 +411,7 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
         ),
         body: Column(
           children: [
+            // Filters section
             Container(
               color: Colors.white,
               padding: const EdgeInsets.all(16),
@@ -332,7 +424,7 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
                             isSmallScreen
                                 ? Column(
                                   children: [
-                                    _buildSizeSearchField(), // ✅ Search bar
+                                    _buildSizeSearchField(),
                                     const SizedBox(height: 12),
                                     _buildBrandDropdown(),
                                     const SizedBox(height: 12),
@@ -349,99 +441,46 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
                                   ],
                                 ),
                   ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      const Text(
-                        'Export Mode:',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      const SizedBox(width: 12),
-                      ToggleButtons(
-                        isSelected: [
-                          exportMode == 'Auto',
-                          exportMode == 'Manual',
-                        ],
-                        onPressed:
-                            (index) => setState(
-                              () => exportMode = index == 0 ? 'Auto' : 'Manual',
-                            ),
-                        borderRadius: BorderRadius.circular(8),
-                        selectedColor: Colors.white,
-                        fillColor: const Color(0xFFFFA54A),
-                        color: const Color(0xFFFFA54A),
-                        children: const [
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 16),
-                            child: Text('Auto'),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 16),
-                            child: Text('Manual'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: includeImagesInPdf,
-                        onChanged:
-                            (val) => setState(
-                              () => includeImagesInPdf = val ?? true,
-                            ),
-                        activeColor: const Color(0xFFFFA54A),
-                      ),
-                      const Text('Include Images in PDF'),
-                    ],
-                  ),
                 ],
               ),
             ),
             const Divider(height: 1, thickness: 1),
+            // Master checkboxes row
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  Row(
                     children: [
+                      Checkbox(
+                        value: isAllProductsSelected,
+                        onChanged: _toggleSelectAllProducts,
+                        activeColor: const Color(0xFFFFA54A),
+                      ),
+                      const SizedBox(width: 4),
                       Text(
-                        'Ready to export ${products.length} items',
+                        'Select All (${selectedProductIds.length}/${products.length})',
                         style: const TextStyle(
                           fontSize: 13,
-                          color: Colors.black54,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Selected: ${selectedProductIds.length}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFFFFA54A),
+                          color: Colors.black87,
                         ),
                       ),
                     ],
                   ),
                   Row(
                     children: [
-                      TextButton(
-                        onPressed: _selectAll,
-                        child: const Text(
-                          'Select All',
-                          style: TextStyle(color: Color(0xFFFFA54A)),
-                        ),
+                      Checkbox(
+                        value: isAllImagesSelected,
+                        onChanged: _toggleSelectAllImages,
+                        activeColor: const Color(0xFFFFA54A),
                       ),
-                      const SizedBox(width: 8),
-                      TextButton(
-                        onPressed: _clearAll,
-                        child: const Text(
-                          'Clear All',
-                          style: TextStyle(color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Include Images (${imageIncludedMap.values.where((v) => v == true).length}/${products.length})',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black87,
                         ),
                       ),
                     ],
@@ -449,6 +488,7 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
                 ],
               ),
             ),
+            // Product list
             Expanded(
               child:
                   isLoading
@@ -551,7 +591,7 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
                                           : Colors.grey,
                                 ),
                                 onPressed: () => _toggleImageIncluded(product),
-                                tooltip: 'Toggle image visibility in PDF',
+                                tooltip: 'Include image in PDF',
                               ),
                               onTap: () => _toggleSelection(product),
                             ),
@@ -559,6 +599,7 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
                         },
                       ),
             ),
+            // Export button
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -572,9 +613,23 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
                 ],
               ),
               child: ElevatedButton.icon(
-                onPressed: _generateAndExportPdf,
-                icon: const Icon(Icons.picture_as_pdf),
-                label: Text('Export Selected (${selectedProductIds.length})'),
+                onPressed: isExporting ? null : _exportPdf,
+                icon:
+                    isExporting
+                        ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                        : const Icon(Icons.picture_as_pdf),
+                label: Text(
+                  isExporting
+                      ? 'Exporting PDF...'
+                      : 'Export Selected (${selectedProductIds.length})',
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFFFA54A),
                   foregroundColor: Colors.white,
@@ -591,7 +646,7 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
     );
   }
 
-  // ✅ Size search field (TextFormField, not dropdown)
+  // UI helpers (unchanged)
   Widget _buildSizeSearchField() {
     return TextFormField(
       controller: _sizeController,
@@ -633,35 +688,10 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
       style: const TextStyle(fontSize: 14, color: Colors.black87),
       dropdownColor: Colors.white,
       isExpanded: true,
-      iconEnabledColor: Colors.black87,
-      selectedItemBuilder:
-          (context) =>
-              brands
-                  .map(
-                    (brand) => Text(
-                      brand.name,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.black87,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  )
-                  .toList(),
       items:
-          brands
-              .map(
-                (brand) => DropdownMenuItem(
-                  value: brand.name,
-                  child: Text(
-                    brand.name,
-                    style: const TextStyle(color: Colors.black87),
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                  ),
-                ),
-              )
-              .toList(),
+          brands.map((brand) {
+            return DropdownMenuItem(value: brand.name, child: Text(brand.name));
+          }).toList(),
       onChanged: (newValue) {
         if (newValue != null) setState(() => selectedBrand = newValue);
         _fetchProducts();
@@ -681,35 +711,10 @@ class _ConfigureExportScreenState extends State<ConfigureExportScreen> {
       style: const TextStyle(fontSize: 14, color: Colors.black87),
       dropdownColor: Colors.white,
       isExpanded: true,
-      iconEnabledColor: Colors.black87,
-      selectedItemBuilder:
-          (context) =>
-              qualities
-                  .map(
-                    (q) => Text(
-                      q.name,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.black87,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  )
-                  .toList(),
       items:
-          qualities
-              .map(
-                (q) => DropdownMenuItem(
-                  value: q.name,
-                  child: Text(
-                    q.name,
-                    style: const TextStyle(color: Colors.black87),
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                  ),
-                ),
-              )
-              .toList(),
+          qualities.map((q) {
+            return DropdownMenuItem(value: q.name, child: Text(q.name));
+          }).toList(),
       onChanged: (newValue) {
         if (newValue != null) setState(() => selectedQuality = newValue);
         _fetchProducts();

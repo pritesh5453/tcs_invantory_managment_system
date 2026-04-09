@@ -12,14 +12,14 @@ class QuotationProduct {
   final String size;
   final String quality;
   final double rate;
-  final double discount; // percentage
+  final double discount;
   final double coverage;
   final String area;
   final double weight;
-  final int box; // quantity
-  final double discountedRate; // computed
-  final double twgt; // computed
-  final double total; // computed
+  final int box;
+  final double discountedRate;
+  final double twgt;
+  final double total;
 
   QuotationProduct({
     required this.productId,
@@ -70,7 +70,7 @@ class QuotationProduct {
   }
 }
 
-// ---------- EDIT QUOTATION SCREEN ----------
+// ---------- EDIT QUOTATION SCREEN (WITH MODAL ARCHITECT PICKER) ----------
 class EditQuotationScreen extends StatefulWidget {
   final String quotationId;
   final Map<String, dynamic> quotationData;
@@ -139,10 +139,16 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
   Future<void> _initializeData() async {
     try {
+      // ✅ Step 1: Populate form data FIRST (sets _selectedArchitectId)
+      _populateFormData();
+
+      // ✅ Step 2: Fetch architects (which will call _setArchitectNameFromId)
       await _fetchArchitects();
+
+      // ✅ Step 3: Fetch other data
       await _fetchEmployees('');
       await _fetchAllProducts();
-      _populateFormData();
+
       setState(() {
         _isLoading = false;
       });
@@ -154,10 +160,28 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     }
   }
 
+  void _setArchitectNameFromId() {
+    if (_selectedArchitectId == null || _selectedArchitectId!.isEmpty) {
+      return;
+    }
+    final architect = _architects.firstWhere(
+      (a) => a['id'].toString() == _selectedArchitectId,
+      orElse: () => null,
+    );
+    if (architect != null) {
+      _selectedArchitectName =
+          '${architect['firstname']} ${architect['lastname']}';
+    } else {
+      // Architect not found – maybe deleted
+      _selectedArchitectId = null;
+      _selectedArchitectName = null;
+    }
+    setState(() {});
+  }
+
   void _populateFormData() {
     final quotationData = widget.quotationData;
 
-    // Client Details
     _clientNameController.text = quotationData['clientName']?.toString() ?? '';
     _contactNumberController.text =
         quotationData['contactNo']?.toString() ?? '';
@@ -166,7 +190,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     _clientGstController.text = quotationData['GstNumber']?.toString() ?? '';
     _siteAddressController.text = quotationData['address']?.toString() ?? '';
 
-    // Additional Charges
     _additionalDiscountController.text =
         quotationData['additionalDiscount']?.toString() ?? '0';
     _transportationController.text =
@@ -179,7 +202,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     _selectedArchitectId = quotationData['architect']?.toString();
     _selectedEmployeeId = quotationData['attendedBy']?.toString();
 
-    // Products
     final items = quotationData['items'] ?? [];
     _quotationProducts =
         items.map<QuotationProduct>((item) {
@@ -192,20 +214,14 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
               double.tryParse(item['discount']?.toString() ?? '0') ?? 0;
           final coverage = double.tryParse(item['cov']?.toString() ?? '0') ?? 0;
           final area = (item['area'] ?? '').toString().trim();
-
-          // Handle weight with both possible keys
           final weight =
               double.tryParse(
                 item['Weight']?.toString() ?? item['weight']?.toString() ?? '0',
               ) ??
               0;
-
           final box = int.tryParse(item['box']?.toString() ?? '0') ?? 0;
           final total = double.tryParse(item['total']?.toString() ?? '0') ?? 0;
-
-          // Handle TWgt with both possible keys
           final twgt = weight * box;
-
           final discountedRate =
               double.tryParse(item['disRate']?.toString() ?? '0') ?? 0;
 
@@ -236,13 +252,109 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         'https://dashboard.theceramicstudio.in/api/architects/list',
       );
       if (response.statusCode == 200 && response.data['success'] == true) {
-        setState(() => _architects = response.data['architects']);
+        setState(() {
+          _architects = response.data['architects'];
+        });
+        // After fetching, update the architect name from the ID we already have
+        _setArchitectNameFromId();
       }
     } catch (e) {
       debugPrint('Architect fetch error: $e');
     } finally {
       setState(() => _isLoadingArchitects = false);
     }
+  }
+
+  void _showArchitectPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        String searchQuery = '';
+        List<dynamic> filteredList = _architects;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                top: 16,
+                left: 16,
+                right: 16,
+              ),
+              height: MediaQuery.of(context).size.height * 0.7,
+              child: Column(
+                children: [
+                  const Text(
+                    'Select Architect',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Search architect...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onChanged: (value) {
+                      searchQuery = value.toLowerCase();
+                      setModalState(() {
+                        if (searchQuery.isEmpty) {
+                          filteredList = _architects;
+                        } else {
+                          filteredList =
+                              _architects.where((arch) {
+                                final name =
+                                    '${arch['firstname']} ${arch['lastname']}'
+                                        .toLowerCase();
+                                return name.contains(searchQuery);
+                              }).toList();
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child:
+                        _isLoadingArchitects
+                            ? const Center(child: CircularProgressIndicator())
+                            : filteredList.isEmpty
+                            ? const Center(child: Text('No architects found'))
+                            : ListView.builder(
+                              itemCount: filteredList.length,
+                              itemBuilder: (ctx, index) {
+                                final arch = filteredList[index];
+                                final fullName =
+                                    '${arch['firstname']} ${arch['lastname']}';
+                                return ListTile(
+                                  leading: const Icon(Icons.person_outline),
+                                  title: Text(fullName),
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedArchitectId =
+                                          arch['id'].toString();
+                                      _selectedArchitectName = fullName;
+                                    });
+                                    Navigator.pop(context);
+                                  },
+                                );
+                              },
+                            ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _fetchEmployees(String search) async {
@@ -278,7 +390,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     }
   }
 
-  // ---------- Open product popup for adding new product ----------
   Future<void> _addProduct() async {
     final result = await showModalBottomSheet<QuotationProduct>(
       context: context,
@@ -293,7 +404,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     }
   }
 
-  // ---------- Open product popup for editing existing product ----------
   Future<void> _editProduct(int index) async {
     final result = await showModalBottomSheet<QuotationProduct>(
       context: context,
@@ -309,14 +419,12 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     }
   }
 
-  // ---------- Remove product ----------
   void _removeProduct(int index) {
     setState(() {
       _quotationProducts.removeAt(index);
     });
   }
 
-  // ---------- Calculations ----------
   double _calculateTotalAmount() {
     return _quotationProducts.fold(0, (sum, p) => sum + p.total);
   }
@@ -328,7 +436,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     double transportation =
         double.tryParse(_transportationController.text) ?? 0;
     double unloading = double.tryParse(_unloadingController.text) ?? 0;
-
     double discountAmount = subtotal * (additionalDiscount / 100);
     double afterDiscount = subtotal - discountAmount;
     return afterDiscount + transportation + unloading;
@@ -418,8 +525,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
         "grandTotal": double.parse(_calculateGrandTotal().toStringAsFixed(2)),
       };
 
-      debugPrint('Update Request Body: ${requestBody.toString()}');
-
       final response = await _dio.put(
         'https://dashboard.theceramicstudio.in/api/Quotation/updateQuotation/${widget.quotationId}',
         data: requestBody,
@@ -461,25 +566,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     }
   }
 
-  // Helper methods for dropdowns
-  String? _getValidArchitectId() {
-    if (_selectedArchitectId == null) return null;
-    final exists = _architects.any(
-      (a) => a['id'].toString() == _selectedArchitectId,
-    );
-    if (!exists) return null;
-    return _selectedArchitectId;
-  }
-
-  String? _getValidEmployeeId() {
-    if (_selectedEmployeeId == null) return null;
-    final exists = _employees.any(
-      (e) => e['id'].toString() == _selectedEmployeeId,
-    );
-    if (!exists) return null;
-    return _selectedEmployeeId;
-  }
-
   @override
   Widget build(BuildContext context) {
     final totalAmount = _calculateTotalAmount();
@@ -503,7 +589,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          // Add Product Button
           TextButton.icon(
             onPressed: _addProduct,
             icon: const Icon(Icons.add, color: Colors.white),
@@ -548,7 +633,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Client Full Name
                       _buildClientLabel('CLIENT FULL NAME'),
                       const SizedBox(height: 4),
                       _buildClientTextField(
@@ -557,13 +641,11 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Client GST Number
                       _buildClientLabel('CLIENT GST NUMBER'),
                       const SizedBox(height: 4),
                       _buildClientTextField(_clientGstController, '27XXXXX...'),
                       const SizedBox(height: 12),
 
-                      // Contact Number and Alt Number
                       Row(
                         children: [
                           Expanded(
@@ -599,7 +681,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Client Email
                       _buildClientLabel('CLIENT EMAIL'),
                       const SizedBox(height: 4),
                       _buildClientTextField(
@@ -608,7 +689,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Site Address
                       _buildClientLabel('SITE ADDRESS'),
                       const SizedBox(height: 4),
                       _buildClientTextField(
@@ -618,7 +698,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Architect and Attended By
+                      // Architect (Modal picker) and Attended By (Dropdown)
                       Row(
                         children: [
                           Expanded(
@@ -627,51 +707,42 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                               children: [
                                 _buildClientLabel('SELECT ARCHITECT'),
                                 const SizedBox(height: 4),
-                                Container(
-                                  height: 40,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
+                                GestureDetector(
+                                  onTap: _showArchitectPicker,
+                                  child: Container(
+                                    height: 40,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
                                     ),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: DropdownButtonHideUnderline(
-                                    child: DropdownButton<String>(
-                                      isExpanded: true,
-                                      value: _getValidArchitectId(),
-                                      hint:
-                                          _isLoadingArchitects
-                                              ? const Text('Loading...')
-                                              : const Text(
-                                                'Choose Architect...',
-                                              ),
-                                      items:
-                                          _architects.map((architect) {
-                                            final fullName =
-                                                '${architect['firstname']} ${architect['lastname']}';
-                                            return DropdownMenuItem<String>(
-                                              value: architect['id'].toString(),
-                                              child: Text(fullName),
-                                            );
-                                          }).toList(),
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _selectedArchitectId = value;
-                                          final selectedArchitect = _architects
-                                              .firstWhere(
-                                                (a) =>
-                                                    a['id'].toString() == value,
-                                                orElse: () => null,
-                                              );
-                                          if (selectedArchitect != null) {
-                                            _selectedArchitectName =
-                                                '${selectedArchitect['firstname']} ${selectedArchitect['lastname']}';
-                                          }
-                                        });
-                                      },
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            _selectedArchitectName ??
+                                                'Select architect',
+                                            style: TextStyle(
+                                              color:
+                                                  _selectedArchitectName == null
+                                                      ? Colors.grey.shade600
+                                                      : Colors.black87,
+                                              fontSize: 14,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        Icon(
+                                          Icons.arrow_drop_down,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -699,7 +770,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButton<String>(
                                       isExpanded: true,
-                                      value: _getValidEmployeeId(),
+                                      value: _selectedEmployeeId,
                                       hint:
                                           _isLoadingEmployees
                                               ? const Text('Loading...')
@@ -741,7 +812,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       const Divider(),
                       const SizedBox(height: 16),
 
-                      // HEADER SECTION (Introduction Note)
                       const Text(
                         'INTRODUCTION NOTE',
                         style: TextStyle(
@@ -775,7 +845,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       const Divider(),
                       const SizedBox(height: 16),
 
-                      // PRODUCT DETAILS SECTION
                       const Text(
                         'PRODUCT DETAILS',
                         style: TextStyle(
@@ -786,7 +855,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // List of added products
                       if (_quotationProducts.isEmpty)
                         Container(
                           padding: const EdgeInsets.all(16),
@@ -816,7 +884,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
                       const SizedBox(height: 16),
 
-                      // Add Product Button
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
@@ -854,7 +921,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
                       const SizedBox(height: 20),
 
-                      // Additional Discount Section
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -885,7 +951,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
                       const SizedBox(height: 20),
 
-                      // Transportation & Unloading Section
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -961,7 +1026,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
                       const SizedBox(height: 20),
 
-                      // FINAL QUOTATION VALUE SECTION
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
@@ -974,7 +1038,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                         ),
                         child: Column(
                           children: [
-                            // Subtotal
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -997,7 +1060,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                             ),
                             const SizedBox(height: 8),
 
-                            // Additional Discount
                             if (additionalDiscount > 0)
                               Column(
                                 children: [
@@ -1026,7 +1088,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                 ],
                               ),
 
-                            // Transportation
                             if (transportation != 0)
                               Row(
                                 mainAxisAlignment:
@@ -1043,7 +1104,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                 ],
                               ),
 
-                            // Unloading
                             if (unloading != 0)
                               Row(
                                 mainAxisAlignment:
@@ -1092,7 +1152,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
 
                       const SizedBox(height: 24),
 
-                      // Save Button
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
@@ -1123,7 +1182,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
                                   ),
                         ),
                       ),
-
                       const SizedBox(height: 20),
                     ],
                   ),
@@ -1172,7 +1230,6 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
     );
   }
 
-  // ---------- Product Card UI with edit on tap ----------
   Widget _buildProductCard(int index, QuotationProduct p) {
     return GestureDetector(
       onTap: () => _editProduct(index),
@@ -1298,8 +1355,7 @@ class _EditQuotationScreenState extends State<EditQuotationScreen> {
   }
 }
 
-// ---------- POPUP FOR ADDING/EDITING PRODUCT ----------
-// ---------- POPUP FOR ADDING/EDITING PRODUCT ----------
+// ---------- POPUP FOR ADDING/EDITING PRODUCT (WITH MODAL PICKERS FOR SIZE & QUALITY) ----------
 class AddProductPopup extends StatefulWidget {
   final QuotationProduct? initialProduct;
 
@@ -1316,7 +1372,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
 
   // Product search
   final TextEditingController _searchController = TextEditingController();
-  List<dynamic> _allProducts = []; // Master list of all fetched products
+  List<dynamic> _allProducts = [];
   bool _showDropdown = false;
   bool _isLoadingMore = false;
   bool _hasMore = true;
@@ -1328,7 +1384,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
   String _selectedSize = '';
   String _selectedQuality = '';
 
-  // Form fields (editable)
+  // Form fields
   final TextEditingController _discountController = TextEditingController();
   final TextEditingController _rateController = TextEditingController();
   final TextEditingController _coverageController = TextEditingController();
@@ -1336,7 +1392,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _boxController = TextEditingController();
 
-  // Computed fields (read-only)
+  // Computed fields
   final TextEditingController _discountedRateController =
       TextEditingController();
   final TextEditingController _twgtController = TextEditingController();
@@ -1382,9 +1438,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
 
   Future<void> _loadMore() async {
     if (_isLoadingMore || !_hasMore) return;
-    setState(() {
-      _isLoadingMore = true;
-    });
+    setState(() => _isLoadingMore = true);
     try {
       final nextPage = _currentPage + 1;
       final response = await _dio.get(
@@ -1403,9 +1457,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
           setState(() {
             _allProducts.addAll(newProducts);
             _currentPage = nextPage;
-            if (newProducts.length < 10) {
-              _hasMore = false;
-            }
+            if (newProducts.length < 10) _hasMore = false;
           });
         }
       } else {
@@ -1415,15 +1467,12 @@ class _AddProductPopupState extends State<AddProductPopup> {
       debugPrint('Load more error: $e');
       _hasMore = false;
     } finally {
-      setState(() {
-        _isLoadingMore = false;
-      });
+      setState(() => _isLoadingMore = false);
     }
   }
 
   void _fillWithProduct(QuotationProduct product) {
     _isSelectingProduct = true;
-
     Map<String, dynamic> productMap = {
       'id': product.productId,
       'name': product.productName,
@@ -1433,12 +1482,8 @@ class _AddProductPopupState extends State<AddProductPopup> {
       'cov': product.coverage,
       'weight': product.weight,
     };
-
     bool exists = _allProducts.any((p) => p['id'] == product.productId);
-    if (!exists) {
-      _allProducts.add(productMap);
-    }
-
+    if (!exists) _allProducts.add(productMap);
     setState(() {
       _selectedProduct = productMap;
       _searchController.text = product.productName;
@@ -1452,7 +1497,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
       _areaController.text = product.area;
       _showDropdown = false;
     });
-
     _updateCalculations();
     Future.microtask(() => _isSelectingProduct = false);
   }
@@ -1471,11 +1515,9 @@ class _AddProductPopupState extends State<AddProductPopup> {
     final coverage = double.tryParse(_coverageController.text) ?? 0;
     final weight = double.tryParse(_weightController.text) ?? 0;
     final box = int.tryParse(_boxController.text) ?? 0;
-
     final discountedRate = rate * (1 - discount / 100);
     final twgt = weight * box;
     final total = discountedRate * box * coverage;
-
     _discountedRateController.text = discountedRate.toStringAsFixed(2);
     _twgtController.text = twgt.toStringAsFixed(2);
     _totalController.text = total.toStringAsFixed(2);
@@ -1489,13 +1531,12 @@ class _AddProductPopupState extends State<AddProductPopup> {
       });
       return;
     }
-    // Reset pagination state
     _currentPage = 1;
     _hasMore = true;
     _isLoadingMore = false;
     setState(() {
       _showDropdown = true;
-      _allProducts = []; // clear previous results
+      _allProducts = [];
     });
     try {
       final response = await _dio.get(
@@ -1506,9 +1547,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
         final products = response.data['products'] as List<dynamic>;
         setState(() {
           _allProducts = products;
-          if (products.length < 10) {
-            _hasMore = false;
-          }
+          if (products.length < 10) _hasMore = false;
         });
       } else {
         setState(() {
@@ -1539,34 +1578,135 @@ class _AddProductPopupState extends State<AddProductPopup> {
     return null;
   }
 
-  List<String> _getSizes() {
-    if (_searchController.text.isEmpty) return [];
-    return _allProducts
-        .where((p) => p['name'] == _searchController.text)
-        .map((p) => p['size']?.toString() ?? '')
-        .where((s) => s.isNotEmpty)
-        .toSet()
-        .toList();
+  void _showSizePicker() {
+    final sizes =
+        _allProducts
+            .where((p) => p['name'] == _searchController.text)
+            .map((p) => p['size']?.toString() ?? '')
+            .where((s) => s.isNotEmpty)
+            .toSet()
+            .toList();
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          height: MediaQuery.of(context).size.height * 0.5,
+          child: Column(
+            children: [
+              const Text(
+                'Select Size',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child:
+                    sizes.isEmpty
+                        ? const Center(child: Text('No sizes available'))
+                        : ListView.builder(
+                          itemCount: sizes.length,
+                          itemBuilder:
+                              (ctx, i) => ListTile(
+                                title: Text(sizes[i]),
+                                onTap: () {
+                                  setState(() {
+                                    _selectedSize = sizes[i];
+                                    _selectedQuality = '';
+                                    final matches =
+                                        _allProducts
+                                            .where(
+                                              (p) =>
+                                                  p['name'] ==
+                                                      _searchController.text &&
+                                                  p['size']?.toString() ==
+                                                      sizes[i],
+                                            )
+                                            .toList();
+                                    if (matches.length == 1) {
+                                      _selectProduct(matches.first);
+                                    }
+                                  });
+                                  Navigator.pop(context);
+                                },
+                              ),
+                        ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
-  List<String> _getQualities() {
-    if (_searchController.text.isEmpty || _selectedSize.isEmpty) return [];
-    return _allProducts
-        .where(
-          (p) =>
-              p['name'] == _searchController.text &&
-              p['size']?.toString() == _selectedSize,
-        )
-        .map((p) => p['quality']?.toString() ?? '')
-        .where((q) => q.isNotEmpty)
-        .toSet()
-        .toList();
+  void _showQualityPicker() {
+    final qualities =
+        _allProducts
+            .where(
+              (p) =>
+                  p['name'] == _searchController.text &&
+                  p['size']?.toString() == _selectedSize,
+            )
+            .map((p) => p['quality']?.toString() ?? '')
+            .where((q) => q.isNotEmpty)
+            .toSet()
+            .toList();
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          height: MediaQuery.of(context).size.height * 0.5,
+          child: Column(
+            children: [
+              const Text(
+                'Select Quality',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child:
+                    qualities.isEmpty
+                        ? const Center(child: Text('No qualities available'))
+                        : ListView.builder(
+                          itemCount: qualities.length,
+                          itemBuilder:
+                              (ctx, i) => ListTile(
+                                title: Text(qualities[i]),
+                                onTap: () {
+                                  setState(() {
+                                    _selectedQuality = qualities[i];
+                                    final match = _allProducts.firstWhere(
+                                      (p) =>
+                                          p['name'] == _searchController.text &&
+                                          p['size']?.toString() ==
+                                              _selectedSize &&
+                                          p['quality']?.toString() ==
+                                              qualities[i],
+                                      orElse: () => null,
+                                    );
+                                    if (match != null) _selectProduct(match);
+                                  });
+                                  Navigator.pop(context);
+                                },
+                              ),
+                        ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _selectProduct(Map<String, dynamic> product) {
     _isSelectingProduct = true;
     _searchDebounce?.cancel();
-
     setState(() {
       _selectedProduct = product;
       _searchController.text = product['name'] ?? '';
@@ -1608,7 +1748,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
                   }
                   final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
-
                   final productId = int.tryParse(code);
                   if (productId == null) {
                     messenger.showSnackBar(
@@ -1616,11 +1755,9 @@ class _AddProductPopupState extends State<AddProductPopup> {
                     );
                     return;
                   }
-
                   messenger.showSnackBar(
                     const SnackBar(content: Text('Fetching product...')),
                   );
-
                   final product = await _fetchProductById(productId);
                   if (product == null) {
                     messenger.showSnackBar(
@@ -1628,14 +1765,10 @@ class _AddProductPopupState extends State<AddProductPopup> {
                     );
                     return;
                   }
-
                   bool exists = _allProducts.any(
                     (p) => p['id'] == product['id'],
                   );
-                  if (!exists) {
-                    _allProducts.add(product);
-                  }
-
+                  if (!exists) _allProducts.add(product);
                   _isSelectingProduct = true;
                   setState(() {
                     _selectedProduct = product;
@@ -1651,7 +1784,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
                   });
                   _updateCalculations();
                   Future.microtask(() => _isSelectingProduct = false);
-
                   messenger.hideCurrentSnackBar();
                   messenger.showSnackBar(
                     SnackBar(
@@ -1698,15 +1830,11 @@ class _AddProductPopupState extends State<AddProductPopup> {
       );
       return;
     }
-
     final rate = double.tryParse(_rateController.text) ?? 0;
     final discount = double.tryParse(_discountController.text) ?? 0;
     final coverage = double.tryParse(_coverageController.text) ?? 0;
     final area = _areaController.text.trim();
     final weight = double.tryParse(_weightController.text) ?? 0;
-
-    _updateCalculations();
-
     final product = QuotationProduct.fromForm(
       productId: _selectedProduct!['id'],
       productName: _searchController.text,
@@ -1719,15 +1847,11 @@ class _AddProductPopupState extends State<AddProductPopup> {
       weight: weight,
       box: box,
     );
-
     Navigator.pop(context, product);
   }
 
   @override
   Widget build(BuildContext context) {
-    final sizes = _getSizes();
-    final qualities = _getQualities();
-
     return Material(
       child: Container(
         margin: const EdgeInsets.only(top: 50),
@@ -1783,7 +1907,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
               ),
             ),
 
-            // Form with keyboard padding
+            // Form body
             Expanded(
               child: SingleChildScrollView(
                 padding: EdgeInsets.only(
@@ -1794,7 +1918,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 1. PRODUCT SEARCH
+                      // PRODUCT SEARCH
                       const Text(
                         'PRODUCT NAME',
                         style: TextStyle(fontWeight: FontWeight.w600),
@@ -1815,8 +1939,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
                                 controller: _searchController,
                                 focusNode: _searchFocusNode,
                                 textInputAction: TextInputAction.next,
-                                onSubmitted:
-                                    (_) => _rateFocusNode.requestFocus(),
                                 decoration: const InputDecoration(
                                   hintText: 'Search product...',
                                   border: InputBorder.none,
@@ -1869,55 +1991,87 @@ class _AddProductPopupState extends State<AddProductPopup> {
                           ],
                         ),
                       ),
-
                       const SizedBox(height: 12),
 
-                      // 2. SIZE & QUALITY
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildDropdown('SIZE', sizes, _selectedSize, (val) {
-                            setState(() {
-                              _selectedSize = val;
-                              _selectedQuality = '';
-                              final matches =
-                                  _allProducts
-                                      .where(
-                                        (p) =>
-                                            p['name'] ==
-                                                _searchController.text &&
-                                            p['size']?.toString() == val,
-                                      )
-                                      .toList();
-                              if (matches.length == 1) {
-                                _selectProduct(matches.first);
-                              }
-                            });
-                          }),
-                          const SizedBox(height: 12),
-                          _buildDropdown(
-                            'QUALITY',
-                            qualities,
-                            _selectedQuality,
-                            (val) {
-                              setState(() {
-                                _selectedQuality = val;
-                                final match = _allProducts.firstWhere(
-                                  (p) =>
-                                      p['name'] == _searchController.text &&
-                                      p['size']?.toString() == _selectedSize &&
-                                      p['quality']?.toString() == val,
-                                  orElse: () => null,
-                                );
-                                if (match != null) _selectProduct(match);
-                              });
-                            },
+                      // SIZE (Modal picker)
+                      _buildClientLabel('SIZE'),
+                      const SizedBox(height: 4),
+                      GestureDetector(
+                        onTap: _showSizePicker,
+                        child: Container(
+                          height: 40,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        ],
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _selectedSize.isEmpty
+                                      ? 'Select size'
+                                      : _selectedSize,
+                                  style: TextStyle(
+                                    color:
+                                        _selectedSize.isEmpty
+                                            ? Colors.grey.shade600
+                                            : Colors.black87,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_drop_down,
+                                color: Colors.grey.shade600,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 12),
 
-                      // 3. RATE
+                      // QUALITY (Modal picker)
+                      _buildClientLabel('QUALITY'),
+                      const SizedBox(height: 4),
+                      GestureDetector(
+                        onTap: _showQualityPicker,
+                        child: Container(
+                          height: 40,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _selectedQuality.isEmpty
+                                      ? 'Select quality'
+                                      : _selectedQuality,
+                                  style: TextStyle(
+                                    color:
+                                        _selectedQuality.isEmpty
+                                            ? Colors.grey.shade600
+                                            : Colors.black87,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_drop_down,
+                                color: Colors.grey.shade600,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // RATE
                       _buildTextField(
                         'RATE (₹)',
                         _rateController,
@@ -1928,7 +2082,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
                       ),
                       const SizedBox(height: 12),
 
-                      // 4. COVERAGE
+                      // COVERAGE
                       _buildTextField(
                         'COVERAGE',
                         _coverageController,
@@ -1939,7 +2093,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
                       ),
                       const SizedBox(height: 12),
 
-                      // 5. BOX
+                      // BOX
                       _buildTextField(
                         'BOX (Quantity)',
                         _boxController,
@@ -1950,7 +2104,7 @@ class _AddProductPopupState extends State<AddProductPopup> {
                       ),
                       const SizedBox(height: 12),
 
-                      // 6. DISCOUNT %
+                      // DISCOUNT %
                       _buildTextField(
                         'DISCOUNT (%)',
                         _discountController,
@@ -1961,14 +2115,14 @@ class _AddProductPopupState extends State<AddProductPopup> {
                       ),
                       const SizedBox(height: 12),
 
-                      // 7. DISCOUNTED RATE (read-only)
+                      // DISCOUNTED RATE (read-only)
                       _buildReadOnlyField(
                         'DISC. RATE (₹)',
                         _discountedRateController,
                       ),
                       const SizedBox(height: 12),
 
-                      // 8. WEIGHT
+                      // WEIGHT
                       _buildTextField(
                         'WEIGHT',
                         _weightController,
@@ -1979,15 +2133,15 @@ class _AddProductPopupState extends State<AddProductPopup> {
                       ),
                       const SizedBox(height: 12),
 
-                      // 9. TWGT (read-only)
+                      // TWGT (read-only)
                       _buildReadOnlyField('TWGT', _twgtController),
                       const SizedBox(height: 12),
 
-                      // 10. TOTAL AMOUNT (read-only)
+                      // TOTAL AMOUNT (read-only)
                       _buildReadOnlyField('TOTAL AMOUNT (₹)', _totalController),
                       const SizedBox(height: 12),
 
-                      // 11. AREA
+                      // AREA
                       _buildTextField(
                         'AREA',
                         _areaController,
@@ -2053,40 +2207,14 @@ class _AddProductPopupState extends State<AddProductPopup> {
     );
   }
 
-  Widget _buildDropdown(
-    String label,
-    List<String> items,
-    String value,
-    ValueChanged<String> onChanged,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 4),
-        Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: items.contains(value) ? value : null,
-              hint: const Text('Select'),
-              items:
-                  items
-                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                      .toList(),
-              onChanged: (val) {
-                if (val != null) onChanged(val);
-              },
-            ),
-          ),
-        ),
-      ],
+  Widget _buildClientLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: Colors.black87,
+      ),
     );
   }
 
@@ -2174,7 +2302,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
     _twgtController.dispose();
     _totalController.dispose();
     _searchDebounce?.cancel();
-
     _searchFocusNode.dispose();
     _rateFocusNode.dispose();
     _coverageFocusNode.dispose();
@@ -2182,7 +2309,6 @@ class _AddProductPopupState extends State<AddProductPopup> {
     _discountFocusNode.dispose();
     _weightFocusNode.dispose();
     _areaFocusNode.dispose();
-
     super.dispose();
   }
 }

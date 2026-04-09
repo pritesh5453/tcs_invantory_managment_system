@@ -181,10 +181,8 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
 
   final Dio dio = Dio();
 
-  // ✅ TabController length = 4 (All, White, Black, Order Return)
   late TabController _tabController;
-  int _currentTabIndex =
-      0; // 0 = All, 1 = White, 2 = Black, 3 = Order Return (dummy)
+  int _currentTabIndex = 0; // 0 = All, 1 = White, 2 = Black
 
   // Separate states for each type (only for first 3 tabs)
   Map<int, List<DeliveryChallan>> _challans = {0: [], 1: [], 2: []};
@@ -215,7 +213,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
       "Delivery Challans_Return DC",
     );
 
-    // ✅ 4 tabs
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_onTabChanged);
 
@@ -224,31 +221,23 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
   }
 
   void _onTabChanged() {
-    if (_tabController.indexIsChanging) {
-      final newIndex = _tabController.index;
+    final newIndex = _tabController.index;
 
-      // ✅ Agar Order Return tab (index 3) select hua, toh navigate karo
-      if (newIndex == 3) {
-        // Navigate to ReturnsListScreen
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ReturnsListScreen()),
-        ).then((_) {
-          // Wapas aane par tab reset karo (All tab par le jao)
-          _tabController.animateTo(0);
-        });
-        return;
-      }
-
-      // Baaki tabs ke liye normal behavior
-      setState(() {
-        _currentTabIndex = newIndex;
+    // Handle Order Return tab (index 3)
+    if (newIndex == 3) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ReturnsListScreen()),
+      ).then((_) {
+        _tabController.animateTo(0);
       });
-      final type = _getTypeForIndex(newIndex);
-      if (_challans[newIndex]!.isEmpty && !_loading[newIndex]!) {
-        _fetchChallans(type: type);
-      }
+      return;
     }
+
+    // Update current tab index
+    setState(() {
+      _currentTabIndex = newIndex;
+    });
   }
 
   String _getTypeForIndex(int index) {
@@ -259,8 +248,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
         return 'WHITE';
       case 2:
         return 'BLACK';
-      case 3:
-        return 'RETURN'; // dummy, not used
       default:
         return 'ALL';
     }
@@ -780,7 +767,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
               ),
             ),
 
-            /// ✅ TABS (4 tabs) - FIXED
+            /// TABS (4 tabs)
             Container(
               color: Colors.white,
               child: TabBar(
@@ -788,7 +775,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                 indicatorColor: Colors.orange,
                 labelPadding: const EdgeInsets.symmetric(horizontal: 4),
                 tabs: [
-                  // Tab 0: All
                   const Tab(
                     child: SizedBox(
                       width: 80,
@@ -800,7 +786,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                       ),
                     ),
                   ),
-                  // Tab 1: White
                   Tab(
                     child: Container(
                       width: 80,
@@ -820,7 +805,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                       ),
                     ),
                   ),
-                  // Tab 2: Black
                   Tab(
                     child: Container(
                       width: 80,
@@ -840,7 +824,6 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                       ),
                     ),
                   ),
-                  // Tab 3: Order Return (wider width)
                   const Tab(
                     child: SizedBox(
                       width: 140,
@@ -859,7 +842,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
               ),
             ),
 
-            /// ✅ TAB VIEWS (only 3 views – 4th tab handled by navigation)
+            /// TAB VIEWS (only 3 views – 4th tab handled by navigation)
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -879,6 +862,17 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
   Widget _buildTabContent({required String type, required int index}) {
     final isLoading = _loading[index]! && _challans[index]!.isEmpty;
     final challans = _challans[index]!;
+
+    // ✅ Auto-fetch data when this tab becomes active and data is empty
+    if (!isLoading && challans.isEmpty && _currentTabIndex == index) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_currentTabIndex == index &&
+            _challans[index]!.isEmpty &&
+            !_loading[index]!) {
+          _fetchChallans(type: type);
+        }
+      });
+    }
 
     if (isLoading) {
       return const Center(child: CircularProgressIndicator());

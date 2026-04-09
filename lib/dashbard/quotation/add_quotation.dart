@@ -104,16 +104,12 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
       TextEditingController();
   final TextEditingController _unloadingController = TextEditingController();
 
-  // Architect Data - now searchable
+  // Architect Data - now using a clean modal picker
   List<dynamic> _architects = [];
   String? _selectedArchitectId;
   String? _selectedArchitectName;
-  final TextEditingController _architectSearchController =
-      TextEditingController();
-  List<dynamic> _filteredArchitects = [];
-  bool _showArchitectDropdown = false;
-  Timer? _architectSearchDebounce;
 
+  // Customers (for auto-fill)
   List<dynamic> _customers = [];
   List<dynamic> _filteredCustomers = [];
   bool _showCustomerDropdown = false;
@@ -144,7 +140,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
   @override
   void initState() {
     super.initState();
-    _architectSearchController.addListener(_onArchitectSearchChanged);
     _initializeData();
   }
 
@@ -172,7 +167,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
       if (response.statusCode == 200 && response.data['success'] == true) {
         setState(() {
           _architects = response.data['architects'];
-          _filteredArchitects = _architects;
         });
       }
     } catch (e) {
@@ -182,36 +176,96 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
     }
   }
 
-  void _onArchitectSearchChanged() {
-    final query = _architectSearchController.text.trim().toLowerCase();
-    if (_architectSearchDebounce?.isActive ?? false)
-      _architectSearchDebounce!.cancel();
-    _architectSearchDebounce = Timer(const Duration(milliseconds: 300), () {
-      setState(() {
-        if (query.isEmpty) {
-          _filteredArchitects = _architects;
-        } else {
-          _filteredArchitects =
-              _architects.where((arch) {
-                final fullName =
-                    '${arch['firstname']} ${arch['lastname']}'.toLowerCase();
-                return fullName.contains(query);
-              }).toList();
-        }
-        _showArchitectDropdown = true;
-      });
-    });
-  }
+  void _showArchitectPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        String searchQuery = '';
+        List<dynamic> filteredList = _architects;
 
-  void _selectArchitect(Map<String, dynamic> architect) {
-    setState(() {
-      _selectedArchitectId = architect['id'].toString();
-      _selectedArchitectName =
-          '${architect['firstname']} ${architect['lastname']}';
-      _architectSearchController.text = _selectedArchitectName!;
-      _showArchitectDropdown = false;
-    });
-    FocusScope.of(context).unfocus();
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                top: 16,
+                left: 16,
+                right: 16,
+              ),
+              height: MediaQuery.of(context).size.height * 0.7,
+              child: Column(
+                children: [
+                  const Text(
+                    'Select Architect',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Search architect...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onChanged: (value) {
+                      searchQuery = value.toLowerCase();
+                      setModalState(() {
+                        if (searchQuery.isEmpty) {
+                          filteredList = _architects;
+                        } else {
+                          filteredList =
+                              _architects.where((arch) {
+                                final name =
+                                    '${arch['firstname']} ${arch['lastname']}'
+                                        .toLowerCase();
+                                return name.contains(searchQuery);
+                              }).toList();
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child:
+                        _isLoadingArchitects
+                            ? const Center(child: CircularProgressIndicator())
+                            : filteredList.isEmpty
+                            ? const Center(child: Text('No architects found'))
+                            : ListView.builder(
+                              itemCount: filteredList.length,
+                              itemBuilder: (ctx, index) {
+                                final arch = filteredList[index];
+                                final fullName =
+                                    '${arch['firstname']} ${arch['lastname']}';
+                                return ListTile(
+                                  leading: const Icon(Icons.person_outline),
+                                  title: Text(fullName),
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedArchitectId =
+                                          arch['id'].toString();
+                                      _selectedArchitectName = fullName;
+                                    });
+                                    Navigator.pop(context);
+                                  },
+                                );
+                              },
+                            ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _fetchCustomers(String search) async {
@@ -720,9 +774,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                                                   .toString();
                                                           _selectedArchitectName =
                                                               '${architect['firstname']} ${architect['lastname']}';
-                                                          _architectSearchController
-                                                                  .text =
-                                                              _selectedArchitectName!;
                                                         }
                                                       }
 
@@ -845,92 +896,53 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
                                               'SELECT ARCHITECT',
                                             ),
                                             const SizedBox(height: 4),
-                                            // Searchable architect dropdown
-                                            Container(
-                                              decoration: BoxDecoration(
-                                                border: Border.all(
-                                                  color: Colors.grey.shade300,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                              ),
-                                              child: Column(
-                                                children: [
-                                                  Padding(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 12,
-                                                        ),
-                                                    child: TextField(
-                                                      controller:
-                                                          _architectSearchController,
-                                                      decoration:
-                                                          const InputDecoration(
-                                                            hintText:
-                                                                "Search architect...",
-                                                            border:
-                                                                InputBorder
-                                                                    .none,
-                                                            isDense: true,
-                                                          ),
-                                                      onTap:
-                                                          () => setState(() {
-                                                            _showArchitectDropdown =
-                                                                true;
-                                                          }),
+                                            GestureDetector(
+                                              onTap: _showArchitectPicker,
+                                              child: Container(
+                                                height: 40,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 12,
                                                     ),
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(
+                                                    color: Colors.grey.shade300,
                                                   ),
-                                                  if (_showArchitectDropdown &&
-                                                      _filteredArchitects
-                                                          .isNotEmpty)
-                                                    Container(
-                                                      height: 150,
-                                                      decoration: BoxDecoration(
-                                                        border: Border.all(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                child: Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment
+                                                          .spaceBetween,
+                                                  children: [
+                                                    Expanded(
+                                                      child: Text(
+                                                        _selectedArchitectName ??
+                                                            'Select architect',
+                                                        style: TextStyle(
                                                           color:
-                                                              Colors
-                                                                  .grey
-                                                                  .shade200,
+                                                              _selectedArchitectName ==
+                                                                      null
+                                                                  ? Colors
+                                                                      .grey
+                                                                      .shade600
+                                                                  : Colors
+                                                                      .black87,
+                                                          fontSize: 14,
                                                         ),
-                                                        borderRadius:
-                                                            const BorderRadius.only(
-                                                              bottomLeft:
-                                                                  Radius.circular(
-                                                                    8,
-                                                                  ),
-                                                              bottomRight:
-                                                                  Radius.circular(
-                                                                    8,
-                                                                  ),
-                                                            ),
-                                                      ),
-                                                      child: ListView.builder(
-                                                        itemCount:
-                                                            _filteredArchitects
-                                                                .length,
-                                                        itemBuilder: (
-                                                          context,
-                                                          index,
-                                                        ) {
-                                                          final architect =
-                                                              _filteredArchitects[index];
-                                                          final fullName =
-                                                              '${architect['firstname']} ${architect['lastname']}';
-                                                          return ListTile(
-                                                            dense: true,
-                                                            title: Text(
-                                                              fullName,
-                                                            ),
-                                                            onTap:
-                                                                () =>
-                                                                    _selectArchitect(
-                                                                      architect,
-                                                                    ),
-                                                          );
-                                                        },
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
                                                       ),
                                                     ),
-                                                ],
+                                                    Icon(
+                                                      Icons.arrow_drop_down,
+                                                      color:
+                                                          Colors.grey.shade600,
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ],
@@ -1653,9 +1665,6 @@ class _AddQuotationSheetState extends State<AddQuotationSheet> {
 
   @override
   void dispose() {
-    _architectSearchController.removeListener(_onArchitectSearchChanged);
-    _architectSearchController.dispose();
-    _architectSearchDebounce?.cancel();
     _dateController.dispose();
     _billNoController.dispose();
     _clientNameController.dispose();
