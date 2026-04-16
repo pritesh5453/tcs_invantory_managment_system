@@ -42,7 +42,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyCppW10ghFpmXhPgcB9WG3Uy5qKl4kl1zA',
-    appId: '1:683997775119:android:6f6d644b746a5e0193ea7a',
+    appId: '1:683997775119:android:3853bb718ad20df693ea7a',
     messagingSenderId: '683997775119',
     projectId: 'the-ceramic-studio-5b7e0',
     storageBucket: 'the-ceramic-studio-5b7e0.firebasestorage.app',
