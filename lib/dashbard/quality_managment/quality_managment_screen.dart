@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 
 /// ================= MODEL =================

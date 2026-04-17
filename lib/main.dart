@@ -46,7 +46,12 @@ Future<void> main() async {
     android: androidInit,
   );
 
-  await flutterLocalNotificationsPlugin.initialize(initSettings);
+  await flutterLocalNotificationsPlugin.initialize(
+    settings: initSettings, // 🔥 REQUIRED (named)
+    onDidReceiveNotificationResponse: (NotificationResponse response) {
+      debugPrint("Notification clicked");
+    },
+  );
 
   /// Create Notification Channel (Android)
   await flutterLocalNotificationsPlugin
@@ -68,16 +73,16 @@ Future<void> main() async {
   FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
     debugPrint("♻️ NEW FCM TOKEN => $newToken");
   });
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
     final notification = message.notification;
     final android = message.notification?.android;
 
     if (notification != null && android != null) {
-      flutterLocalNotificationsPlugin.show(
-        notification.hashCode,
-        notification.title,
-        notification.body,
-        const NotificationDetails(
+      await flutterLocalNotificationsPlugin.show(
+        id: notification.hashCode,
+        title: notification.title,
+        body: notification.body,
+        notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             'high_importance_channel',
             'High Importance Notifications',

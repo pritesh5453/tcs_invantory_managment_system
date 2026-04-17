@@ -348,31 +348,39 @@ class _DashboardOverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    double spacing = screenWidth * 0.04; // 4% of width
+    double runSpacing = screenWidth * 0.04;
     return Container(
+      width: double.infinity,
       padding: EdgeInsets.all(isMobile ? 12 : 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(isMobile ? 14 : 18),
         border: Border.all(color: const Color(0xffFFA34D), width: 1.5),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Text(
-              "Dashboard\nOverview",
-              style: TextStyle(
-                fontSize: isMobile ? 16 : 18,
-                fontWeight: FontWeight.w600,
-                height: 1.2,
-              ),
+          // 🔥 Title on top
+          Text(
+            "Dashboard Overview",
+            style: TextStyle(
+              fontSize: isMobile ? 18 : 20,
+              fontWeight: FontWeight.bold,
             ),
           ),
+
+          SizedBox(height: isMobile ? 10 : 14),
+
+          // 🔥 Buttons below
           Wrap(
-            spacing: isMobile ? 6 : 8,
-            runSpacing: isMobile ? 6 : 8,
+            alignment: WrapAlignment.start,
+            spacing: spacing,
+            runSpacing: runSpacing,
             children: [
-              // Requests chip with badge
+              // Requests
               Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -396,8 +404,8 @@ class _DashboardOverviewCard extends StatelessWidget {
                       top: -4,
                       right: -4,
                       child: Container(
-                        width: isMobile ? 12 : 14,
-                        height: isMobile ? 12 : 14,
+                        width: screenWidth * 0.03,
+                        height: screenWidth * 0.03,
                         decoration: BoxDecoration(
                           color: Colors.red,
                           shape: BoxShape.circle,
@@ -407,6 +415,8 @@ class _DashboardOverviewCard extends StatelessWidget {
                     ),
                 ],
               ),
+
+              // To-Do
               InkWell(
                 onTap:
                     () => Navigator.push(
@@ -416,12 +426,14 @@ class _DashboardOverviewCard extends StatelessWidget {
                       ),
                     ),
                 child: _OverviewChip(
-                  label: isMobile ? "To-Do" : "To-Do\nGeneral",
+                  label: "To-Do",
                   color: const Color(0xff2D9CDB),
                   icon: Icons.checklist,
                   isMobile: isMobile,
                 ),
               ),
+
+              // Work Panel
               InkWell(
                 onTap:
                     () => Navigator.push(
@@ -1060,7 +1072,7 @@ class _PurchaseChart extends StatelessWidget {
           barTouchData: BarTouchData(
             enabled: true,
             touchTooltipData: BarTouchTooltipData(
-              tooltipBgColor: Colors.white,
+              getTooltipColor: (group) => Colors.white, // ✅ replace
               getTooltipItem: (group, groupIndex, rod, rodIndex) {
                 return BarTooltipItem(
                   '${data[groupIndex].month}\n₹${rod.toY.toInt()}',
@@ -1162,10 +1174,13 @@ class _CashFlowChart extends StatelessWidget {
       padding: EdgeInsets.all(isMobile ? 8 : 10),
       child: LineChart(
         LineChartData(
+          /// 🔥 TOUCH TOOLTIP FIXED
           lineTouchData: LineTouchData(
             enabled: true,
             touchTooltipData: LineTouchTooltipData(
-              tooltipBgColor: Colors.white,
+              getTooltipColor: (touchedSpot) => Colors.white, // ✅ NEW तरीका
+              tooltipPadding: const EdgeInsets.all(8),
+              tooltipMargin: 8,
               getTooltipItems: (touchedSpots) {
                 return touchedSpots
                     .map((spot) {
@@ -1188,16 +1203,22 @@ class _CashFlowChart extends StatelessWidget {
               },
             ),
           ),
+
+          /// 🔥 GRID
           gridData: FlGridData(
             show: true,
             drawHorizontalLine: true,
             drawVerticalLine: false,
-            horizontalInterval: 200000,
+            horizontalInterval: maxValue > 0 ? maxValue / 4 : 1000,
             getDrawingHorizontalLine:
                 (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
           ),
+
+          /// 🔥 TITLES
           titlesData: FlTitlesData(
             show: true,
+
+            /// Bottom (Days)
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
@@ -1216,10 +1237,12 @@ class _CashFlowChart extends StatelessWidget {
                       ),
                     );
                   }
-                  return const Text('');
+                  return const SizedBox();
                 },
               ),
             ),
+
+            /// Left (Amount)
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
@@ -1227,12 +1250,14 @@ class _CashFlowChart extends StatelessWidget {
                 interval: maxValue > 0 ? maxValue / 4 : 1000,
                 getTitlesWidget: (value, meta) {
                   String text;
-                  if (value >= 1000000)
+                  if (value >= 1000000) {
                     text = '₹${(value / 1000000).toStringAsFixed(1)}M';
-                  else if (value >= 1000)
+                  } else if (value >= 1000) {
                     text = '₹${(value / 1000).toStringAsFixed(0)}K';
-                  else
+                  } else {
                     text = '₹${value.toInt()}';
+                  }
+
                   return Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: Text(
@@ -1247,6 +1272,7 @@ class _CashFlowChart extends StatelessWidget {
                 },
               ),
             ),
+
             rightTitles: const AxisTitles(
               sideTitles: SideTitles(showTitles: false),
             ),
@@ -1254,14 +1280,20 @@ class _CashFlowChart extends StatelessWidget {
               sideTitles: SideTitles(showTitles: false),
             ),
           ),
+
+          /// 🔥 BORDER
           borderData: FlBorderData(
             show: true,
             border: Border.all(color: Colors.grey.shade300),
           ),
+
           minX: 0,
-          maxX: data.length - 1,
+          maxX: (data.length - 1).toDouble(),
           minY: 0,
+
+          /// 🔥 LINE DATA
           lineBarsData: [
+            /// IN Line
             LineChartBarData(
               spots:
                   data
@@ -1276,6 +1308,8 @@ class _CashFlowChart extends StatelessWidget {
               dotData: const FlDotData(show: true),
               belowBarData: BarAreaData(show: false),
             ),
+
+            /// OUT Line
             LineChartBarData(
               spots:
                   data

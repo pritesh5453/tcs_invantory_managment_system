@@ -1,21 +1,28 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:tcs_invantory_managment_system/api_service/api_service.dart';
 import 'package:tcs_invantory_managment_system/api_service/urls.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/PreferencesKey.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/app_preference.dart';
 
-final loginProvider = StateNotifierProvider<LoginNotifier, AsyncValue<void>>((ref) {
+final loginProvider = StateNotifierProvider<LoginNotifier, AsyncValue<void>>((
+  ref,
+) {
   return LoginNotifier();
 });
 
 class LoginNotifier extends StateNotifier<AsyncValue<void>> {
   LoginNotifier() : super(const AsyncValue.data(null));
 
-  Future<void> login(String username, String password, BuildContext context) async {
+  Future<void> login(
+    String username,
+    String password,
+    BuildContext context,
+  ) async {
     state = const AsyncValue.loading();
-    
+
     String? fcmToken;
     try {
       fcmToken = await FirebaseMessaging.instance.getToken();
@@ -31,9 +38,9 @@ class LoginNotifier extends StateNotifier<AsyncValue<void>> {
         'password': password,
         'fcm_token': fcmToken,
       });
-      
+
       debugPrint("Login response status: ${response?.statusCode}");
-      
+
       if (response != null && response.data['success'] == true) {
         final responseData = response.data;
         if (responseData != null) {

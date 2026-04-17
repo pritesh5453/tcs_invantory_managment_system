@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
 
@@ -247,7 +248,7 @@ class CategoryNotifier extends StateNotifier<List<Category>> {
     await load();
   }
 
-  Future<void> loadMore({String? search}) async {
+Future<void> loadMore({String? search}) async {
     final pagination = PaginationNotifier();
     if (pagination.state.isLoadingMore || !pagination.state.hasMoreData) return;
 

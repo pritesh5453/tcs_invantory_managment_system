@@ -18,7 +18,7 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.theceramicstudio.tcs"
     compileSdk = 36
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "26.3.11579264"
 
     defaultConfig {
         applicationId = "com.theceramicstudio.tcs"
