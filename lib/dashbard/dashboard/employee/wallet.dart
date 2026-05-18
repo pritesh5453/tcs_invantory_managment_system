@@ -124,6 +124,10 @@ class _WalletScreenState extends State<WalletScreen> {
   @override
   void initState() {
     super.initState();
+
+    print("===== STEP 3 =====");
+    print("Screen Received User ID: ${widget.userId}");
+
     // Set status bar style
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
@@ -191,11 +195,22 @@ class _WalletScreenState extends State<WalletScreen> {
     });
 
     try {
+      print("===== STEP 1 =====");
+      print("Widget User ID: ${widget.userId}");
+      print("===== SUBMIT EXPENSE API HIT =====");
+      print("URL: /wallet/spend");
+      print("Amount: ${_amountController.text}");
+      print("Note: $_selectedReason");
+      print("Receipt: ${_selectedReceipt?.path}");
       FormData formData = FormData.fromMap({
-        'employeeId': '7', // dynamic rakhna ho to variable use kar lena
+        'employeeId':
+            widget.userId
+                .toString(), // dynamic rakhna ho to variable use kar lena
         'amount': _amountController.text,
         'note': _selectedReason,
       });
+      print("===== STEP 2 =====");
+      print("Sending Employee ID: ${widget.userId}");
 
       // Add receipt if selected
       if (_selectedReceipt != null) {
@@ -209,7 +224,9 @@ class _WalletScreenState extends State<WalletScreen> {
 
       // Expense API call
       final response = await _dio.post('/wallet/spend', data: formData);
-
+      print("===== RESPONSE =====");
+      print("Status Code: ${response.statusCode}");
+      print("Response Data: ${response.data}");
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = response.data;
         if (data['success'] == true) {
@@ -230,6 +247,9 @@ class _WalletScreenState extends State<WalletScreen> {
         _showSnackBar('Server error: ${response.statusCode}', Colors.red);
       }
     } on DioException catch (e) {
+      print("===== ERROR =====");
+      print("Error: ${e.message}");
+      print("Response: ${e.response?.data}");
       String errorMessage = 'Network error';
       if (e.response != null) {
         errorMessage = e.response?.data['message'] ?? 'Server error';

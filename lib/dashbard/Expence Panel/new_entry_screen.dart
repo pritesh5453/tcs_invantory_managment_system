@@ -375,6 +375,11 @@ class _NewEntrySectionState extends State<NewEntrySection> {
                 controller: _remarkController,
                 maxLines: 3,
                 onChanged: _onRemarkChanged,
+                textInputAction:
+                    TextInputAction.done, // 👈 DONE button show karega
+                onSubmitted: (value) {
+                  FocusScope.of(context).unfocus(); // 👈 keyboard band karega
+                },
                 decoration: InputDecoration(
                   hintText: 'Enter remark for this transaction',
                   border: OutlineInputBorder(

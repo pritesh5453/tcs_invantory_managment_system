@@ -128,6 +128,7 @@ class DeliveryChallan {
   final double totalWeight;
   final bool isBlackChallan;
   final String priority;
+  final String currentStatus;
 
   DeliveryChallan({
     required this.id,
@@ -140,6 +141,7 @@ class DeliveryChallan {
     required this.totalWeight,
     required this.isBlackChallan,
     required this.priority,
+    required this.currentStatus,
   });
 
   factory DeliveryChallan.fromJson(Map<String, dynamic> json) {
@@ -158,6 +160,7 @@ class DeliveryChallan {
           json['isBlackChallan'] == "1" ||
           json['isBlackChallan'] == true,
       priority: json['priority'] ?? '',
+      currentStatus: json['currentStatus'] ?? '',
     );
   }
 }
@@ -1175,6 +1178,8 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
           Text("Total Items : ${chalan.totalItems}"),
           const SizedBox(height: 4),
           Text("Total Weight : ${chalan.totalWeight} kg"),
+          const SizedBox(height: 4),
+          Text("Tracking : ${chalan.currentStatus} "),
           const SizedBox(height: 18),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
