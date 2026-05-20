@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // ✅ Added for employee details
 
 class QuotationSettlementScreen extends StatefulWidget {
   final int quotationId;
@@ -68,7 +69,7 @@ class _QuotationSettlementScreenState extends State<QuotationSettlementScreen> {
     }
   }
 
-  // ─── Save Payment ────────────────────────────────────────────
+  // ─── Save Payment (UPDATED with employee details) ────────────
   Future<void> savePayment() async {
     if (selectedMethod == null) {
       _toast("Please select payment method");
@@ -82,12 +83,23 @@ class _QuotationSettlementScreenState extends State<QuotationSettlementScreen> {
 
     setState(() => loading = true);
 
+    // ✅ Get employee details from SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    final employeeId = prefs.getInt('employeeId') ?? 0;
+    final employeeName = prefs.getString('userName') ?? '';
+    final employeeEmail = prefs.getString('userEmail'); // can be null
+    final role = prefs.getString('role'); // can be null
+
     final body = {
       "quotation_id": widget.quotationId,
       "amount": amountCtrl.text.trim(),
       "paymentType": selectedMethod,
       "remark": remarkCtrl.text.trim(),
       "billingType": billingType,
+      "employee_id": employeeId,
+      "employee_name": employeeName,
+      "employee_email": employeeEmail,
+      "role": role,
     };
 
     try {

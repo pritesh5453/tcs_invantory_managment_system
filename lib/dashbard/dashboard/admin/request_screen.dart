@@ -132,6 +132,7 @@ class _PaymentRequestsPageState extends State<PaymentRequestsPage> {
           _infoRow('Payment Type', request['payment_type']),
           _infoRow('Billing Type', request['billingType']),
           _infoRow('Remark', request['remark'] ?? '-'),
+          _infoRow('Amount Collector', request['employee_name'] ?? '-'),
 
           const SizedBox(height: 12),
 
