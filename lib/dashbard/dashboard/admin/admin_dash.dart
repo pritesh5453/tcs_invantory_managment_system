@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/admin_todo.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/cancel_DC_req.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/chart_model.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/notification.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/admin/request_screen.dart';
@@ -35,6 +36,7 @@ class _DashboardPageState extends State<DashboardPage>
   List<CashFlowData> cashFlowData = [];
   Map<String, dynamic> dashboardStats = {};
   List<dynamic> userWiseOrders = [];
+  int pendingCancelDcCount = 0;
   int pendingRequestCount = 0;
   int unreadNotificationCount = 0;
 
@@ -74,6 +76,7 @@ class _DashboardPageState extends State<DashboardPage>
         _fetchChartData(),
         _fetchPendingRequestCount(),
         _fetchUnreadNotificationCount(),
+        _fetchPendingCancelDcCount(),
       ]);
     } catch (e) {
       if (mounted) {
@@ -81,6 +84,20 @@ class _DashboardPageState extends State<DashboardPage>
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
+    }
+  }
+
+  Future<void> _fetchPendingCancelDcCount() async {
+    try {
+      final response = await _dio.get('/dashboard/cancelled-delivery-challans');
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final List data = response.data['data'];
+        final pending =
+            data.where((item) => item['status'] == 'Pending').length;
+        setState(() => pendingCancelDcCount = pending);
+      }
+    } catch (e) {
+      pendingCancelDcCount = 0;
     }
   }
 
@@ -254,6 +271,7 @@ class _DashboardPageState extends State<DashboardPage>
                         userId: widget.userId,
                         role: widget.role,
                         pendingRequestCount: pendingRequestCount,
+                        pendingCancelDcCount: pendingCancelDcCount,
                       ),
                       SizedBox(height: isMobile ? 12 : 16),
                       _UserWiseOrdersTable(
@@ -338,12 +356,14 @@ class _DashboardOverviewCard extends StatelessWidget {
   final int userId;
   final String role;
   final int pendingRequestCount;
+  final int pendingCancelDcCount;
 
   const _DashboardOverviewCard({
     required this.isMobile,
     required this.userId,
     required this.role,
     required this.pendingRequestCount,
+    required this.pendingCancelDcCount,
   });
 
   @override
@@ -446,6 +466,41 @@ class _DashboardOverviewCard extends StatelessWidget {
                   icon: Icons.work,
                   isMobile: isMobile,
                 ),
+              ),
+
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  InkWell(
+                    onTap:
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CancelledChallansScreen(),
+                          ),
+                        ),
+                    child: _OverviewChip(
+                      label: "Cancel DC Requests",
+                      color: const Color.fromARGB(255, 235, 56, 25),
+                      icon: Icons.cancel, // better icon
+                      isMobile: isMobile,
+                    ),
+                  ),
+                  if (pendingCancelDcCount > 0)
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: Container(
+                        width: screenWidth * 0.03,
+                        height: screenWidth * 0.03,
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),

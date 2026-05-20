@@ -25,7 +25,6 @@ class _ReturnItemsPageState extends State<ReturnItemsPage> {
 
   @override
   void dispose() {
-    // Dispose all controllers
     for (var controller in _controllers.values) {
       controller.dispose();
     }
@@ -100,13 +99,14 @@ class _ReturnItemsPageState extends State<ReturnItemsPage> {
   }
 
   Future<void> _submitReturn() async {
-    // Safety: clamp all return quantities to dispatch quantity
+    // Clamp all return quantities
     for (var item in _items) {
       if (item.returnQuantity > item.dispatchQty) {
         _updateQuantity(item, item.dispatchQty);
       }
     }
 
+    // Build items payload including rate
     final itemsToReturn =
         _items.where((item) => item.returnQuantity > 0).map((item) {
           return {
@@ -116,6 +116,7 @@ class _ReturnItemsPageState extends State<ReturnItemsPage> {
             'itemType': item.itemType,
             'returnQuantity': item.returnQuantity,
             'originalDispatchQty': item.dispatchQty,
+            'rate': item.rate, // ✅ Include rate
           };
         }).toList();
 
@@ -428,7 +429,7 @@ class _ReturnItemsPageState extends State<ReturnItemsPage> {
   }
 }
 
-/// Model class
+/// Model class with rate
 class ReturnItem {
   final int id;
   final int productId;
@@ -436,6 +437,7 @@ class ReturnItem {
   final String size;
   final int dispatchQty;
   final String itemType;
+  final double rate; // ✅ Added rate
   int returnQuantity;
 
   ReturnItem({
@@ -445,10 +447,24 @@ class ReturnItem {
     required this.size,
     required this.dispatchQty,
     required this.itemType,
+    required this.rate, // ✅ required
     this.returnQuantity = 0,
   });
 
   factory ReturnItem.fromJson(Map<String, dynamic> json) {
+    // Handle rate from API; default to 0.0 if not present
+    double rate = 0.0;
+    if (json['rate'] != null) {
+      rate = double.tryParse(json['rate'].toString()) ?? 0.0;
+    }
+    // Also check for 'unitPrice' or 'price' if applicable
+    if (json['unitPrice'] != null && rate == 0.0) {
+      rate = double.tryParse(json['unitPrice'].toString()) ?? 0.0;
+    }
+    if (json['price'] != null && rate == 0.0) {
+      rate = double.tryParse(json['price'].toString()) ?? 0.0;
+    }
+
     return ReturnItem(
       id: json['id'],
       productId: json['productId'],
@@ -456,6 +472,7 @@ class ReturnItem {
       size: json['size'] ?? '',
       dispatchQty: json['dispatchQty'],
       itemType: json['itemType'] ?? 'standard',
+      rate: rate,
     );
   }
 }

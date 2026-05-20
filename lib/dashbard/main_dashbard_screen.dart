@@ -616,7 +616,7 @@ class MainScreenWidget extends StatelessWidget {
       case "Quotation":
         return Quontation_home_screen();
       case "Delivery Challan":
-        return DeliveryChalanScreen();
+        return DeliveryChalanScreen(userRole: userRole);
       case "Reports":
         return AdvanceAnalyticsScreen();
       case "Customer Amount":

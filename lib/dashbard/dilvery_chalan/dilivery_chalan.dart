@@ -8,6 +8,8 @@ import 'package:open_filex/open_filex.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:tcs_invantory_managment_system/auth/prefs/permission_manager.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/add_delivery_challan.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/cancel_dc.dart';
+import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/edit_challan.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/return_order.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/return_order_list.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dilvery_chalan/update_timeline.dart';
@@ -129,6 +131,7 @@ class DeliveryChallan {
   final bool isBlackChallan;
   final String priority;
   final String currentStatus;
+  final int isCancel; // new field
 
   DeliveryChallan({
     required this.id,
@@ -142,6 +145,7 @@ class DeliveryChallan {
     required this.isBlackChallan,
     required this.priority,
     required this.currentStatus,
+    required this.isCancel,
   });
 
   factory DeliveryChallan.fromJson(Map<String, dynamic> json) {
@@ -161,13 +165,16 @@ class DeliveryChallan {
           json['isBlackChallan'] == true,
       priority: json['priority'] ?? '',
       currentStatus: json['currentStatus'] ?? '',
+      isCancel: json['isCancel'] ?? 0, // 👈 default 0 (active)
     );
   }
 }
 
 /// ================= MAIN SCREEN =================
 class DeliveryChalanScreen extends StatefulWidget {
-  const DeliveryChalanScreen({super.key});
+  final String? userRole;
+
+  const DeliveryChalanScreen({super.key, this.userRole});
 
   @override
   State<DeliveryChalanScreen> createState() => _DeliveryChalanScreenState();
@@ -175,6 +182,10 @@ class DeliveryChalanScreen extends StatefulWidget {
 
 class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     with SingleTickerProviderStateMixin {
+  late bool _isAdminOrSuperAdmin;
+
+  bool canEdit = false;
+  bool canCancel = false;
   late bool canView;
   late bool canAddChallan;
   late bool canUpdateTimeline;
@@ -185,9 +196,8 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
   final Dio dio = Dio();
 
   late TabController _tabController;
-  int _currentTabIndex = 0; // 0 = All, 1 = White, 2 = Black
+  int _currentTabIndex = 0;
 
-  // Separate states for each type (only for first 3 tabs)
   Map<int, List<DeliveryChallan>> _challans = {0: [], 1: [], 2: []};
   Map<int, bool> _loading = {0: false, 1: false, 2: false};
   Map<int, bool> _loadingMore = {0: false, 1: false, 2: false};
@@ -204,7 +214,17 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
   @override
   void initState() {
     super.initState();
+    _isAdminOrSuperAdmin =
+        (widget.userRole ?? '').toLowerCase() == 'admin' ||
+        (widget.userRole ?? '').toLowerCase() == 'superadmin';
 
+    print('User role received: ${widget.userRole}');
+    print('Is admin or superadmin? $_isAdminOrSuperAdmin');
+
+    canEdit = PermissionManager.hasPermission("Delivery Challans_Edit") ?? true;
+
+    canCancel =
+        PermissionManager.hasPermission("Delivery Challans_Cancel") ?? true;
     canView = PermissionManager.hasPermission("Delivery Challans_View");
     canAddChallan = true;
     canUpdateTimeline = PermissionManager.hasPermission(
@@ -223,24 +243,84 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     _scrollController.addListener(_scrollListener);
   }
 
+  bool _isOpeningReturnScreen = false;
   void _onTabChanged() {
+    // Only trigger when tab change is completed
+    if (_tabController.indexIsChanging) return;
+
     final newIndex = _tabController.index;
 
-    // Handle Order Return tab (index 3)
+    // Handle Order Return tab
     if (newIndex == 3) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ReturnsListScreen()),
-      ).then((_) {
-        _tabController.animateTo(0);
+      if (_isOpeningReturnScreen) return;
+
+      _isOpeningReturnScreen = true;
+
+      Future.microtask(() {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ReturnsListScreen()),
+        ).then((_) {
+          _isOpeningReturnScreen = false;
+
+          if (mounted) {
+            _tabController.animateTo(0);
+
+            setState(() {
+              _currentTabIndex = 0;
+            });
+          }
+        });
       });
+
       return;
     }
 
-    // Update current tab index
-    setState(() {
-      _currentTabIndex = newIndex;
-    });
+    if (mounted) {
+      setState(() {
+        _currentTabIndex = newIndex;
+      });
+    }
+  }
+
+  Future<void> _cancelChallan(DeliveryChallan challan) async {
+    if (!canCancel) {
+      _showError("You don't have permission to cancel DC");
+      return;
+    }
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (ctx) => CancelDeliveryChallanDialog(
+            challanId: challan.id,
+            seriesNumber: "CH ${challan.seriesNumber}",
+            client: challan.client,
+          ),
+    );
+
+    if (confirmed == true) {
+      final type = _getTypeForIndex(_currentTabIndex);
+      _fetchChallans(type: type);
+    }
+  }
+
+  Future<void> _editChallan(DeliveryChallan challan) async {
+    if (!canEdit) {
+      _showError("You don't have permission to edit");
+      return;
+    }
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditChallanScreen(challanId: challan.id),
+      ),
+    );
+    if (result == true) {
+      final type = _getTypeForIndex(_currentTabIndex);
+      _fetchChallans(type: type);
+    }
   }
 
   String _getTypeForIndex(int index) {
@@ -628,6 +708,20 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     await _fetchChallans(type: type);
   }
 
+  // Helper to display priority text
+  String _getPriorityDisplayText(String priority) {
+    switch (priority) {
+      case 'LOW':
+        return 'Normal';
+      case 'MEDIUM':
+        return 'Hold';
+      case 'URGENT':
+        return 'Urgent';
+      default:
+        return priority;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!canView) {
@@ -713,11 +807,11 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                                         ),
                                         DropdownMenuItem<String?>(
                                           value: "LOW",
-                                          child: Text("Low"),
+                                          child: Text("Normal"),
                                         ),
                                         DropdownMenuItem<String?>(
                                           value: "MEDIUM",
-                                          child: Text("Medium"),
+                                          child: Text("Hold"),
                                         ),
                                         DropdownMenuItem<String?>(
                                           value: "URGENT",
@@ -770,7 +864,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
               ),
             ),
 
-            /// TABS (4 tabs)
+            /// TABS
             Container(
               color: Colors.white,
               child: TabBar(
@@ -845,7 +939,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
               ),
             ),
 
-            /// TAB VIEWS (only 3 views – 4th tab handled by navigation)
+            /// TAB VIEWS
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -866,16 +960,15 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     final isLoading = _loading[index]! && _challans[index]!.isEmpty;
     final challans = _challans[index]!;
 
-    // ✅ Auto-fetch data when this tab becomes active and data is empty
-    if (!isLoading && challans.isEmpty && _currentTabIndex == index) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_currentTabIndex == index &&
-            _challans[index]!.isEmpty &&
-            !_loading[index]!) {
-          _fetchChallans(type: type);
-        }
-      });
-    }
+    //     if (!isLoading && challans.isEmpty && _currentTabIndex == index) {
+    //   WidgetsBinding.instance.addPostFrameCallback((_) {
+    //     if (_currentTabIndex == index &&
+    //         _challans[index]!.isEmpty &&
+    //         !_loading[index]!) {
+    //       _fetchChallans(type: type);
+    //     }
+    //   });
+    // }
 
     if (isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -934,9 +1027,9 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     if (_selectedPriority != null) {
       String priorityText = '';
       if (_selectedPriority == 'LOW')
-        priorityText = 'Low';
+        priorityText = 'Normal';
       else if (_selectedPriority == 'MEDIUM')
-        priorityText = 'Medium';
+        priorityText = 'Hold';
       else if (_selectedPriority == 'URGENT')
         priorityText = 'Urgent';
       filterDesc +=
@@ -997,6 +1090,8 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
 
   Widget _chalanCard(BuildContext context, DeliveryChallan chalan) {
     final bool isWhite = !chalan.isBlackChallan;
+    final bool isCancelled = chalan.isCancel == 1;
+
     Color priorityColor = Colors.grey;
     if (chalan.priority == 'URGENT')
       priorityColor = Colors.red;
@@ -1008,7 +1103,10 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color:
+            isCancelled
+                ? Colors.red.shade50
+                : Colors.white, // 👈 faint red if cancelled
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
@@ -1043,7 +1141,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      chalan.priority,
+                      _getPriorityDisplayText(chalan.priority),
                       style: TextStyle(
                         color: priorityColor,
                         fontWeight: FontWeight.bold,
@@ -1093,6 +1191,18 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                       } else if (value == "set_urgent") {
                         _updatePriority(chalan.id, "URGENT");
                       }
+                      // ----- NEW CASES -----
+                      else if (value == "Delete DC") {
+                        if (!canDelete) {
+                          _showError("You don't have permission to delete");
+                          return;
+                        }
+                        _showDeleteConfirm(chalan.id);
+                      } else if (value == "Cancel DC") {
+                        _cancelChallan(chalan);
+                      } else if (value == "Edit DC") {
+                        _editChallan(chalan);
+                      }
                     },
                     itemBuilder:
                         (context) => [
@@ -1102,7 +1212,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                               children: [
                                 Icon(Icons.low_priority, color: Colors.green),
                                 SizedBox(width: 8),
-                                Text("Set Low"),
+                                Text("Set Normal"),
                               ],
                             ),
                           ),
@@ -1112,7 +1222,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                               children: [
                                 Icon(Icons.trending_flat, color: Colors.orange),
                                 SizedBox(width: 8),
-                                Text("Set Medium"),
+                                Text("Set Hold"),
                               ],
                             ),
                           ),
@@ -1151,18 +1261,52 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
                             value: "return order",
                             child: Row(
                               children: [
-                                Icon(Icons.print),
+                                Icon(Icons.undo),
                                 SizedBox(width: 8),
                                 Text("Return Order"),
                               ],
                             ),
                           ),
+                          if (_isAdminOrSuperAdmin) ...[
+                            const PopupMenuDivider(),
+                            const PopupMenuItem(
+                              value: "Delete DC",
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete),
+                                  SizedBox(width: 8),
+                                  Text("Delete DC"),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: "Cancel DC",
+                              child: Row(
+                                children: [
+                                  Icon(Icons.cancel),
+                                  SizedBox(width: 8),
+                                  Text("Cancel DC"),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: "Edit DC",
+                              child: Row(
+                                children: [
+                                  Icon(Icons.edit),
+                                  SizedBox(width: 8),
+                                  Text("Edit DC"),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                   ),
                 ],
               ),
             ],
           ),
+
           const SizedBox(height: 10),
           Text(
             "Recipient Details : ${chalan.client}",
@@ -1179,7 +1323,7 @@ class _DeliveryChalanScreenState extends State<DeliveryChalanScreen>
           const SizedBox(height: 4),
           Text("Total Weight : ${chalan.totalWeight} kg"),
           const SizedBox(height: 4),
-          Text("Tracking : ${chalan.currentStatus} "),
+          Text("Delivery Status : ${chalan.currentStatus} "),
           const SizedBox(height: 18),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,

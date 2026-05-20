@@ -65,7 +65,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     try {
       await _loadEmployeeData();
 
-      if (employeeId == null) {
+      // ✅ FIX: Check for 0 instead of null (int can't be null)
+      if (employeeId == 0) {
         setState(() => isLoading = false);
         return;
       }
@@ -408,6 +409,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         border: Border.all(color: Colors.orange),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
             child: Column(
@@ -425,20 +427,22 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               ],
             ),
           ),
-
-          /// 🔥 ID LOAD HONE KE BAAD HI WIDGET
-          if (employeeId != null)
-            PunchAttendanceWidget(
-              employeeId: employeeId!,
-              onPunchSuccess: _fetchAttendanceSummary,
-              showSnackBar: _showSnackBar,
-            )
-          else
-            const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+          // ✅ FIX: Use employeeId != 0 and wrap in SizedBox with fixed width
+          SizedBox(
+            width: 180,
+            child:
+                employeeId != 0
+                    ? PunchAttendanceWidget(
+                      employeeId: employeeId,
+                      onPunchSuccess: _fetchAttendanceSummary,
+                      showSnackBar: _showSnackBar,
+                    )
+                    : const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+          ),
         ],
       ),
     );

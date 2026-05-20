@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:network_info_plus/network_info_plus.dart';
 import 'package:tcs_invantory_managment_system/dashbard/dashboard/employee/services/punchInService.dart';
 
 class PunchAttendanceWidget extends StatefulWidget {
@@ -21,15 +22,17 @@ class PunchAttendanceWidget extends StatefulWidget {
 
 class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
   bool isPunchLoading = false;
-  String? punchStatus;
+  String currentStatus = 'READY'; // READY, IN, LUNCH_OUT, COMPLETED
+  bool lunchTaken = false;
 
   final PunchAttendanceService _punchService = PunchAttendanceService();
+  final NetworkInfo _networkInfo = NetworkInfo();
 
   @override
   void initState() {
     super.initState();
     if (widget.employeeId != 0) {
-      _fetchPunchStatus();
+      _fetchAttendanceStatus();
     }
   }
 
@@ -37,228 +40,330 @@ class _PunchAttendanceWidgetState extends State<PunchAttendanceWidget> {
   void didUpdateWidget(covariant PunchAttendanceWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.employeeId != oldWidget.employeeId && widget.employeeId != 0) {
-      print("🔥 EMPLOYEE ID UPDATED => ${widget.employeeId}");
-      _fetchPunchStatus();
+      _fetchAttendanceStatus();
     }
   }
 
-  /// ================= FETCH STATUS =================
-  Future<void> _fetchPunchStatus() async {
-    final status = await _punchService.fetchPunchStatus(widget.employeeId);
-    debugPrint("🔥 API Punch Status: $status"); // 👈 see what we actually get
-
-    if (mounted) {
-      setState(() {
-        punchStatus = status;
-      });
+  Future<void> _fetchAttendanceStatus() async {
+    final currentMonth = DateTime.now().toString().substring(0, 7);
+    try {
+      final data = await _punchService.fetchAttendanceSummary(
+        widget.employeeId,
+        currentMonth,
+      );
+      if (mounted) {
+        setState(() {
+          currentStatus = data['currentStatus'] ?? 'READY';
+          lunchTaken = data['lunchTaken'] ?? false;
+        });
+      }
+    } catch (e) {
+      widget.showSnackBar('Failed to fetch status: $e');
     }
   }
 
-  /// ================= WIFI + OFFICE IP CHECK =================
   Future<bool> _isOnOfficeWifi() async {
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
-      if (connectivityResult != ConnectivityResult.wifi) {
-        widget.showSnackBar("Please connect to Office WiFi");
-        return false;
+      String? wifiIP = await _networkInfo.getWifiIP();
+      debugPrint("📡 Connectivity result: $connectivityResult, IP: $wifiIP");
+
+      if (wifiIP != null && _isOfficeNetworkIp(wifiIP)) {
+        debugPrint("✅ Connected to office network (IP: $wifiIP)");
+        return true;
       }
 
+      // Fallback: check all interfaces
       for (var interface in await NetworkInterface.list()) {
         for (var addr in interface.addresses) {
-          if (addr.type == InternetAddressType.IPv4) {
-            final ip = addr.address;
-            debugPrint("Device IP: $ip");
-            if (ip.startsWith("192.168.1.")) {
-              return true;
-            }
+          if (addr.type == InternetAddressType.IPv4 &&
+              !addr.address.startsWith("127.") &&
+              !addr.address.startsWith("169.254.") &&
+              _isOfficeNetworkIp(addr.address)) {
+            debugPrint("✅ Fallback: found office IP ${addr.address}");
+            return true;
           }
         }
       }
-
-      widget.showSnackBar("Not connected to Office Network");
+      widget.showSnackBar("Please connect to office Wi-Fi.");
       return false;
     } catch (e) {
       debugPrint("Connectivity error: $e");
-      widget.showSnackBar("Network check failed");
+      widget.showSnackBar("Network check failed: $e");
       return false;
     }
   }
 
-  /// ================= PUNCH IN =================
-  Future<void> _punchIn() async {
-    final allowed = await _isOnOfficeWifi();
-    if (!allowed) return;
-
-    setState(() => isPunchLoading = true);
-
-    final result = await _punchService.punchIn(widget.employeeId);
-
-    if (mounted) {
-      setState(() => isPunchLoading = false);
+  bool _isOfficeNetworkIp(String address) {
+    if (address.startsWith('192.168.')) return true;
+    if (address.startsWith('10.')) return true;
+    final parts = address.split('.');
+    if (parts.length == 4) {
+      final first = int.tryParse(parts[0]);
+      final second = int.tryParse(parts[1]);
+      if (first == 172 && second != null && second >= 16 && second <= 31) {
+        return true;
+      }
     }
-
-    widget.showSnackBar(result['message'] ?? "");
-    await _fetchPunchStatus();
-    widget.onPunchSuccess();
+    return false;
   }
 
-  /// ================= PUNCH OUT =================
-  Future<void> _punchOut() async {
-    final allowed = await _isOnOfficeWifi();
-    if (!allowed) return;
-
-    setState(() => isPunchLoading = true);
-
-    final result = await _punchService.punchOut(widget.employeeId);
-
-    if (mounted) {
-      setState(() => isPunchLoading = false);
+  void _updateLocalStatusAfterAction(
+    String actionType,
+    Map<String, dynamic> result,
+  ) {
+    if (!mounted) return;
+    if (actionType == "IN") {
+      setState(() => currentStatus = "IN");
+    } else if (actionType == "LUNCH_OUT") {
+      if (result['success'] == true || result['alreadyOnBreak'] == true) {
+        setState(() => currentStatus = "LUNCH_OUT");
+      }
+    } else if (actionType == "LUNCH_IN") {
+      if (result['success'] == true || result['alreadyResumed'] == true) {
+        setState(() => currentStatus = "IN");
+      }
+    } else if (actionType == "OUT") {
+      if (result['success'] == true) {
+        setState(() => currentStatus = "COMPLETED");
+      }
     }
+    _fetchAttendanceStatus();
+  }
 
+  Future<void> _punchIn() async {
+    if (!await _isOnOfficeWifi()) return;
+    setState(() => isPunchLoading = true);
+    final result = await _punchService.punchIn(widget.employeeId);
+    if (mounted) setState(() => isPunchLoading = false);
     widget.showSnackBar(result['message'] ?? "");
-    await _fetchPunchStatus();
-    widget.onPunchSuccess();
+    _updateLocalStatusAfterAction("IN", result);
+    if (result['success'] == true) widget.onPunchSuccess();
+  }
+
+  Future<void> _lunchOut() async {
+    if (!await _isOnOfficeWifi()) return;
+    setState(() => isPunchLoading = true);
+    final result = await _punchService.lunchOut(widget.employeeId);
+    if (mounted) setState(() => isPunchLoading = false);
+    widget.showSnackBar(result['message'] ?? "");
+    _updateLocalStatusAfterAction("LUNCH_OUT", result);
+    if (result['success'] == true || result['alreadyOnBreak'] == true) {
+      widget.onPunchSuccess();
+    }
+  }
+
+  Future<void> _lunchIn() async {
+    if (!await _isOnOfficeWifi()) return;
+    setState(() => isPunchLoading = true);
+    final result = await _punchService.lunchIn(widget.employeeId);
+    if (mounted) setState(() => isPunchLoading = false);
+    widget.showSnackBar(result['message'] ?? "");
+    _updateLocalStatusAfterAction("LUNCH_IN", result);
+    if (result['success'] == true || result['alreadyResumed'] == true) {
+      widget.onPunchSuccess();
+    }
+  }
+
+  Future<void> _punchOut() async {
+    if (!await _isOnOfficeWifi()) return;
+    setState(() => isPunchLoading = true);
+    final result = await _punchService.punchOut(widget.employeeId);
+    if (mounted) setState(() => isPunchLoading = false);
+    widget.showSnackBar(result['message'] ?? "");
+    _updateLocalStatusAfterAction("OUT", result);
+    if (result['success'] == true) widget.onPunchSuccess();
   }
 
   @override
   Widget build(BuildContext context) {
     if (isPunchLoading) {
       return const SizedBox(
-        width: 24,
-        height: 24,
+        width: 40,
+        height: 40,
         child: CircularProgressIndicator(strokeWidth: 2),
       );
     }
 
-    if (punchStatus == null) {
-      return _refreshButton();
-    }
-
-    // Normalize: lowercase, trim, remove underscores/spaces
-    final normalized =
-        punchStatus!
-            .toLowerCase()
-            .replaceAll('_', '')
-            .replaceAll(' ', '')
-            .trim();
-
-    // Determine state
-    if (normalized == 'in' || normalized == 'punchedin') {
-      // Currently punched in → show Punch Out button
-      return Row(
-        children: [
-          _punchButton(
-            text: "Punch In",
-            color: Colors.grey,
-            onTap: null,
-            disabled: true,
-          ),
-          const SizedBox(width: 10),
-          _punchButton(
-            text: "Punch Out",
-            color: Colors.red,
-            onTap: _punchOut,
-            disabled: false,
-          ),
-        ],
-      );
-    } else if (normalized == 'out' ||
-        normalized == 'complete' ||
-        normalized == 'completed' ||
-        normalized == 'punchedout' ||
-        normalized.contains('finish')) {
-      // Work finished → show badge
+    // Work finished badge
+    if (currentStatus == "COMPLETED") {
       return _workFinishedBadge();
-    } else {
-      // Default (likely no punch yet) → show Punch In
-      return Row(
-        children: [
-          _punchButton(
-            text: "Punch In",
-            color: Colors.green,
-            onTap: _punchIn,
-            disabled: false,
-          ),
-          const SizedBox(width: 10),
-          _punchButton(
-            text: "Punch Out",
-            color: Colors.grey,
-            onTap: null,
-            disabled: true,
-          ),
-        ],
-      );
     }
+
+    // Determine which buttons should be enabled
+    final bool punchInEnabled = currentStatus == "READY";
+    final bool lunchBreakEnabled = (currentStatus == "IN" && !lunchTaken);
+    final bool resumeWorkEnabled = currentStatus == "LUNCH_OUT";
+    final bool punchOutEnabled = (currentStatus == "IN" && lunchTaken);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio:
+              MediaQuery.of(context).size.width < 360 ? 1.05 : 1.2,
+          children: [
+            _gridButton(
+              text: "Punch In",
+              icon: Icons.login,
+              color: Colors.green,
+              enabled: punchInEnabled,
+              onTap: _punchIn,
+            ),
+            _gridButton(
+              text: "Lunch Break",
+              icon: Icons.restaurant,
+              color: Colors.orange,
+              enabled: lunchBreakEnabled,
+              onTap: _lunchOut,
+            ),
+            _gridButton(
+              text: "Resume Work",
+              icon: Icons.work,
+              color: Colors.blue,
+              enabled: resumeWorkEnabled,
+              onTap: _lunchIn,
+            ),
+            _gridButton(
+              text: "Punch Out",
+              icon: Icons.logout,
+              color: Colors.red,
+              enabled: punchOutEnabled,
+              onTap: _punchOut,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _getStatusMessage(),
+          style: const TextStyle(fontSize: 11, color: Colors.grey),
+        ),
+      ],
+    );
   }
 
-  /// ================= UI HELPERS =================
-
-  Widget _refreshButton() {
-    return ElevatedButton(
-      onPressed: _fetchPunchStatus,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.orange,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      ),
-      child: const Text(
-        "Refresh",
-        style: TextStyle(fontSize: 12, color: Colors.white),
-      ),
-    );
+  String _getStatusMessage() {
+    if (currentStatus == "IN" && !lunchTaken)
+      return "Punched in – take lunch break?";
+    if (currentStatus == "IN" && lunchTaken)
+      return "Working – you can punch out";
+    if (currentStatus == "LUNCH_OUT")
+      return "On lunch break – resume when back";
+    if (currentStatus == "READY") return "Ready to punch in";
+    return "Work finished for today";
   }
 
   Widget _workFinishedBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.green.shade100,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check_circle, color: Colors.green, size: 18),
-          SizedBox(width: 6),
-          Text("Work Finished for Today", style: TextStyle(fontSize: 12)),
-        ],
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(
+            horizontal: MediaQuery.of(context).size.width * 0.035,
+            vertical: MediaQuery.of(context).size.height * 0.014,
+          ),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.green.shade400, Colors.green.shade600],
+            ),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.green.withOpacity(0.25),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+
+              SizedBox(width: MediaQuery.of(context).size.width * 0.03),
+
+              Expanded(
+                child: Text(
+                  "Work Finished for Today 🎉",
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: MediaQuery.of(context).size.width * 0.036,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _punchButton({
+  Widget _gridButton({
     required String text,
+    required IconData icon,
     required Color color,
-    required VoidCallback? onTap,
-    required bool disabled,
+    required bool enabled,
+    required VoidCallback onTap,
   }) {
+    final Color bgColor = enabled ? color : Colors.grey.shade400;
+    final Color iconColor = enabled ? Colors.white : Colors.grey.shade600;
+    final Color textColor = enabled ? Colors.white : Colors.grey.shade600;
+
     return GestureDetector(
-      onTap: disabled ? null : onTap,
-      child: Opacity(
-        opacity: disabled ? 0.5 : 1,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(30),
-            boxShadow:
-                disabled
-                    ? []
-                    : [
-                      BoxShadow(
-                        color: color.withOpacity(0.4),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-          ),
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+      onTap: enabled ? onTap : null,
+      child: Container(
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow:
+              enabled
+                  ? [
+                    BoxShadow(
+                      color: color.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                  : [],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 32, color: iconColor),
+            const SizedBox(height: 8),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                text,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: textColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: MediaQuery.of(context).size.width * 0.032,
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

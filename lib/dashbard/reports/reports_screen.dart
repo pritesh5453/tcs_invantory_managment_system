@@ -5,6 +5,206 @@ import 'package:open_filex/open_filex.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:tcs_invantory_managment_system/dashbard/main_dashbard_screen.dart';
+import 'package:tcs_invantory_managment_system/dashbard/reports/employee_records_scree.dart';
+
+// ================= Modal Bottom Sheet for Employee Selection =================
+class EmployeeSelectionBottomSheet extends StatefulWidget {
+  final Function(Map<String, dynamic>) onEmployeeSelected;
+  final int? initialEmployeeId;
+  final String? initialEmployeeName;
+
+  const EmployeeSelectionBottomSheet({
+    super.key,
+    required this.onEmployeeSelected,
+    this.initialEmployeeId,
+    this.initialEmployeeName,
+  });
+
+  @override
+  State<EmployeeSelectionBottomSheet> createState() =>
+      _EmployeeSelectionBottomSheetState();
+}
+
+class _EmployeeSelectionBottomSheetState
+    extends State<EmployeeSelectionBottomSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final Dio _dio = Dio();
+
+  List<Map<String, dynamic>> _employees = [];
+  int _currentPage = 1;
+  int _totalPages = 1;
+  bool _isLoading = false;
+  bool _isLoadingMore = false;
+  String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchEmployees();
+    _scrollController.addListener(_onScroll);
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    _searchQuery = _searchController.text;
+    _currentPage = 1;
+    _employees.clear();
+    _fetchEmployees();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        !_isLoadingMore &&
+        _currentPage < _totalPages) {
+      _fetchEmployees(isLoadMore: true);
+    }
+  }
+
+  Future<void> _fetchEmployees({bool isLoadMore = false}) async {
+    if (isLoadMore) {
+      setState(() => _isLoadingMore = true);
+    } else {
+      setState(() => _isLoading = true);
+    }
+
+    try {
+      final response = await _dio.get(
+        'https://dashboard.theceramicstudio.in/api/employees/list',
+        queryParameters: {
+          'page': _currentPage,
+          'search': _searchQuery,
+          'limit': 20,
+        },
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final List<dynamic> data = response.data['employees'];
+        final pagination = response.data['pagination'];
+
+        final newEmployees =
+            data
+                .map<Map<String, dynamic>>(
+                  (e) => {'id': e['id'], 'name': e['name']},
+                )
+                .toList();
+
+        setState(() {
+          if (isLoadMore) {
+            _employees.addAll(newEmployees);
+          } else {
+            _employees = newEmployees;
+          }
+          _totalPages = pagination['totalPages'] ?? 1;
+          _currentPage = pagination['currentPage'] ?? 1;
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+      } else {
+        throw Exception('Failed to load employees');
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
+      });
+      if (!isLoadMore) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load employees: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.7,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          // Search Bar
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search employee...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+              ),
+            ),
+          ),
+          // Employee List
+          Expanded(
+            child:
+                _isLoading && _employees.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : _employees.isEmpty
+                    ? const Center(child: Text('No employees found'))
+                    : ListView.builder(
+                      controller: _scrollController,
+                      itemCount: _employees.length + 1,
+                      itemBuilder: (context, index) {
+                        if (index == _employees.length) {
+                          if (_isLoadingMore) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          } else {
+                            return const SizedBox.shrink();
+                          }
+                        }
+                        final employee = _employees[index];
+                        final isSelected =
+                            widget.initialEmployeeId == employee['id'];
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.orange.shade100,
+                            child: const Icon(
+                              Icons.person,
+                              color: Colors.orange,
+                            ),
+                          ),
+                          title: Text(employee['name']),
+                          trailing:
+                              isSelected
+                                  ? const Icon(Icons.check, color: Colors.green)
+                                  : null,
+                          onTap: () {
+                            widget.onEmployeeSelected(employee);
+                            Navigator.pop(context);
+                          },
+                        );
+                      },
+                    ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class AdvanceAnalyticsScreen extends StatefulWidget {
   const AdvanceAnalyticsScreen({super.key});
@@ -30,7 +230,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     {"name": "Dec", "value": 12},
   ];
 
-  late List<int> _years; // dynamically generated
+  late List<int> _years;
 
   /// ================= REPORT STATES =================
   final Map<String, int?> selectedMonth = {
@@ -39,7 +239,6 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     "purchase": null,
     "payment": null,
   };
-
   final Map<String, int?> selectedYear = {
     "customer": null,
     "quotation": null,
@@ -54,9 +253,26 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
 
   DateTime? fromDate;
   DateTime? toDate;
-
-  List<Map<String, dynamic>> employees = [];
   int? selectedEmployeeId;
+  String _selectedEmployeeName = '';
+
+  // ================= DELIVERY CHALLAN REPORT =================
+  final TextEditingController dcEmployeeController = TextEditingController();
+  final TextEditingController dcFromDateController = TextEditingController();
+  final TextEditingController dcToDateController = TextEditingController();
+
+  DateTime? dcFromDate;
+  DateTime? dcToDate;
+  int? dcSelectedEmployeeId;
+  String _dcSelectedEmployeeName = '';
+
+  Map<String, dynamic> _attendanceSummary = {
+    "present": 0,
+    "absent": 0,
+    "totalDays": 0,
+  };
+  bool _isLoadingAttendance = false;
+  bool _isDownloadingReport = false;
 
   @override
   void initState() {
@@ -64,7 +280,6 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     _initYears();
   }
 
-  /// Generate years dynamically from 2020 to current year + 2
   void _initYears() {
     final now = DateTime.now();
     final currentYear = now.year;
@@ -76,69 +291,102 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     );
   }
 
-  /// ================= DATE PICKER =================
-  Future<void> _pickDate({required bool isFrom}) async {
+  // ================= DATE PICKER =================
+  Future<void> _pickDate({
+    required bool isFrom,
+    required TextEditingController controller,
+    required DateTime? date,
+    required Function(DateTime) onDateSelected,
+  }) async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
+      initialDate: date ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime(2030),
     );
-
     if (picked != null) {
       final formatted =
           "${picked.day.toString().padLeft(2, '0')}-"
           "${picked.month.toString().padLeft(2, '0')}-"
           "${picked.year}";
-
-      setState(() {
-        if (isFrom) {
-          fromDate = picked;
-          fromDateController.text = formatted;
-        } else {
-          toDate = picked;
-          toDateController.text = formatted;
-        }
-      });
+      controller.text = formatted;
+      onDateSelected(picked);
     }
   }
 
-  /// ================= FORMAT DATE FOR API =================
   String _formatApiDate(DateTime date) {
     return "${date.year.toString().padLeft(4, '0')}-"
         "${date.month.toString().padLeft(2, '0')}-"
         "${date.day.toString().padLeft(2, '0')}";
   }
 
-  /// ================= FETCH EMPLOYEES =================
-  Future<void> _fetchEmployees(String query) async {
-    if (query.isEmpty) {
-      setState(() => employees = []);
+  // ================= EMPLOYEE MODAL =================
+  void _showEmployeeSelectionModal({
+    required String title,
+    required int? currentId,
+    required String currentName,
+    required Function(Map<String, dynamic>) onSelected,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (context) => EmployeeSelectionBottomSheet(
+            onEmployeeSelected: (employee) {
+              onSelected(employee);
+            },
+            initialEmployeeId: currentId,
+            initialEmployeeName: currentName,
+          ),
+    );
+  }
+
+  // ================= ATTENDANCE SUMMARY =================
+  Future<void> _fetchAttendanceSummary() async {
+    if (selectedEmployeeId == null || fromDate == null || toDate == null) {
+      setState(() {
+        _attendanceSummary = {"present": 0, "absent": 0, "totalDays": 0};
+      });
       return;
     }
-
+    setState(() => _isLoadingAttendance = true);
     try {
-      final res = await Dio().get(
-        "https://dashboard.theceramicstudio.in/api/employees/list",
-        queryParameters: {"search": query},
+      final from = _formatApiDate(fromDate!);
+      final to = _formatApiDate(toDate!);
+      final response = await Dio().get(
+        "https://dashboard.theceramicstudio.in/api/dashboard/attendance-dashboard",
+        queryParameters: {
+          "employeeId": selectedEmployeeId,
+          "from": from,
+          "to": to,
+        },
       );
-
-      final List list = res.data["employees"];
-
-      setState(() {
-        employees =
-            list
-                .map<Map<String, dynamic>>(
-                  (e) => {"id": e["id"], "name": e["name"]},
-                )
-                .toList();
-      });
+      final data = response.data;
+      if (data["success"] == true) {
+        setState(() {
+          _attendanceSummary = {
+            "present": data["summary"]["present"] ?? 0,
+            "absent": data["summary"]["absent"] ?? 0,
+            "totalDays": data["summary"]["totalDays"] ?? 0,
+          };
+        });
+      } else {
+        setState(() {
+          _attendanceSummary = {"present": 0, "absent": 0, "totalDays": 0};
+        });
+      }
     } catch (e) {
-      debugPrint("EMPLOYEE API ERROR: $e");
+      debugPrint("ATTENDANCE SUMMARY ERROR: $e");
+      setState(() {
+        _attendanceSummary = {"present": 0, "absent": 0, "totalDays": 0};
+      });
+    } finally {
+      if (mounted) setState(() => _isLoadingAttendance = false);
     }
   }
 
-  /// ================= OPEN DOWNLOADED FILE =================
+  // ================= FILE HANDLING =================
   void _showExcelOptions(String filePath, String fileName) {
     showModalBottomSheet(
       context: context,
@@ -224,7 +472,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     );
   }
 
-  /// ================= DOWNLOAD EMPLOYEE ATTENDANCE =================
+  // ================= DOWNLOAD ATTENDANCE =================
   Future<void> _downloadEmployeeAttendance() async {
     if (selectedEmployeeId == null || fromDate == null || toDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -235,11 +483,9 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
       );
       return;
     }
-
     try {
       final from = _formatApiDate(fromDate!);
       final to = _formatApiDate(toDate!);
-
       final response = await Dio(
         BaseOptions(responseType: ResponseType.bytes),
       ).get(
@@ -250,15 +496,11 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
           "to": to,
         },
       );
-
       final dir = await getExternalStorageDirectory();
       if (dir == null) throw Exception("Cannot access external storage");
-
       final path =
           "${dir.path}/Employee_Attendance_${selectedEmployeeId}_$from\_to_$to.xlsx";
-
       await File(path).writeAsBytes(response.data, flush: true);
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Downloaded: $path"),
@@ -266,7 +508,6 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
           duration: const Duration(seconds: 2),
         ),
       );
-
       _showExcelOptions(path, "Employee_Attendance_$selectedEmployeeId");
     } catch (e) {
       debugPrint("ATTENDANCE DOWNLOAD ERROR: $e");
@@ -279,7 +520,61 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     }
   }
 
-  /// ================= DOWNLOAD REPORT EXCEL =================
+  // ================= DOWNLOAD DELIVERY CHALLAN REPORT =================
+  Future<void> _downloadDeliveryChallanReport() async {
+    if (dcSelectedEmployeeId == null ||
+        dcFromDate == null ||
+        dcToDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please select Employee, From & To Date"),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    setState(() => _isDownloadingReport = true);
+    try {
+      final from = _formatApiDate(dcFromDate!);
+      final to = _formatApiDate(dcToDate!);
+      final response = await Dio(
+        BaseOptions(responseType: ResponseType.bytes),
+      ).get(
+        "https://dashboard.theceramicstudio.in/api/dashboard/delivery-challan",
+        queryParameters: {
+          "employeeId": dcSelectedEmployeeId,
+          "fromDate": from,
+          "toDate": to,
+        },
+      );
+      final dir = await getExternalStorageDirectory();
+      if (dir == null) throw Exception("Cannot access external storage");
+      final fileName =
+          "Delivery_Challan_${_dcSelectedEmployeeName.replaceAll(' ', '_')}_$from\_to_$to.xlsx";
+      final filePath = "${dir.path}/$fileName";
+      await File(filePath).writeAsBytes(response.data, flush: true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Downloaded: $filePath"),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      _showExcelOptions(filePath, fileName);
+    } catch (e) {
+      debugPrint("DELIVERY CHALLAN DOWNLOAD ERROR: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Delivery Challan download failed"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() => _isDownloadingReport = false);
+    }
+  }
+
+  // ================= OTHER DOWNLOADS =================
   Future<void> _downloadExcel({
     required String key,
     required String url,
@@ -294,7 +589,6 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
       );
       return;
     }
-
     try {
       final res = await Dio(BaseOptions(responseType: ResponseType.bytes)).get(
         url,
@@ -303,15 +597,11 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
           "year": selectedYear[key],
         },
       );
-
       final dir = await getExternalStorageDirectory();
       if (dir == null) throw Exception("Cannot access external storage");
-
       final path =
           "${dir.path}/${fileName}_${selectedMonth[key]}_${selectedYear[key]}.xlsx";
-
       await File(path).writeAsBytes(res.data, flush: true);
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Downloaded: $path"),
@@ -319,7 +609,6 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
           duration: const Duration(seconds: 2),
         ),
       );
-
       _showExcelOptions(path, fileName);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -331,7 +620,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     }
   }
 
-  /// ================= UI =================
+  // ================= UI BUILD =================
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -357,7 +646,8 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
                     children: [
                       _employeeAttendanceCard(),
                       const SizedBox(height: 12),
-
+                      _deliveryChallanReportCard(), // NEW CARD
+                      const SizedBox(height: 12),
                       _analyticsCard(
                         keyName: "customer",
                         title: "Customer Register",
@@ -397,7 +687,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     );
   }
 
-  /// ================= EMPLOYEE ATTENDANCE CARD =================
+  // ================= EMPLOYEE ATTENDANCE CARD =================
   Widget _employeeAttendanceCard() {
     return _card(
       child: Column(
@@ -406,39 +696,38 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
           _title("Employee Attendance"),
           const SizedBox(height: 10),
 
-          TextField(
-            controller: employeeController,
-            onChanged: _fetchEmployees,
-            decoration: InputDecoration(
-              hintText: "Employee Name",
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+          // Employee Selection (Modal)
+          InkWell(
+            onTap: () {
+              _showEmployeeSelectionModal(
+                title: "Select Employee",
+                currentId: selectedEmployeeId,
+                currentName: _selectedEmployeeName,
+                onSelected: (employee) {
+                  setState(() {
+                    selectedEmployeeId = employee['id'];
+                    _selectedEmployeeName = employee['name'];
+                    employeeController.text = employee['name'];
+                  });
+                  _fetchAttendanceSummary();
+                },
+              );
+            },
+            child: InputDecorator(
+              decoration: InputDecoration(
+                hintText: "Select Employee",
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                suffixIcon: const Icon(Icons.arrow_drop_down),
+              ),
+              child: Text(
+                _selectedEmployeeName.isEmpty
+                    ? "Select Employee"
+                    : _selectedEmployeeName,
               ),
             ),
           ),
-
-          const SizedBox(height: 8),
-
-          DropdownButtonFormField<int>(
-            value: selectedEmployeeId,
-            hint: const Text("Select Employee"),
-            items:
-                employees
-                    .map(
-                      (e) => DropdownMenuItem<int>(
-                        value: e["id"],
-                        child: Text(e["name"]),
-                      ),
-                    )
-                    .toList(),
-            onChanged: (v) => setState(() => selectedEmployeeId = v),
-            decoration: InputDecoration(
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-
           const SizedBox(height: 10),
 
           Row(
@@ -447,7 +736,16 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
                 child: TextField(
                   controller: fromDateController,
                   readOnly: true,
-                  onTap: () => _pickDate(isFrom: true),
+                  onTap:
+                      () => _pickDate(
+                        isFrom: true,
+                        controller: fromDateController,
+                        date: fromDate,
+                        onDateSelected: (picked) {
+                          fromDate = picked;
+                          _fetchAttendanceSummary();
+                        },
+                      ),
                   decoration: InputDecoration(
                     hintText: "From Date",
                     suffixIcon: const Icon(Icons.calendar_month),
@@ -462,7 +760,16 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
                 child: TextField(
                   controller: toDateController,
                   readOnly: true,
-                  onTap: () => _pickDate(isFrom: false),
+                  onTap:
+                      () => _pickDate(
+                        isFrom: false,
+                        controller: toDateController,
+                        date: toDate,
+                        onDateSelected: (picked) {
+                          toDate = picked;
+                          _fetchAttendanceSummary();
+                        },
+                      ),
                   decoration: InputDecoration(
                     hintText: "To Date",
                     suffixIcon: const Icon(Icons.calendar_month),
@@ -474,7 +781,187 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
 
+          if (_isLoadingAttendance)
+            const Center(child: CircularProgressIndicator())
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _summaryPill(
+                    label: "Present",
+                    value: _attendanceSummary["present"],
+                    color: Colors.green,
+                  ),
+                  _summaryPill(
+                    label: "Absent",
+                    value: _attendanceSummary["absent"],
+                    color: Colors.red,
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 8),
+
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFFA54A),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  onPressed: _downloadEmployeeAttendance,
+                  child: const Text("Export Attendance"),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFFFA54A)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  onPressed: () {
+                    if (selectedEmployeeId == null ||
+                        fromDate == null ||
+                        toDate == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            "Please select employee and date range",
+                          ),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder:
+                            (_) => EmployeeRecordsScreen(
+                              employeeId: selectedEmployeeId!,
+                              employeeName: _selectedEmployeeName,
+                              fromDate: fromDate!,
+                              toDate: toDate!,
+                            ),
+                      ),
+                    );
+                  },
+                  child: const Text("View Records"),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= NEW: DELIVERY CHALLAN REPORT CARD =================
+  Widget _deliveryChallanReportCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.receipt, color: Color(0xFFFFA54A), size: 20),
+              const SizedBox(width: 6),
+              const Text(
+                "Delivery Challan Report",
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Employee Selection (Modal)
+          InkWell(
+            onTap: () {
+              _showEmployeeSelectionModal(
+                title: "Select Employee",
+                currentId: dcSelectedEmployeeId,
+                currentName: _dcSelectedEmployeeName,
+                onSelected: (employee) {
+                  setState(() {
+                    dcSelectedEmployeeId = employee['id'];
+                    _dcSelectedEmployeeName = employee['name'];
+                    dcEmployeeController.text = employee['name'];
+                  });
+                },
+              );
+            },
+            child: InputDecorator(
+              decoration: InputDecoration(
+                hintText: "Select Employee",
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                suffixIcon: const Icon(Icons.arrow_drop_down),
+              ),
+              child: Text(
+                _dcSelectedEmployeeName.isEmpty
+                    ? "Select Employee"
+                    : _dcSelectedEmployeeName,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: dcFromDateController,
+                  readOnly: true,
+                  onTap:
+                      () => _pickDate(
+                        isFrom: true,
+                        controller: dcFromDateController,
+                        date: dcFromDate,
+                        onDateSelected: (picked) => dcFromDate = picked,
+                      ),
+                  decoration: InputDecoration(
+                    hintText: "From Date",
+                    suffixIcon: const Icon(Icons.calendar_month),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: dcToDateController,
+                  readOnly: true,
+                  onTap:
+                      () => _pickDate(
+                        isFrom: false,
+                        controller: dcToDateController,
+                        date: dcToDate,
+                        onDateSelected: (picked) => dcToDate = picked,
+                      ),
+                  decoration: InputDecoration(
+                    hintText: "To Date",
+                    suffixIcon: const Icon(Icons.calendar_month),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
 
           SizedBox(
@@ -485,9 +972,21 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
                 ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
               ),
-              onPressed: _downloadEmployeeAttendance,
-              child: const Text("Download Excel"),
+              onPressed:
+                  _isDownloadingReport ? null : _downloadDeliveryChallanReport,
+              child:
+                  _isDownloadingReport
+                      ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                      : const Text("Download Report"),
             ),
           ),
         ],
@@ -495,7 +994,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     );
   }
 
-  /// ================= ANALYTICS CARD =================
+  // ================= ANALYTICS CARD =================
   Widget _analyticsCard({
     required String keyName,
     required String title,
@@ -518,14 +1017,12 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
                     hint: const Text("Month"),
                     underline: const SizedBox(),
                     items:
-                        months
-                            .map(
-                              (m) => DropdownMenuItem<int>(
-                                value: m["value"],
-                                child: Text(m["name"]),
-                              ),
-                            )
-                            .toList(),
+                        months.map((m) {
+                          return DropdownMenuItem<int>(
+                            value: m["value"],
+                            child: Text(m["name"]),
+                          );
+                        }).toList(),
                     onChanged:
                         (v) => setState(() => selectedMonth[keyName] = v),
                   ),
@@ -537,14 +1034,12 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
                     hint: const Text("Year"),
                     underline: const SizedBox(),
                     items:
-                        _years
-                            .map(
-                              (y) => DropdownMenuItem<int>(
-                                value: y,
-                                child: Text(y.toString()),
-                              ),
-                            )
-                            .toList(),
+                        _years.map((y) {
+                          return DropdownMenuItem<int>(
+                            value: y,
+                            child: Text(y.toString()),
+                          );
+                        }).toList(),
                     onChanged: (v) => setState(() => selectedYear[keyName] = v),
                   ),
                 ),
@@ -566,7 +1061,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
     );
   }
 
-  /// ================= COMMON UI =================
+  // ================= COMMON UI =================
   Widget _topBar() => Container(
     padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
     decoration: const BoxDecoration(
@@ -605,4 +1100,27 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
       Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
     ],
   );
+
+  Widget _summaryPill({
+    required String label,
+    required int value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: color.withOpacity(0.5)),
+      ),
+      child: Text(
+        "$label: $value",
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
+      ),
+    );
+  }
 }
