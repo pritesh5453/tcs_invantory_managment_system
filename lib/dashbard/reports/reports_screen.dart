@@ -522,37 +522,48 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
 
   // ================= DOWNLOAD DELIVERY CHALLAN REPORT =================
   Future<void> _downloadDeliveryChallanReport() async {
-    if (dcSelectedEmployeeId == null ||
-        dcFromDate == null ||
-        dcToDate == null) {
+    // Only from and to dates are mandatory now
+    if (dcFromDate == null || dcToDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Please select Employee, From & To Date"),
+          content: Text("Please select From Date & To Date"),
           backgroundColor: Colors.orange,
         ),
       );
       return;
     }
+
     setState(() => _isDownloadingReport = true);
     try {
       final from = _formatApiDate(dcFromDate!);
       final to = _formatApiDate(dcToDate!);
+
+      // Build query parameters
+      final queryParams = {"fromDate": from, "toDate": to};
+      // Add employeeId only if selected
+      if (dcSelectedEmployeeId != null) {
+        queryParams["employeeId"] = dcSelectedEmployeeId as String;
+      }
+
       final response = await Dio(
         BaseOptions(responseType: ResponseType.bytes),
       ).get(
         "https://dashboard.theceramicstudio.in/api/dashboard/delivery-challan",
-        queryParameters: {
-          "employeeId": dcSelectedEmployeeId,
-          "fromDate": from,
-          "toDate": to,
-        },
+        queryParameters: queryParams,
       );
+
       final dir = await getExternalStorageDirectory();
       if (dir == null) throw Exception("Cannot access external storage");
-      final fileName =
-          "Delivery_Challan_${_dcSelectedEmployeeName.replaceAll(' ', '_')}_$from\_to_$to.xlsx";
+
+      final employeePart =
+          dcSelectedEmployeeId != null
+              ? "${_dcSelectedEmployeeName.replaceAll(' ', '_')}_"
+              : "All_Employees_";
+      final fileName = "Delivery_Challan_${employeePart}${from}_to_$to.xlsx";
       final filePath = "${dir.path}/$fileName";
+
       await File(filePath).writeAsBytes(response.data, flush: true);
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Downloaded: $filePath"),
@@ -570,7 +581,7 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
         ),
       );
     } finally {
-      setState(() => _isDownloadingReport = false);
+      if (mounted) setState(() => _isDownloadingReport = false);
     }
   }
 
@@ -884,36 +895,54 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
           ),
           const SizedBox(height: 10),
 
-          // Employee Selection (Modal)
-          InkWell(
-            onTap: () {
-              _showEmployeeSelectionModal(
-                title: "Select Employee",
-                currentId: dcSelectedEmployeeId,
-                currentName: _dcSelectedEmployeeName,
-                onSelected: (employee) {
-                  setState(() {
-                    dcSelectedEmployeeId = employee['id'];
-                    _dcSelectedEmployeeName = employee['name'];
-                    dcEmployeeController.text = employee['name'];
-                  });
-                },
-              );
-            },
-            child: InputDecorator(
-              decoration: InputDecoration(
-                hintText: "Select Employee",
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+          // Employee Selection (Optional) with clear button
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    _showEmployeeSelectionModal(
+                      title: "Select Employee (Optional)",
+                      currentId: dcSelectedEmployeeId,
+                      currentName: _dcSelectedEmployeeName,
+                      onSelected: (employee) {
+                        setState(() {
+                          dcSelectedEmployeeId = employee['id'];
+                          _dcSelectedEmployeeName = employee['name'];
+                          dcEmployeeController.text = employee['name'];
+                        });
+                      },
+                    );
+                  },
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      hintText: "Select Employee (Optional)",
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      suffixIcon: const Icon(Icons.arrow_drop_down),
+                    ),
+                    child: Text(
+                      _dcSelectedEmployeeName.isEmpty
+                          ? "Select Employee (Optional)"
+                          : _dcSelectedEmployeeName,
+                    ),
+                  ),
                 ),
-                suffixIcon: const Icon(Icons.arrow_drop_down),
               ),
-              child: Text(
-                _dcSelectedEmployeeName.isEmpty
-                    ? "Select Employee"
-                    : _dcSelectedEmployeeName,
-              ),
-            ),
+              if (_dcSelectedEmployeeName.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.red),
+                  onPressed: () {
+                    setState(() {
+                      dcSelectedEmployeeId = null;
+                      _dcSelectedEmployeeName = '';
+                      dcEmployeeController.clear();
+                    });
+                  },
+                  tooltip: 'Clear Employee',
+                ),
+            ],
           ),
           const SizedBox(height: 10),
 
