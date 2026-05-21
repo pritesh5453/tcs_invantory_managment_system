@@ -522,7 +522,6 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
 
   // ================= DOWNLOAD DELIVERY CHALLAN REPORT =================
   Future<void> _downloadDeliveryChallanReport() async {
-    // Only from and to dates are mandatory now
     if (dcFromDate == null || dcToDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -538,11 +537,9 @@ class _AdvanceAnalyticsScreenState extends State<AdvanceAnalyticsScreen> {
       final from = _formatApiDate(dcFromDate!);
       final to = _formatApiDate(dcToDate!);
 
-      // Build query parameters
-      final queryParams = {"fromDate": from, "toDate": to};
-      // Add employeeId only if selected
+      final Map<String, dynamic> queryParams = {"fromDate": from, "toDate": to};
       if (dcSelectedEmployeeId != null) {
-        queryParams["employeeId"] = dcSelectedEmployeeId as String;
+        queryParams["employeeId"] = dcSelectedEmployeeId; // ✅ Fixed
       }
 
       final response = await Dio(
